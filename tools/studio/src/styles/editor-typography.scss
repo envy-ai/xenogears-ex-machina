@@ -1,0 +1,121 @@
+// Copied from rpg_creator src/editor-typography.scss at 1f690d0263af8881a2d33ee374a2e5006355748b; see PROVENANCE.md.
+@use 'editor-typography-theme' as type;
+
+.editor-shell {
+  --editor-font-size-application: 17px;
+  --editor-font-size-page: 15px;
+  --editor-font-size-panel: 12px;
+  --editor-font-size-section: 11px;
+  --editor-font-size-subsection: 10px;
+  --editor-font-size-card: 9px;
+  --editor-font-size-body: 10px;
+  --editor-font-size-list: 10px;
+  --editor-font-size-help: 9px;
+  --editor-font-size-caption: 8px;
+  --editor-line-height-heading: 1.18;
+  --editor-line-height-body: 1.42;
+  --editor-line-height-label: 1.25;
+  --editor-line-height-caption: 1.35;
+  --editor-font-weight-normal: 430;
+  --editor-font-weight-medium: 560;
+  --editor-font-weight-strong: 700;
+  --editor-font-weight-display: 760;
+}
+
+.editor-shell .editor-heading {
+  @include type.heading;
+}
+
+.editor-shell .editor-heading.editor-heading--application {
+  font-size: var(--editor-font-size-application);
+  font-weight: var(--editor-font-weight-display);
+}
+
+.editor-shell .editor-heading.editor-heading--page {
+  font-size: var(--editor-font-size-page);
+  font-weight: var(--editor-font-weight-display);
+}
+
+.editor-shell .editor-heading.editor-heading--panel {
+  font-size: var(--editor-font-size-panel);
+  font-weight: var(--editor-font-weight-strong);
+}
+
+.editor-shell .editor-heading.editor-heading--section {
+  font-size: var(--editor-font-size-section);
+  font-weight: var(--editor-font-weight-strong);
+}
+
+.editor-shell .editor-heading.editor-heading--subsection {
+  font-size: var(--editor-font-size-subsection);
+  font-weight: var(--editor-font-weight-strong);
+}
+
+.editor-shell .editor-heading.editor-heading--card {
+  font-size: var(--editor-font-size-card);
+  font-weight: var(--editor-font-weight-strong);
+}
+
+.editor-shell .editor-text {
+  @include type.text;
+  margin-block: 0;
+}
+
+.editor-shell .editor-text.editor-text--secondary {
+  @include type.secondary;
+}
+
+.editor-shell .editor-text.editor-text--caption {
+  @include type.caption;
+}
+
+.editor-shell .editor-text.editor-text--help {
+  @include type.help;
+}
+
+.editor-shell .editor-text.editor-text--empty {
+  @include type.secondary;
+  font-style: italic;
+}
+
+.editor-shell .editor-text.editor-text--status {
+  color: var(--editor-muted);
+  font-size: var(--editor-font-size-caption);
+}
+
+.editor-shell .editor-text.editor-text--success {
+  color: color-mix(in srgb, var(--editor-positive) 62%, white);
+}
+
+.editor-shell .editor-text.editor-text--warning {
+  color: color-mix(in srgb, var(--editor-warning) 62%, white);
+}
+
+.editor-shell .editor-text.editor-text--danger {
+  color: color-mix(in srgb, var(--editor-danger) 62%, white);
+}
+
+.editor-shell .editor-text.editor-text--code {
+  @include type.code;
+}
+
+.editor-shell .editor-kicker {
+  color: var(--editor-accent-strong);
+  font-family: var(--editor-font-ui);
+  font-size: var(--editor-font-size-caption);
+  font-weight: var(--editor-font-weight-strong);
+  letter-spacing: 0.075em;
+  line-height: var(--editor-line-height-caption);
+  text-transform: uppercase;
+}
+
+.editor-shell :is(.editor-heading, .editor-text, .editor-field-label) {
+  overflow-wrap: anywhere;
+}
+
+.editor-shell :is(
+  .editor-text--warning,
+  .editor-text--danger
+) > :is(strong, b):first-child {
+  margin-inline-end: 0.45em;
+}

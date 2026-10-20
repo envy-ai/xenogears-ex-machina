@@ -155,8 +155,9 @@ Each one ends usable and tested. UI mockups come before each editor's UI work.
 1. **Skeleton.** The `xem-studio` crate with `Studio::command` and a wasm build.
    `tools/studio` is a Vite app with the rpg_creator widget layers copied in
    (with provenance). It opens in NW.js and as a browser page, loads the backend
-   and reports its version and adapters. Add the NW.js, Vite and React pins to a
-   Nix shell. Add new authored files to
+   and reports its version and adapters. Rust/wasm/Node/Chromium use the pinned
+   runtime Nix shell; NW.js, Vite and React use the npm lockfile pins from
+   [studio-milestone-1.md](studio-milestone-1.md). Add new authored files to
    `packaging/source-files.txt` and check them with
    `tools/repository/source_archive.py --check`.
 2. **Field script round trip.** Export `events.py`'s tables once to data the
@@ -204,7 +205,9 @@ Each one ends usable and tested. UI mockups come before each editor's UI work.
 - **Frontend:** `tsc` typecheck, Vitest for logic that runs without a page, and Playwright
   with the runtime shell's Chromium against the served page, inside the
   user-scope memory limit from the user's AGENTS.md.
-- **NW.js:** its bundled ChromeDriver drives the same UI tests.
+- **NW.js:** milestone one uses the pinned normal flavour's fixture-only smoke
+  test; an SDK ChromeDriver is not pinned. Browser interactions are covered with
+  the runtime shell's Chromium and Playwright.
 - **Native link:** under lavapipe and a headless Wayland, as `control.rs` does.
 - **Runtime crates:** `src/runtime/scripts/suite.sh desktop` or `web` for
   whichever side changed.
@@ -217,10 +220,12 @@ Each one ends usable and tested. UI mockups come before each editor's UI work.
 - **Different file sizes.** Replacements of a different size depend on how the
   game reads its file table and on sector layout; milestone 5 settles this
   before committing to the format.
-- **NW.js.** It is not in the pinned Nix shells. Pin the release whose Chromium
-  is nearest the runtime shell's Chromium 152, and add it to `nix/authoring` or
-  a new `nix/studio`. The browser preview inside NW.js depends on its Chromium
-  enabling WebGPU on Linux; the native game does not.
+- **NW.js.** Milestone one pins `nw@0.113.0` through npm, matching rpg_creator,
+  while the pinned runtime Nix shell supplies Node, Rust, wasm-bindgen and
+  Chromium. The downloaded Linux archive/checksum is recorded in
+  `tools/studio/nw-binary.json`. Milestone one needs no WebGPU. A remote dev page
+  needs an explicit, narrowly scoped Node/NW API grant; the built local app
+  does not require a remote-origin grant.
 - **Upstream fit.** plan.md's Phase 12 specifies Slint editors. The backend's
   service interface is what keeps that option open: a Slint frontend replaces
   `tools/studio` and calls the same `Studio::command`.

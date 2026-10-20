@@ -39,14 +39,19 @@ ALLOWED_SUFFIXES = {
     ".inc",
     ".yml",
     ".yaml",
-    ".ts",
+    ".ts", ".tsx", ".scss",
     ".rs", ".cpp", ".sh", ".slint", ".js", ".mjs", ".html", ".css",
     ".wgsl", ".gradle", ".properties", ".xml", ".wat", ".hbs",
 }
 ALLOWED_BASENAMES = {"Makefile", "LICENSE", ".gitignore", ".clang-format", ".editorconfig", "xem-gpu-host"}
-# Independently licensed measurement data, not a game asset. Its provenance
-# and citation ship beside it in hrtf/README.md and in the binary notices.
+# Independently licensed non-game data. HRTF provenance/citation ship beside
+# it in hrtf/README.md; studio font provenance and OFL licenses ship with them.
 REVIEWED_DATA = {
+    # OFL 1.1 editor fonts: source revision/license in tools/studio/public/fonts/README.md.
+    "tools/studio/public/fonts/inter/Inter-Variable.ttf":
+        "29160a80ff49ddcab2c97711247e08b1fab27a484a329ce8b813d820dc559031",
+    "tools/studio/public/fonts/inconsolata/Inconsolata-Variable.ttf":
+        "23ded25b447074d00659392bf9b1123d89df55cb07b0ad9bfef3366d199b5fcb",
     "src/runtime/crates/xem-binaural/hrtf/kemar-diffuse.hrir":
         "4a7f56b11edf0ce857ac94aa13941a798a037fe21681f125ed0f11cfc551ab40",
 }

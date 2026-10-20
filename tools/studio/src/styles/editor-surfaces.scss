@@ -1,0 +1,2517 @@
+// Copied from rpg_creator src/editor-surfaces.scss at 1f690d0263af8881a2d33ee374a2e5006355748b; see PROVENANCE.md.
+@use 'editor-button-theme' as button;
+
+@mixin editor-overlay {
+  color: var(--editor-text);
+  background: color-mix(in srgb, var(--editor-bg) 84%, transparent);
+  backdrop-filter: blur(5px);
+  -webkit-app-region: no-drag;
+}
+
+@mixin editor-titlebar-safe-backdrop {
+  top: var(--editor-titlebar-height, 58px);
+  right: 0;
+  bottom: 0;
+  left: 0;
+}
+
+@mixin editor-window {
+  color: var(--editor-text);
+  background-color: var(--editor-panel);
+  background-image: var(
+    --editor-window-background-image,
+    radial-gradient(
+      circle at 92% 0,
+      color-mix(in srgb, var(--editor-secondary) 10%, transparent),
+      transparent 34%
+    )
+  );
+  border-color: var(--editor-window-border, var(--editor-accent));
+  box-shadow: var(
+    --editor-window-shadow,
+    0 0 0 4px var(--editor-bg), 0 28px 90px var(--editor-shadow)
+  );
+}
+
+@mixin editor-window-header {
+  color: var(--editor-text-bright);
+  background: var(--editor-header-gradient);
+  border-color: var(--editor-edge);
+}
+
+@mixin editor-window-icon {
+  color: var(--editor-window-icon-color, var(--editor-deep));
+  background: var(
+    --editor-window-icon-background,
+    linear-gradient(var(--editor-accent-strong), var(--editor-accent))
+  );
+  border-color: var(
+    --editor-window-icon-border,
+    color-mix(in srgb, var(--editor-accent-strong) 72%, white)
+  );
+}
+
+@mixin editor-accent-button {
+  @include button.primary;
+}
+
+@mixin editor-card($edge: var(--editor-edge), $surface: var(--editor-raised)) {
+  color: var(--editor-text);
+  background: $surface;
+  border-color: $edge;
+}
+
+@mixin editor-inset-frame {
+  color: var(--editor-muted);
+  background: var(--editor-deep);
+  border-color: var(--editor-edge);
+  box-shadow: inset 0 0 0 1px var(--editor-bg);
+}
+
+@mixin editor-list-row {
+  box-sizing: border-box;
+  height: var(--editor-list-row-height);
+  min-height: var(--editor-list-row-height);
+  color: var(--editor-text);
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: var(--editor-list-row-radius);
+  box-shadow: none;
+  transition:
+    padding-left 110ms ease,
+    opacity 110ms ease,
+    background-color 110ms ease,
+    border-color 110ms ease,
+    box-shadow 110ms ease;
+
+  &:hover,
+  &:focus-within {
+    color: var(--editor-list-row-hover-color);
+    background: var(--editor-list-row-hover-background);
+    border-color: var(--editor-list-row-hover-border);
+    box-shadow: var(--editor-list-row-hover-shadow);
+  }
+
+  &.active,
+  &[data-selected='true'],
+  &:has(.docker-item-select.active) {
+    color: var(--editor-list-row-selected-color);
+    background: var(--editor-list-row-selected-background);
+    border-color: var(--editor-list-row-selected-border);
+    box-shadow: var(--editor-list-row-selected-shadow);
+  }
+
+  &:is(:hover, :focus-within) > :is(
+    .map-select,
+    .docker-item-select,
+    .polygon-list-select
+  ) {
+    color: var(--editor-list-row-hover-color);
+  }
+
+  &:is(.active, [data-selected='true']) > :is(
+    .map-select,
+    .docker-item-select,
+    .polygon-list-select
+  ),
+  &:has(.docker-item-select.active) > .docker-item-select {
+    color: var(--editor-list-row-selected-color);
+  }
+}
+
+.editor-shell {
+  // Neutral surface classes compose the registered mixins without feature-local theme rules.
+  .editor-card {
+    @include editor-card;
+    border-width: 1px;
+    border-style: solid;
+    border-radius: 4px;
+  }
+
+  .editor-inset-frame {
+    @include editor-inset-frame;
+    border-width: 1px;
+    border-style: solid;
+    border-radius: 4px;
+  }
+
+  --editor-titlebar-height: 58px;
+  --editor-list-row-height: 30px;
+  --editor-list-row-radius: var(--editor-button-radius, 4px);
+  --editor-list-row-hover-color: var(--editor-text-bright);
+  --editor-list-row-hover-background: var(--editor-hover);
+  --editor-list-row-hover-border: var(--editor-edge-strong);
+  --editor-list-row-hover-shadow: none;
+  --editor-list-row-selected-color: var(--editor-selection-color);
+  --editor-list-row-selected-background: var(--editor-selection-background);
+  --editor-list-row-selected-border: var(--editor-selection-border);
+  --editor-list-row-selected-shadow: none;
+
+  &[data-editor-density='compact'] {
+    --editor-list-row-height: 24px;
+  }
+
+  :is(
+    .new-project-overlay,
+    .game-package-overlay,
+    .editor-settings-overlay,
+    .editor-dialog-backdrop,
+    .database-overlay,
+    .event-graph-backdrop,
+    .map-coordinate-picker-backdrop,
+    .effect-modal-backdrop,
+    .effect-import-dialog-backdrop
+  ) {
+    @include editor-overlay;
+    @include editor-titlebar-safe-backdrop;
+  }
+
+  :is(
+    .new-project-dialog,
+    .game-package-dialog,
+    .editor-settings-dialog,
+    .database-window,
+    .event-graph-dialog,
+    .map-coordinate-picker,
+    .editor-small-dialog,
+    .effect-coordinate-picker,
+    .effect-import-review,
+    .effect-import-dialog
+    ,.project-workflow-dialog
+    ,.project-launcher-window
+  ) {
+    @include editor-window;
+    max-height: 100%;
+  }
+
+  // Compact dialogs with fixed header/actions and a scrolling settings body.
+  // Features choose their width and keep all form state in their own component.
+  .editor-dialog-layout {
+    max-height: calc(100vh - var(--editor-titlebar-height, 58px) - 48px);
+    min-height: 0;
+    padding: 0;
+    gap: 0;
+    grid-template-rows: auto minmax(0, 1fr) auto;
+
+    > .editor-dialog-layout__header,
+    > .editor-dialog-layout__footer {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      padding: 14px 20px;
+    }
+
+    > .editor-dialog-layout__header {
+      border-bottom: 1px solid var(--editor-edge);
+    }
+
+    > .editor-dialog-layout__body {
+      min-height: 0;
+      overflow-y: auto;
+      padding: 18px 24px 22px;
+      align-items: start;
+      align-content: start;
+    }
+
+    > .editor-dialog-layout__footer {
+      border-top: 1px solid var(--editor-edge);
+    }
+  }
+
+  &.project-launcher {
+    display: block;
+    position: relative;
+    box-sizing: border-box;
+    width: 100%;
+    height: 100%;
+    min-height: 100vh;
+    overflow: auto;
+
+    &[data-native-window='true'] {
+      padding-top: var(--editor-titlebar-height);
+      -webkit-app-region: drag;
+
+      > .project-launcher-window,
+      > .native-window-controls {
+        -webkit-app-region: no-drag;
+      }
+
+      > .native-window-controls {
+        position: fixed;
+        z-index: 20;
+        top: 0;
+        right: 0;
+        height: var(--editor-titlebar-height);
+      }
+    }
+  }
+
+  .project-launcher-window {
+    width: min(760px, calc(100vw - 40px));
+    max-height: calc(100vh - 40px);
+    margin: 20px auto;
+    overflow: auto;
+
+    > header,
+    > .project-launcher-body {
+      padding: 18px 22px;
+    }
+
+    > header {
+      @include editor-window-header;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+  }
+
+  .project-launcher-icon {
+    @include editor-window-icon;
+  }
+
+  .project-launcher-body,
+  .project-workflow-body {
+    display: grid;
+    gap: 14px;
+  }
+
+  .project-launcher-section {
+    display: grid;
+    gap: 8px;
+
+    > h2 {
+      margin: 0;
+    }
+  }
+
+  .project-launcher-actions,
+  .project-workflow-dialog > footer {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+    gap: 8px;
+  }
+
+  .project-location-list {
+    display: grid;
+    gap: 6px;
+
+    .docker-item-list {
+      display: grid;
+      gap: 6px;
+    }
+
+    .docker-item {
+      @include editor-card;
+      align-items: center;
+      gap: 8px;
+
+      .docker-item-select {
+        display: grid;
+        min-width: 0;
+        text-align: left;
+      }
+
+      span {
+        color: var(--editor-muted);
+      }
+    }
+  }
+
+  .project-workflow-dialog {
+    width: min(720px, calc(100vw - 40px));
+
+    > header,
+    > footer {
+      @include editor-window-header;
+      padding: 12px 16px;
+    }
+
+    > header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    > .project-workflow-body {
+      max-height: min(62vh, 620px);
+      padding: 16px;
+      overflow: auto;
+    }
+
+    pre {
+      max-height: 280px;
+      overflow: auto;
+      white-space: pre-wrap;
+      user-select: text;
+    }
+
+    dl > div {
+      display: grid;
+      grid-template-columns: 150px 1fr;
+      gap: 12px;
+    }
+  }
+
+  .project-error-panel {
+    @include editor-card;
+    border-color: var(--editor-danger);
+
+    > div {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      color: var(--editor-danger);
+    }
+
+    code,
+    pre {
+      display: block;
+      margin: 8px 0;
+      overflow: auto;
+      user-select: text;
+      white-space: pre-wrap;
+    }
+  }
+
+  > .project-error-panel {
+    position: fixed;
+    z-index: 90;
+    top: calc(var(--editor-titlebar-height) + 10px);
+    right: 12px;
+    width: min(620px, calc(100vw - 24px));
+    max-height: min(52vh, 520px);
+    overflow: auto;
+  }
+
+  :is(
+    .new-project-dialog,
+    .game-package-dialog,
+    .editor-settings-dialog
+  ) > header {
+    @include editor-window-header;
+  }
+
+  :is(
+    .new-project-icon,
+    .game-package-icon,
+    .editor-settings-icon
+  ) {
+    @include editor-window-icon;
+  }
+
+  :is(
+    .new-project-dialog,
+    .game-package-dialog,
+    .editor-settings-dialog
+  ) > header > button {
+    @include button.base;
+
+    &:hover,
+    &:focus-visible {
+      @include button.hover;
+    }
+  }
+
+  :is(
+    .database-clipboard-actions button,
+    .database-no-results button,
+    .database-validation-report button
+  ) {
+    @include button.base;
+
+    &:hover:not(:disabled),
+    &:focus-visible:not(:disabled) {
+      @include button.hover;
+    }
+  }
+
+  :is(
+    .new-project-dialog > header > div > span,
+    .game-package-heading > div > span,
+    .editor-settings-dialog > header > div > span
+  ) {
+    color: var(--editor-accent-strong);
+  }
+
+  :is(
+    .new-project-summary,
+    .game-package-targets article,
+    .game-package-includes,
+    .game-package-readiness,
+    .game-package-preflight,
+    .editor-settings-card,
+    .animation-author-preview,
+    .animation-keyframe-list > article,
+    .effect-frame-strip,
+    .effect-timing-editors section
+  ) {
+    @include editor-card;
+  }
+
+  :is(
+    .database-validation-report,
+    .asset-context-notice,
+    .map-sprite-animation-preview,
+    .animation-preview-target
+  ) {
+    @include editor-card;
+  }
+
+  // The database's original layout lives in styles.css. Keep its geometry,
+  // but make its chrome and record surfaces follow the shared editor palette.
+  .database-window {
+    > header {
+      @include editor-window-header;
+    }
+
+    > footer {
+      color: var(--editor-muted);
+      background: var(--editor-deep);
+      border-color: var(--editor-edge);
+    }
+  }
+
+  .database-title > div {
+    @include editor-window-icon;
+  }
+
+  :is(.database-tabs, .database-list, .database-list-heading) {
+    background: var(--editor-deep);
+    border-color: var(--editor-edge);
+  }
+
+  .database-tabs button {
+    color: var(--editor-muted);
+
+    &:hover,
+    &:focus-visible {
+      color: var(--editor-text-bright);
+      background: var(--editor-hover);
+    }
+
+    &.active {
+      color: var(--editor-selection-color);
+      background: var(--editor-tab-active-background);
+      border-color: var(--editor-selection-border);
+      box-shadow: inset 0 2px var(--editor-accent);
+    }
+  }
+
+  .database-list-separator {
+    background: var(--editor-bg);
+
+    &::after {
+      background: var(--editor-edge);
+    }
+
+    &:hover,
+    &:focus-visible {
+      background: var(--editor-hover);
+      outline-color: var(--editor-accent);
+    }
+  }
+
+  .database-window-resize {
+    background: linear-gradient(
+      135deg,
+      transparent 45%,
+      var(--editor-edge-strong) 46% 54%,
+      transparent 55% 64%,
+      var(--editor-edge-strong) 65% 74%,
+      transparent 75%
+    );
+  }
+
+  .database-list-heading {
+    color: var(--editor-muted);
+
+    button {
+      color: var(--editor-accent);
+
+      &.danger {
+        color: var(--editor-danger);
+      }
+    }
+  }
+
+  .database-record-row {
+    &:hover {
+      background: var(--editor-list-row-hover-background);
+    }
+
+    &.active {
+      background: var(--editor-selection-background);
+      border-color: var(--editor-selection-border);
+    }
+  }
+
+  .database-record-select {
+    color: var(--editor-text);
+
+    &:hover,
+    &:focus-visible {
+      color: var(--editor-text-bright);
+      background: var(--editor-list-row-hover-background);
+    }
+  }
+
+  .database-record-row.active .database-record-select {
+    color: var(--editor-selection-color);
+    background: var(--editor-selection-background);
+    border-color: var(--editor-selection-border);
+  }
+
+  .database-inspector {
+    background: var(--editor-inspector-background);
+  }
+
+  .database-section-title {
+    color: var(--editor-accent);
+    border-color: var(--editor-edge);
+  }
+
+  :is(
+    .database-record-notice,
+    .database-record-confirmation,
+    .database-productivity-tools,
+    .database-check-field,
+    .movement-route-database-editor,
+    .combat-reference-list > div,
+    .equipment-permission-grid > section,
+    .equipment-definition-list article,
+    .database-check-row,
+    .enemy-drop-list > article,
+    .enemy-action-list > article,
+    .vehicle-terrain-grid label,
+    .objective-stage-card,
+    .actor-appearance-editors,
+    .experience-curve-preview,
+    .item-effect-list article,
+    .trait-editor,
+    .trait-list article,
+    .terrain-rule-grid article,
+    .world-state-columns > section,
+    .terms-editor-group,
+    .troop-battle-event-page,
+    .plugin-section,
+    .plugin-card
+  ) {
+    @include editor-card;
+  }
+
+  :is(
+    .database-record-notice,
+    .database-record-confirmation,
+    .database-check-field,
+    .database-check-row
+  ) {
+    color: var(--editor-text);
+  }
+
+  :is(
+    .game-over-settings,
+    .system-audio-grid,
+    .objective-stage-card
+  ) {
+    border-left-color: var(--editor-secondary);
+  }
+
+  :is(
+    .world-state-list > div,
+    .terms-editor-grid > label,
+    .troop-battle-event-conditions,
+    .plugin-diagnostics,
+    .stock-list label,
+    .actor-inventory-list label
+  ) {
+    @include editor-inset-frame;
+  }
+
+  .vehicle-terrain-grid label:has(input:checked) {
+    color: var(--editor-selection-color);
+    background: var(--editor-selection-background);
+    border-color: var(--editor-selection-border);
+  }
+
+  :is(.world-state-columns header strong, .terrain-rule-grid article strong) {
+    color: var(--editor-accent);
+  }
+
+  :is(.world-state-columns header span, .terms-editor-group > header span) {
+    color: var(--editor-muted);
+  }
+
+  .world-state-lifecycle-actions > .editor-button.editor-button--icon {
+    min-height: 29px;
+    padding: 0;
+  }
+
+  // Asset Library tabs, table cells, and tileset editing surfaces use the
+  // same panel/card/inset levels as other Database records. Tile pixels keep
+  // their authored --tile-color and --tile-accent values.
+  .asset-library-heading > div:first-child > span,
+  .tileset-detail-header > div > span {
+    color: var(--editor-muted);
+  }
+
+  .asset-library-tabs {
+    background: var(--editor-panel);
+    border-color: var(--editor-edge);
+    box-shadow: 0 7px 12px var(--editor-shadow);
+  }
+
+  .asset-library-tabs button {
+    color: var(--editor-muted);
+    background: var(--editor-deep);
+    border-color: var(--editor-edge);
+
+    &:hover,
+    &:focus-visible {
+      color: var(--editor-text-bright);
+      background: var(--editor-hover);
+    }
+
+    &[aria-selected='true'] {
+      color: var(--editor-selection-color);
+      background: var(--editor-tab-active-background);
+      border-color: var(--editor-selection-border);
+      box-shadow: inset 0 -2px var(--editor-accent);
+    }
+
+    span {
+      color: var(--editor-accent);
+      background: var(--editor-deep);
+      border-color: var(--editor-edge);
+    }
+  }
+
+  .asset-library-filters {
+    background: var(--editor-filter-background);
+    border-color: var(--editor-edge);
+  }
+
+  .asset-library-search {
+    color: var(--editor-muted);
+    background: var(--editor-deep);
+    border-color: var(--editor-edge);
+
+    &:focus-within {
+      border-color: var(--editor-accent);
+      box-shadow: 0 0 0 1px var(--editor-accent);
+    }
+  }
+
+  .asset-release-diagnostics {
+    background: var(--editor-panel);
+    border-color: var(--editor-edge);
+
+    > header {
+      background: var(--editor-panel-title-background);
+      border-color: var(--editor-edge);
+
+      > div {
+        color: var(--editor-text-bright);
+      }
+    }
+  }
+
+  .asset-diagnostic-summary {
+    border-color: var(--editor-edge);
+
+    span {
+      color: var(--editor-muted);
+      border-color: var(--editor-edge);
+    }
+
+    strong {
+      color: var(--editor-text-bright);
+    }
+  }
+
+  .asset-diagnostic-issues {
+    background: var(--editor-edge);
+
+    li {
+      color: var(--editor-text);
+      background: var(--editor-panel);
+    }
+  }
+
+  :is(
+    .asset-import-card,
+    .image-asset-library,
+    .audio-asset-library,
+    .asset-library-workspace,
+    .asset-library-loading
+  ) {
+    @include editor-card;
+  }
+
+  .asset-import-title {
+    color: var(--editor-accent);
+
+    strong {
+      color: var(--editor-text-bright);
+    }
+
+    span {
+      color: var(--editor-muted);
+    }
+  }
+
+  .asset-import-grid input[type='file']::file-selector-button {
+    color: var(--editor-text);
+    background: var(--editor-raised);
+    border-color: var(--editor-edge);
+  }
+
+  :is(.image-asset-library, .audio-asset-library) > header {
+    color: var(--editor-muted);
+    background: var(--editor-panel-title-background);
+    border-color: var(--editor-edge);
+
+    strong {
+      color: var(--editor-text-bright);
+    }
+  }
+
+  :is(.image-asset-list article, .audio-asset-library article) {
+    border-color: var(--editor-edge);
+  }
+
+  :is(.image-asset-list strong, .audio-asset-library article strong) {
+    color: var(--editor-text-bright);
+  }
+
+  :is(.image-asset-list img, .tileset-thumb) {
+    background: var(--editor-deep);
+    border-color: var(--editor-edge);
+  }
+
+  :is(.asset-library-empty, .asset-library-loading span) {
+    color: var(--editor-muted);
+  }
+
+  .tileset-browser {
+    color: var(--editor-text);
+    background: var(--editor-deep);
+    border-color: var(--editor-edge);
+  }
+
+  .tileset-thumb {
+    color: var(--editor-muted);
+  }
+
+  .tileset-browser-row {
+    color: var(--editor-text);
+
+    &:hover {
+      background: var(--editor-list-row-hover-background);
+    }
+
+    &.active {
+      color: var(--editor-selection-color);
+      background: var(--editor-selection-background);
+      border-color: var(--editor-selection-border);
+    }
+  }
+
+  :is(
+    .asset-source-strip,
+    .tileset-lifecycle,
+    .asset-tile-grid,
+    .tile-metadata-editor,
+    .autotile-mask-editor,
+    .tile-semantics-editor,
+    .tile-animation-editor
+  ) {
+    @include editor-inset-frame;
+  }
+
+  .tileset-remove-confirmation {
+    color: var(--editor-text);
+    background: color-mix(in srgb, var(--editor-danger) 10%, var(--editor-panel));
+    border-color: var(--editor-danger);
+  }
+
+  .asset-tile-grid .asset-tile-select {
+    border-color: var(--editor-edge);
+  }
+
+  .asset-tile-grid-item:is(:hover, .selected) .asset-tile-select {
+    border-color: var(--editor-accent);
+  }
+
+  .asset-tile-grid-item.selected .asset-tile-select {
+    box-shadow: 0 0 0 2px var(--editor-accent);
+  }
+
+  :is(.autotile-mask-editor, .tile-semantics-editor) label {
+    background: var(--editor-panel);
+    border-color: var(--editor-edge);
+  }
+
+  :is(.tile-animation-frames span, .tile-frame-readout) {
+    color: var(--editor-muted);
+  }
+
+  .new-project-summary {
+    border-left-color: var(--editor-secondary);
+
+    span {
+      color: var(--editor-muted);
+    }
+  }
+
+  .new-project-dialog {
+    width: min(780px, 94vw);
+    max-height: min(760px, 92vh);
+  }
+
+  .new-project-template-row {
+    grid-column: 1 / -1;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: end;
+    gap: 10px;
+
+    > label {
+      display: grid;
+      gap: 5px;
+      min-width: 0;
+    }
+
+    > button {
+      min-height: 34px;
+    }
+  }
+
+  .new-project-template-description {
+    grid-column: 1 / -1;
+    margin: -5px 0 2px;
+  }
+
+  .new-project-error {
+    grid-column: 1 / -1;
+  }
+
+  .hd2d-map-preview {
+    @include editor-window;
+
+    > header,
+    > footer {
+      @include editor-window-header;
+    }
+
+    :is(
+      .hd2d-preview-actions,
+      .hd2d-construction-toolbar
+    ) button {
+      @include button.base;
+
+      &:hover,
+      &:focus-visible,
+      &.active {
+        @include button.hover;
+      }
+
+      &.edit-plan {
+        @include editor-accent-button;
+      }
+    }
+
+    .hd2d-construction-toolbar {
+      color: var(--editor-text);
+      background: var(--editor-panel);
+      border-color: var(--editor-edge);
+    }
+
+    .hd2d-gesture-help {
+      color: var(--editor-muted);
+      background: color-mix(in srgb, var(--editor-deep) 86%, transparent);
+      border: 1px solid var(--editor-edge);
+      backdrop-filter: blur(4px);
+    }
+
+    .hd2d-extrusion-status.deformation {
+      color: color-mix(in srgb, #50f5ef 82%, white);
+      background: color-mix(
+        in srgb,
+        #0b4f55 68%,
+        var(--editor-deep)
+      );
+      border-color: color-mix(in srgb, #50f5ef 84%, white);
+    }
+
+    .hd2d-operation-report {
+      background: color-mix(in srgb, var(--editor-raised) 72%, transparent);
+    }
+
+    .hd2d-operation-report .warning {
+      color: color-mix(in srgb, var(--editor-warning) 72%, white);
+      background: color-mix(
+        in srgb,
+        var(--editor-warning) 12%,
+        var(--editor-deep)
+      );
+    }
+  }
+
+  .hd2d-dock-content {
+    color: var(--editor-text);
+    background: var(--editor-panel);
+
+    section {
+      border-color: var(--editor-edge);
+    }
+
+    h3 {
+      color: var(--editor-heading);
+    }
+
+    :is(p, small, code) {
+      color: var(--editor-muted);
+    }
+
+    button:not(.editor-button--unstyled) {
+      @include button.base;
+
+      &:hover,
+      &:focus-visible,
+      &.active {
+        @include button.hover;
+      }
+    }
+  }
+
+  .docker-list-layout {
+    color: var(--editor-text);
+    background: var(--editor-panel);
+  }
+
+  .docker-list-header {
+    color: var(--editor-text);
+    background: var(--editor-raised);
+    border-color: var(--editor-edge);
+  }
+
+  .docker-item-list {
+    background: var(--editor-panel);
+  }
+
+  .editor-list-row {
+    @include editor-list-row;
+  }
+
+  .editor-list-row--intrinsic-height {
+    height: auto;
+    min-height: var(--editor-list-row-height);
+  }
+
+  .editor-list-row:not(.editor-list-row--intrinsic-height) {
+    > :is(.editor-button, .item-reorder-grip, .layer-order) {
+      height: calc(var(--editor-list-row-height) - 2px);
+      min-height: calc(var(--editor-list-row-height) - 2px);
+    }
+
+    > :is(
+      .map-select,
+      .docker-item-select,
+      .polygon-list-select,
+      .polygon-list-rename
+    ) {
+      padding-block: 1px;
+      overflow: hidden;
+    }
+
+    > .layer-order > button {
+      height: 100%;
+      min-height: 0;
+    }
+
+    > .polygon-list-rename > .editor-control {
+      height: calc(var(--editor-list-row-height) - 4px);
+      min-height: calc(var(--editor-list-row-height) - 4px);
+      padding-block: 1px;
+    }
+  }
+
+  :is(
+    .map-select,
+    .docker-item-select,
+    .polygon-list-select,
+    .layer-select
+  ) {
+    color: var(--editor-text);
+    width: 100%;
+    justify-content: stretch;
+    justify-items: start;
+    font-size: var(--editor-font-size-list);
+    text-align: left;
+
+    &:focus-visible {
+      outline: 2px solid var(--editor-accent-strong);
+      outline-offset: -2px;
+    }
+  }
+
+  .editor-list-title {
+    display: block;
+    justify-self: stretch;
+    width: 100%;
+    min-width: 0;
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .docker-list-footer {
+    color: var(--editor-text);
+    background: var(--editor-deep);
+    border-color: var(--editor-edge);
+  }
+
+  .hd2d-materials-dock {
+    grid-template-rows: auto minmax(32px, 1fr) minmax(0, auto);
+    align-content: stretch;
+    height: 100%;
+    min-height: 0;
+    overflow: hidden;
+
+    .hd2d-materials-heading {
+      flex: 0 0 auto;
+      min-width: 0;
+    }
+
+    .hd2d-face-material-list {
+      min-height: 0;
+      max-height: none;
+      overflow-x: hidden;
+      overflow-y: auto;
+    }
+
+    .hd2d-material-properties {
+      grid-template-columns: minmax(0, 1fr);
+      align-items: center;
+      flex: 0 0 auto;
+      min-width: 0;
+      border-top: 1px solid var(--editor-edge);
+      border-bottom: 0;
+    }
+  }
+
+  .hd2d-face-material-list {
+    > div {
+      grid-template-columns: minmax(0, 1fr);
+    }
+
+    .hd2d-material-name {
+      justify-self: start;
+      overflow: hidden;
+      font-weight: 400;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .hd2d-material-face-count {
+      justify-self: end;
+      margin: 0;
+      color: var(--editor-muted);
+      font-size: 8px;
+      font-weight: 400;
+      text-align: right;
+      white-space: nowrap;
+    }
+  }
+
+  .hd2d-material-icon {
+    color: var(--editor-accent-strong);
+    filter: drop-shadow(0 0 2px color-mix(in srgb, currentColor 40%, transparent));
+  }
+
+  .hd2d-material-selection {
+    display: grid;
+    grid-template-columns: 17px minmax(0, 1fr);
+    align-items: center;
+    gap: 4px;
+    min-width: 0;
+    color: var(--editor-text);
+
+    > span {
+      overflow: hidden;
+      font-size: 9px;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+  }
+
+  .hd2d-material-actions {
+    width: 100%;
+    flex-wrap: nowrap;
+
+    > button {
+      flex: 1 1 0;
+      width: auto;
+      min-width: 0;
+      min-height: 26px;
+      height: 26px;
+      padding: 0;
+    }
+  }
+
+  .hd2d-material-dialog {
+    grid-template-rows: auto minmax(0, 1fr) auto;
+    gap: 0;
+    width: min(820px, calc(100vw - 40px));
+    max-height: calc(
+      100dvh - var(--editor-titlebar-height, 58px) - 32px
+    );
+    padding: 0;
+    overflow: hidden;
+
+    .hd2d-material-dialog-header {
+      @include editor-window-header;
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 12px;
+      padding: 12px 14px;
+      border-bottom: 1px solid var(--editor-edge);
+
+      :is(h2, p) {
+        margin: 0;
+      }
+    }
+
+    .hd2d-material-dialog-body {
+      display: grid;
+      grid-template-columns: minmax(0, 1.35fr) minmax(240px, 0.8fr);
+      min-height: 0;
+      overflow: auto;
+
+      > section {
+        display: grid;
+        align-content: start;
+        gap: 7px;
+        padding: 14px;
+      }
+
+      > section + section {
+        border-left: 1px solid var(--editor-edge);
+      }
+    }
+
+    .hd2d-material-dialog-footer {
+      display: flex;
+      justify-content: flex-end;
+      padding: 9px 14px;
+      border-top: 1px solid var(--editor-edge);
+    }
+  }
+
+  .new-project-warning {
+    color: color-mix(in srgb, var(--editor-warning) 60%, white);
+    background: color-mix(
+      in srgb,
+      var(--editor-warning) 14%,
+      var(--editor-deep)
+    );
+    border-color: var(--editor-warning);
+  }
+
+  :is(
+    .new-project-dialog,
+    .game-package-dialog,
+    .editor-settings-dialog
+  ) > footer {
+    color: var(--editor-muted);
+    background: var(--editor-deep);
+    border-color: var(--editor-edge);
+  }
+
+  :is(
+    .new-project-dialog,
+    .game-package-dialog,
+    .editor-settings-dialog
+  ) > footer button,
+  .editor-settings-card > button,
+  .editor-settings-reset-grid button {
+    @include button.base;
+
+    &:hover,
+    &:focus-visible {
+      @include button.hover;
+    }
+  }
+
+  :is(
+    .new-project-dialog > footer button.create,
+    .game-package-dialog > footer .package-download,
+    .editor-settings-dialog > footer .editor-button--primary
+  ) {
+    @include editor-accent-button;
+  }
+
+  .game-package-targets {
+    article > svg:first-child {
+      color: var(--editor-accent-strong);
+    }
+
+    article > svg:last-child {
+      color: var(--editor-positive);
+    }
+
+    span {
+      color: var(--editor-muted);
+    }
+  }
+
+  .game-package-summary {
+    background: var(--editor-edge);
+    border-color: var(--editor-edge);
+
+    > div {
+      background: var(--editor-deep);
+    }
+
+    span {
+      color: var(--editor-subtle);
+    }
+
+    strong {
+      color: var(--editor-text);
+    }
+  }
+
+  .game-package-includes {
+    background: color-mix(
+      in srgb,
+      var(--editor-secondary) 12%,
+      var(--editor-raised)
+    );
+    border-color: var(--editor-secondary);
+
+    span {
+      color: var(--editor-muted);
+    }
+  }
+
+  .game-package-warning {
+    color: color-mix(in srgb, var(--editor-warning) 62%, white);
+    background: color-mix(
+      in srgb,
+      var(--editor-warning) 12%,
+      var(--editor-deep)
+    );
+    border-color: var(--editor-warning);
+  }
+
+  .game-package-readiness.ready,
+  .game-package-preflight.ready {
+    color: color-mix(in srgb, var(--editor-positive) 62%, white);
+    border-color: var(--editor-positive);
+  }
+
+  .game-package-preflight.blocked,
+  .game-package-preflight li[data-severity='error'] {
+    color: color-mix(in srgb, var(--editor-danger) 62%, white);
+    border-color: var(--editor-danger);
+  }
+
+  .game-package-preflight li[data-severity='warning'] {
+    color: color-mix(in srgb, var(--editor-warning) 62%, white);
+  }
+
+  .editor-context-menu {
+    @include editor-card(var(--editor-menu-border, var(--editor-accent)), var(--editor-deep));
+    box-shadow: var(
+      --editor-menu-shadow,
+      0 18px 46px var(--editor-shadow), 0 0 0 1px var(--editor-bg)
+    );
+  }
+
+  .editor-context-menu-swatch {
+    width: 10px;
+    height: 10px;
+    flex: 0 0 10px;
+    border: 1px solid color-mix(in srgb, currentColor 45%, transparent);
+    border-radius: 2px;
+    box-shadow: 0 0 0 1px color-mix(in srgb, black 28%, transparent);
+  }
+
+  .editor-context-menu button:has(.editor-context-menu-swatch) {
+    grid-template-columns: 16px 10px minmax(0, 1fr) auto;
+  }
+
+  .editor-context-menu button:has(.editor-context-menu-swatch) small {
+    grid-column: 3;
+  }
+
+  :is(
+    .map-canvas-frame,
+    .image-frame-editor,
+    .map-sprite-animation-settings,
+    .image-frame-preview,
+    .map-sprite-animation-preview,
+    .animation-preview-stage,
+    .script-editor
+  ) {
+    @include editor-inset-frame;
+  }
+
+  :is(
+    .actor-appearance-editors > h3,
+    .image-frame-editor legend,
+    .map-sprite-animation-settings .map-sprite-animation-toggle,
+    .animation-keyframe-list > article > header strong
+  ) {
+    color: var(--editor-accent-strong);
+  }
+
+  :is(
+    .actor-appearance-editors > p,
+    .image-frame-editor label,
+    .map-sprite-animation-settings label,
+    .map-sprite-animation-settings p,
+    .map-sprite-animation-preview,
+    .animation-author-preview > span,
+    .animation-keyframe-list > article > header span,
+    .formula-field small,
+    .formula-field output
+  ) {
+    color: var(--editor-muted);
+  }
+
+  .animation-preview-target {
+    color: var(--editor-text);
+    border-color: var(--editor-accent);
+    box-shadow: 0 10px 22px var(--editor-shadow);
+  }
+
+  .animation-keyframe-list > article {
+    border-left-color: var(--editor-accent);
+
+    > header button {
+      @include button.base;
+
+      &:hover,
+      &:focus-visible {
+        @include button.hover;
+      }
+    }
+  }
+
+  .animation-author-preview > button {
+    @include editor-accent-button;
+  }
+
+  .formula-field output.formula-valid {
+    color: var(--editor-positive);
+  }
+
+  .formula-field output.formula-invalid {
+    color: var(--editor-danger);
+  }
+
+  .database-validation-report.valid {
+    color: color-mix(in srgb, var(--editor-positive) 62%, white);
+    border-color: var(--editor-positive);
+  }
+
+  .database-validation-report.invalid {
+    color: color-mix(in srgb, var(--editor-danger) 62%, white);
+    border-color: var(--editor-danger);
+  }
+
+  .database-validation-report code {
+    color: var(--editor-accent-strong);
+  }
+
+  .image-frame-preview {
+    background-image:
+      linear-gradient(
+        45deg,
+        color-mix(in srgb, var(--editor-raised) 75%, transparent) 25%,
+        transparent 25%
+      ),
+      linear-gradient(
+        -45deg,
+        color-mix(in srgb, var(--editor-raised) 75%, transparent) 25%,
+        transparent 25%
+      ),
+      linear-gradient(
+        45deg,
+        transparent 75%,
+        color-mix(in srgb, var(--editor-raised) 75%, transparent) 75%
+      ),
+      linear-gradient(
+        -45deg,
+        transparent 75%,
+        color-mix(in srgb, var(--editor-raised) 75%, transparent) 75%
+      );
+  }
+
+  .map-sprite-presentation-field,
+  .map-sprite-preview-selectors {
+    display: grid;
+    gap: 4px;
+    min-width: 0;
+  }
+
+  .map-sprite-presentation-field {
+    margin-bottom: 6px;
+  }
+
+  .map-sprite-preview-selectors {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .map-sprite-animation-preview {
+    grid-template-columns: 128px minmax(0, 1fr);
+
+    > span:last-child {
+      display: grid;
+      gap: 4px;
+    }
+
+    small {
+      color: var(--editor-muted);
+    }
+  }
+
+  .map-sprite-preview-stage {
+    position: relative;
+    min-width: 0;
+    width: 128px;
+    height: 128px;
+    overflow: hidden;
+    background:
+      linear-gradient(
+        to bottom,
+        transparent 81.5%,
+        color-mix(in srgb, var(--editor-accent) 28%, transparent) 82%,
+        transparent 82.5%
+      ),
+      var(--editor-deep);
+    border: 1px solid var(--editor-edge);
+    border-radius: 3px;
+  }
+
+  .map-sprite-animation-settings > .map-sprite-preview-stage {
+    width: min(100%, 180px);
+    margin-inline: auto;
+  }
+
+  .map-sprite-preview-placed-frame {
+    position: absolute;
+    display: block;
+    line-height: 0;
+
+    .project-image-frame {
+      width: 100%;
+      height: 100%;
+      max-height: none;
+    }
+  }
+
+  .map-sprite-preview-foot {
+    position: absolute;
+    left: 50%;
+    top: 82%;
+    width: 9px;
+    height: 9px;
+    border: 1px solid var(--editor-accent-strong);
+    border-radius: 50%;
+    transform: translate(-50%, -50%);
+    box-shadow: 0 0 0 2px var(--editor-deep);
+  }
+
+  .map-sprite-preview-metrics {
+    overflow-wrap: anywhere;
+  }
+
+  .generated-sprite-import-guidance {
+    grid-column: 1 / -1;
+    margin: 0;
+  }
+
+  .script-editor {
+    color: var(--editor-text-bright);
+    background-image: linear-gradient(
+      90deg,
+      var(--editor-deep) 42px,
+      var(--editor-panel) 42px
+    );
+  }
+}
+
+.editor-shell[data-editor-density='compact'] {
+  --editor-titlebar-height: 52px;
+}
+
+.editor-settings-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 95;
+  display: grid;
+  place-items: center;
+  padding: 30px;
+}
+
+.editor-settings-dialog {
+  display: grid;
+  grid-template-rows: 64px minmax(0, 1fr) 54px;
+  width: min(720px, 94vw);
+  max-height: min(680px, 92vh);
+  overflow: hidden;
+  border: 1px solid;
+  border-radius: 9px;
+
+  > header {
+    display: grid;
+    grid-template-columns: 40px minmax(0, 1fr) 32px;
+    align-items: center;
+    gap: 11px;
+    padding: 0 18px;
+    border-bottom: 1px solid;
+
+    > div > span {
+      font-size: 8px;
+      font-weight: 800;
+      letter-spacing: 0.14em;
+      text-transform: uppercase;
+    }
+
+    h2 {
+      margin: 2px 0 0;
+      font-size: 21px;
+      font-weight: 650;
+    }
+
+    > button {
+      display: grid;
+      width: 32px;
+      height: 32px;
+      padding: 0;
+      place-items: center;
+      border: 1px solid;
+      border-radius: 4px;
+      cursor: pointer;
+    }
+  }
+
+  > footer {
+    display: flex;
+    align-items: center;
+    gap: 9px;
+    padding: 0 16px;
+    border-top: 1px solid;
+
+    > span {
+      flex: 1;
+      min-width: 0;
+      overflow: hidden;
+      font-size: 9px;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    button {
+      min-width: 84px;
+      min-height: 31px;
+      padding: 0 13px;
+      font-weight: 800;
+      border: 1px solid;
+      border-radius: 4px;
+      cursor: pointer;
+    }
+  }
+}
+
+.editor-settings-icon {
+  display: grid;
+  width: 38px;
+  height: 38px;
+  place-items: center;
+  border: 1px solid;
+  border-radius: 7px;
+}
+
+.editor-settings-body {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  align-content: start;
+  gap: 11px;
+  padding: 17px;
+  overflow: auto;
+}
+
+.editor-settings-card {
+  display: grid;
+  align-content: start;
+  gap: 11px;
+  padding: 12px;
+  border: 1px solid;
+  border-radius: 6px;
+
+  > label {
+    display: grid;
+    gap: 5px;
+    font-size: 9px;
+    font-weight: 800;
+    letter-spacing: 0.07em;
+    text-transform: uppercase;
+  }
+
+  select {
+    width: 100%;
+    min-height: 32px;
+    padding: 0 9px;
+    border: 1px solid;
+    border-radius: 4px;
+  }
+
+  > button {
+    width: 100%;
+  }
+}
+
+.editor-settings-card-wide {
+  grid-column: 1 / -1;
+}
+
+.editor-settings-card-heading {
+  display: flex;
+  align-items: flex-start;
+  gap: 9px;
+
+  > svg {
+    flex: 0 0 auto;
+    margin-top: 1px;
+    color: var(--editor-accent-strong);
+  }
+
+  h3,
+  p {
+    margin: 0;
+  }
+
+  h3 {
+    font-size: 12px;
+  }
+
+  p {
+    margin-top: 3px;
+    color: var(--editor-muted);
+    font-size: 9px;
+    line-height: 1.4;
+  }
+}
+
+.editor-settings-readout {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 8px 9px;
+  background: var(--editor-deep);
+  border: 1px solid var(--editor-edge);
+  border-radius: 4px;
+  font-size: 9px;
+}
+
+.editor-settings-reset-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 7px;
+
+}
+
+.editor-design-system-specimen {
+  min-width: 0;
+
+  > summary {
+    padding: 7px 9px;
+    cursor: pointer;
+    user-select: none;
+  }
+}
+
+.editor-design-system-specimen-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--editor-field-section-gap);
+  padding-top: var(--editor-field-section-gap);
+
+  > section,
+  > fieldset {
+    display: grid;
+    align-content: start;
+    gap: var(--editor-field-gap);
+  }
+
+  > section:first-child code {
+    display: block;
+    margin-top: 2px;
+  }
+}
+
+.editor-design-system-field-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--editor-field-section-gap);
+}
+
+.editor-design-system-wide {
+  grid-column: 1 / -1;
+}
+
+.editor-design-system-specimen .editor-field-group {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  display: grid;
+}
+
+.editor-design-system-actions {
+  display: flex;
+  align-items: flex-start;
+  flex-wrap: wrap;
+  gap: 5px;
+}
+
+@media (max-width: 760px) {
+  .editor-settings-body {
+    grid-template-columns: 1fr;
+  }
+
+  .editor-settings-card-wide {
+    grid-column: auto;
+  }
+
+  .editor-shell .hd2d-material-dialog .hd2d-material-dialog-body {
+    grid-template-columns: 1fr;
+
+    > section + section {
+      border-top: 1px solid var(--editor-edge);
+      border-left: 0;
+    }
+  }
+}
+
+// Keep this after the individual modal layouts so their `inset: 0`
+// declarations cannot cover or blur the frameless editor titlebar.
+.editor-shell :is(
+  .new-project-overlay,
+  .game-package-overlay,
+  .editor-settings-overlay,
+  .editor-dialog-backdrop,
+  .database-overlay,
+  .event-graph-backdrop,
+  .map-coordinate-picker-backdrop,
+  .effect-modal-backdrop,
+  .effect-import-dialog-backdrop
+) {
+  @include editor-titlebar-safe-backdrop;
+}
+
+// The file-session controls add several first-class actions to the header.
+// Collapse their text before shrinking the editable project title or clipping
+// the play/window controls. The saved/dirty label remains visible at the
+// supported desktop widths because it communicates file state, not decoration.
+@media (max-width: 1600px) {
+  .editor-shell .app-header .project-title > span {
+    display: inline;
+    flex: 0 0 auto;
+    margin-right: 6px;
+    white-space: nowrap;
+  }
+
+  .editor-shell .app-header:not([data-native-window='true']) {
+    gap: 7px;
+    padding-inline: 10px;
+
+    .brand {
+      min-width: 185px;
+    }
+
+    .file-actions {
+      gap: 1px;
+
+      .file-action-label {
+        display: none;
+      }
+
+      > button {
+        width: 30px;
+        min-width: 30px;
+        padding-inline: 0;
+      }
+    }
+
+    .project-title {
+      flex: 0 1 250px;
+
+      input {
+        width: clamp(118px, 12vw, 180px);
+      }
+    }
+
+    .play-button {
+      padding-inline: 10px;
+    }
+  }
+}
+
+@media (max-width: 1279px) {
+  // Keep the added assistant action reachable without focus scrolling the
+  // entire hidden-overflow root and clipping the left dock at desktop minimum.
+  .editor-shell .app-header {
+    .play-button-label,
+    .continue-button-label {
+      display: none;
+    }
+
+    .play-button,
+    .continue-button {
+      width: 32px;
+      min-width: 32px;
+      padding-inline: 0;
+      justify-content: center;
+    }
+  }
+
+  .editor-shell .app-header[data-native-window='true'] {
+    gap: 4px;
+    padding-left: 8px;
+
+    .file-actions {
+      gap: 0;
+    }
+
+    .project-title {
+      flex: 0 1 205px;
+
+      input {
+        width: clamp(88px, 9vw, 116px);
+      }
+
+      > span {
+        margin-right: 3px;
+        font-size: 9px;
+      }
+    }
+
+    .native-window-controls button {
+      width: 40px;
+      min-width: 40px;
+    }
+  }
+}
+
+// The database backdrop already begins below the frameless titlebar and
+// establishes a fixed-position containing block through backdrop-filter.
+// Nested graph workspaces therefore use that safe area directly instead of
+// applying the titlebar offset a second time.
+.editor-shell .database-overlay .event-graph-backdrop {
+  top: 0;
+}
+
+.editor-shell .event-graph-dialog {
+  height: min(
+    96vh,
+    calc(
+      100dvh - var(--editor-titlebar-height, 58px) - 3vh
+    )
+  );
+  max-height: calc(
+    100dvh - var(--editor-titlebar-height, 58px) - 3vh
+  );
+}
+
+.editor-shell .event-graph-recovery-details {
+  @include editor-inset-frame;
+}
+
+.editor-shell {
+  .movement-polygon-points,
+  .image-spatial-simple-list,
+  .event-spatial-regions {
+    display: grid;
+    gap: 8px;
+  }
+
+  .movement-polygon-point {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(72px, 1fr)) auto;
+    gap: 6px;
+    align-items: end;
+  }
+
+  .movement-inline-geometry {
+    display: grid;
+    grid-column: 1 / -1;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 7px;
+    min-width: 0;
+  }
+
+  .movement-inline-geometry > :first-child,
+  .movement-inline-geometry > .movement-polygon-points,
+  .movement-inline-geometry > .spatial-geometry-canvas-widget,
+  .movement-inline-geometry > .spatial-geometry-precision {
+    grid-column: 1 / -1;
+  }
+
+  .spatial-geometry-canvas-widget {
+    display: grid;
+    grid-column: 1 / -1;
+    gap: 6px;
+    min-width: 0;
+  }
+
+  .spatial-geometry-toolbar,
+  .spatial-geometry-vertex-actions {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 5px;
+  }
+
+  .movement-shape-editor .spatial-geometry-grid-toggle {
+    display: inline-flex;
+    grid-template-columns: auto auto;
+    align-items: center;
+    width: auto;
+    margin-left: 2px;
+  }
+
+  .spatial-geometry-grid-toggle .editor-control {
+    width: auto;
+    min-height: 0;
+  }
+
+  .spatial-geometry-canvas {
+    display: block;
+    width: 100%;
+    aspect-ratio: 16 / 10;
+    max-height: 360px;
+    color: var(--editor-muted);
+    background: var(--editor-panel);
+    border: 1px solid var(--editor-edge);
+    border-radius: var(--editor-radius-control, 4px);
+    touch-action: none;
+  }
+
+  .spatial-geometry-grid-line {
+    fill: none;
+    stroke: color-mix(in srgb, var(--editor-edge) 68%, transparent);
+    stroke-width: 1;
+    vector-effect: non-scaling-stroke;
+  }
+
+  .spatial-geometry-context-image {
+    opacity: 0.42;
+  }
+
+  .spatial-geometry-shape {
+    fill: color-mix(in srgb, var(--editor-accent) 24%, transparent);
+    stroke: var(--editor-accent);
+    stroke-width: 2;
+    cursor: move;
+    vector-effect: non-scaling-stroke;
+  }
+
+  .spatial-geometry-canvas-widget[data-readonly='true'] .spatial-geometry-shape {
+    cursor: default;
+  }
+
+  .spatial-geometry-canvas.invalid .spatial-geometry-shape {
+    fill: color-mix(in srgb, var(--editor-danger) 20%, transparent);
+    stroke: var(--editor-danger);
+  }
+
+  .spatial-geometry-origin {
+    fill: none;
+    stroke: var(--editor-text-bright);
+    stroke-width: 1;
+    vector-effect: non-scaling-stroke;
+  }
+
+  .spatial-geometry-origin-label,
+  .spatial-geometry-unit-label {
+    fill: var(--editor-muted);
+    font-size: 28px;
+    pointer-events: none;
+  }
+
+  .spatial-geometry-handle {
+    fill: var(--editor-deep);
+    stroke: var(--editor-accent);
+    stroke-width: 2;
+    cursor: move;
+    vector-effect: non-scaling-stroke;
+  }
+
+  .spatial-geometry-handle.selected,
+  .spatial-geometry-center-handle {
+    fill: var(--editor-accent);
+    stroke: var(--editor-text-bright);
+  }
+
+  .spatial-geometry-help {
+    margin: 0;
+  }
+
+  .spatial-geometry-vertex-actions {
+    justify-content: flex-end;
+    padding-top: 6px;
+    border-top: 1px solid var(--editor-edge);
+  }
+
+  .spatial-geometry-vertex-actions > strong {
+    margin-right: auto;
+  }
+
+  .spatial-geometry-precision {
+    min-width: 0;
+    padding: 6px 7px;
+    background: color-mix(in srgb, var(--editor-panel) 72%, transparent);
+    border: 1px solid var(--editor-edge);
+    border-radius: var(--editor-radius-control, 4px);
+  }
+
+  .spatial-geometry-precision > summary {
+    color: var(--editor-text);
+    cursor: pointer;
+  }
+
+  .spatial-geometry-precision-fields {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 7px;
+    padding-top: 7px;
+  }
+
+  .spatial-geometry-precision-fields > .movement-polygon-points {
+    grid-column: 1 / -1;
+  }
+
+  .event-shape-binding-editor {
+    grid-template-columns: minmax(0, 1fr);
+    align-items: start;
+  }
+
+  .event-shape-binding-editor > .coordinate-row {
+    grid-column: 1 / -1;
+  }
+
+  .event-shape-binding-editor,
+  .event-spatial-role,
+  .event-spatial-region,
+  .event-origin-editor {
+    min-width: 0;
+  }
+
+  .event-spatial-role + .event-spatial-role,
+  .event-spatial-regions {
+    margin-top: 10px;
+  }
+
+  .event-spatial-region > .event-shape-binding-editor {
+    margin-top: 8px;
+  }
+
+  .event-spatial-region > .editor-field {
+    display: grid;
+    gap: 4px;
+    width: 100%;
+    margin-top: 8px;
+  }
+
+  .map-overlay-toggles {
+    flex: 0 0 auto;
+    flex-wrap: nowrap;
+  }
+
+  .map-toolbar-primary,
+  .map-toolbar-secondary,
+  .event-shape-controls {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    min-width: 0;
+  }
+
+  .map-toolbar-primary {
+    flex: 1 1 auto;
+    flex-wrap: wrap;
+  }
+
+  .map-toolbar:is([data-edge='top'], [data-edge='bottom']) .toolstrip-content {
+    flex-wrap: wrap;
+    overflow: visible;
+  }
+
+  .map-toolbar:is([data-edge='top'], [data-edge='bottom']) .map-toolbar-primary {
+    flex-basis: 100%;
+  }
+
+  .map-toolbar-secondary {
+    flex: 0 1 auto;
+    flex-wrap: wrap;
+  }
+
+  .event-shape-controls {
+    flex: 1 1 100%;
+    padding-top: 3px;
+    border-top: 1px solid var(--editor-edge);
+  }
+
+  .event-shape-controls > .editor-field-label:not(:has(> .editor-control--choice)) {
+    display: grid;
+    grid-template-columns: auto minmax(92px, auto);
+    align-items: center;
+    gap: 4px;
+  }
+
+  .event-shape-role-control {
+    display: grid;
+    grid-template-columns: 12px minmax(92px, auto);
+    align-items: center;
+    gap: 5px;
+  }
+
+  .event-shape-role-swatch {
+    width: 10px;
+    height: 10px;
+    border: 1px solid color-mix(in srgb, currentColor 45%, transparent);
+    border-radius: 2px;
+    box-shadow: 0 0 0 1px color-mix(in srgb, black 28%, transparent);
+  }
+
+  .event-shape-controls .editor-button,
+  .event-shape-controls .editor-control {
+    min-height: 28px;
+  }
+
+  .event-shape-controls kbd {
+    margin-left: 2px;
+  }
+
+  .map-toolbar:is([data-edge='top'], [data-edge='bottom'])
+    .map-toolbar-primary--event {
+    flex-basis: auto;
+    gap: 3px;
+  }
+
+  .map-toolbar:is([data-edge='top'], [data-edge='bottom'])
+    .map-toolbar-primary--event .toolbar-map-name {
+    display: none;
+  }
+
+  .map-toolbar:is([data-edge='top'], [data-edge='bottom'])
+    .map-toolbar-primary--event + .event-shape-controls {
+    flex: 1 1 620px;
+  }
+
+  .map-toolbar-explanation {
+    flex: 1 1 100%;
+    margin: 0;
+    color: var(--editor-warning);
+  }
+
+  .event-shape-visibility {
+    position: relative;
+  }
+
+  .event-shape-visibility > summary {
+    list-style: none;
+  }
+
+  .event-shape-visibility > summary::-webkit-details-marker {
+    display: none;
+  }
+
+  .event-shape-visibility[open] > div {
+    position: absolute;
+    z-index: 20;
+    top: calc(100% + 4px);
+    right: 0;
+    display: grid;
+    gap: 5px;
+    min-width: 132px;
+    padding: 8px;
+    background: var(--editor-panel);
+    border: 1px solid var(--editor-edge);
+    border-radius: 5px;
+    box-shadow: var(--shadow);
+  }
+
+  .event-shape-visibility label {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    white-space: nowrap;
+  }
+
+  .map-shortcuts-button {
+    flex: 0 0 auto;
+    color: var(--editor-accent-strong);
+  }
+
+  .map-shortcuts-dialog {
+    display: grid;
+    grid-template-rows: auto minmax(0, 1fr) auto;
+    width: min(620px, calc(100vw - 40px));
+    max-height: min(760px, calc(100vh - var(--editor-titlebar-height) - 40px));
+    overflow: hidden;
+
+    > header,
+    > footer {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+      padding: 14px 18px;
+    }
+
+    > header {
+      border-bottom: 1px solid var(--editor-edge);
+    }
+
+    > header > div {
+      display: grid;
+      gap: 2px;
+    }
+
+    > header :is(h2, p),
+    > footer > span {
+      margin: 0;
+    }
+
+    > footer {
+      border-top: 1px solid var(--editor-edge);
+    }
+  }
+
+  .map-shortcuts-body {
+    display: grid;
+    grid-auto-rows: max-content;
+    align-content: start;
+    gap: 14px;
+    min-height: 0;
+    padding: 14px 18px;
+    overflow: auto;
+  }
+
+  .map-shortcuts-section {
+    overflow: hidden;
+    border: 1px solid var(--editor-edge);
+    border-radius: var(--editor-radius-control, 4px);
+    background: color-mix(in srgb, var(--editor-panel) 82%, transparent);
+
+    > h3 {
+      margin: 0;
+      padding: 8px 12px;
+      background: color-mix(in srgb, var(--editor-accent) 15%, var(--editor-panel));
+      border-bottom: 1px solid var(--editor-edge);
+    }
+
+    > dl {
+      margin: 0;
+    }
+
+    > dl > div {
+      display: grid;
+      grid-template-columns: minmax(150px, 1fr) minmax(190px, auto);
+      align-items: center;
+      gap: 14px;
+      min-height: 34px;
+      padding: 5px 12px;
+    }
+
+    > dl > div + div {
+      border-top: 1px solid color-mix(in srgb, var(--editor-edge) 70%, transparent);
+    }
+
+    :is(dt, dd) {
+      margin: 0;
+    }
+
+    dd {
+      justify-self: end;
+    }
+  }
+
+  .map-shortcuts-keys,
+  .map-shortcuts-chord,
+  .map-shortcuts-key-part {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+  }
+
+  .map-shortcuts-keys {
+    flex-wrap: wrap;
+    justify-content: flex-end;
+  }
+
+  .map-shortcuts-dialog kbd {
+    min-width: 28px;
+    padding: 3px 7px;
+    color: var(--editor-text-bright);
+    font: inherit;
+    font-size: 11px;
+    text-align: center;
+    white-space: nowrap;
+    background: var(--editor-deep);
+    border: 1px solid var(--editor-edge-strong);
+    border-radius: var(--editor-radius-control, 4px);
+    box-shadow: inset 0 -1px 0 color-mix(in srgb, var(--editor-text) 16%, transparent);
+  }
+
+  .map-status-shortcuts {
+    display: inline-flex;
+    align-items: center;
+    gap: 10px;
+    margin-left: auto;
+    white-space: nowrap;
+  }
+
+  @media (max-width: 760px) {
+    .map-shortcuts-section > dl > div {
+      grid-template-columns: minmax(0, 1fr);
+      gap: 5px;
+    }
+
+    .map-shortcuts-section dd {
+      justify-self: start;
+    }
+
+    .map-shortcuts-keys {
+      justify-content: flex-start;
+    }
+  }
+
+  .map-canvas-frame {
+    position: relative;
+  }
+
+  .map-canvas-gesture-message {
+    position: sticky;
+    left: 12px;
+    bottom: 12px;
+    width: max-content;
+    max-width: min(420px, calc(100vw - 80px));
+    margin: -34px 12px 12px;
+    padding: 5px 8px;
+    color: var(--editor-danger);
+    background: color-mix(in srgb, var(--editor-panel) 94%, transparent);
+    border: 1px solid var(--editor-danger);
+    border-radius: 4px;
+    pointer-events: none;
+  }
+
+  .map-toolbar:is([data-edge='top'], [data-edge='bottom']) .toolbar-map-name {
+    flex: 1 1 108px;
+    min-width: 0;
+    max-width: 150px;
+    overflow: hidden;
+  }
+
+  .map-toolbar:is([data-edge='top'], [data-edge='bottom']) .tool-group {
+    flex: 0 0 auto;
+  }
+
+  .map-toolbar:is([data-edge='left'], [data-edge='right'])
+    :is(.map-toolbar-primary, .map-toolbar-secondary, .event-shape-controls) {
+    align-items: stretch;
+    flex-direction: column;
+    flex: 0 0 auto;
+  }
+
+  .map-toolbar:is([data-edge='left'], [data-edge='right'])
+    .event-shape-controls > .editor-field-label:not(:has(> .editor-control--choice)) {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .map-toolbar:is([data-edge='top'], [data-edge='bottom']) .toolbar-map-name > * {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .event-node-entry-badge {
+    justify-self: start;
+    padding: 1px 5px;
+    border: 1px solid var(--editor-edge);
+    border-radius: 999px;
+    color: var(--editor-warning);
+    font-size: 9px;
+    font-weight: 800;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+  }
+
+  .image-asset-list article > .image-spatial-definition-editor {
+    grid-column: 1 / -1;
+  }
+
+  .image-spatial-definition-editor {
+    display: grid;
+    gap: 10px;
+    min-width: 0;
+    padding: 10px;
+    border: 1px solid var(--editor-edge);
+    border-radius: 8px;
+    background: color-mix(in srgb, var(--editor-panel) 92%, transparent);
+  }
+
+  .image-spatial-definition-header,
+  .image-spatial-definition-actions {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+    justify-content: space-between;
+    flex-wrap: wrap;
+  }
+
+  .image-spatial-definition-header > div:first-child {
+    display: grid;
+    gap: 3px;
+  }
+
+  .image-spatial-definition-header span {
+    color: var(--editor-text-muted);
+    font-size: 12px;
+  }
+
+  .image-spatial-simple-list {
+    grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  }
+
+  .image-spatial-simple-preview {
+    display: block;
+    width: 100%;
+    max-height: 220px;
+    border: 1px solid var(--editor-edge);
+    border-radius: 6px;
+    background: var(--editor-bg);
+  }
+
+  .image-spatial-simple-preview circle,
+  .image-spatial-simple-preview rect {
+    fill: color-mix(in srgb, var(--editor-secondary) 22%, transparent);
+    stroke: var(--editor-secondary);
+    vector-effect: non-scaling-stroke;
+    stroke-width: 2;
+  }
+
+  .image-spatial-pivot {
+    fill: none;
+    stroke: var(--editor-warning);
+    vector-effect: non-scaling-stroke;
+    stroke-width: 2;
+  }
+}

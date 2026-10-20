@@ -1,0 +1,325 @@
+// Copied from rpg_creator src/editor-controls.scss at 1f690d0263af8881a2d33ee374a2e5006355748b; see PROVENANCE.md.
+@use 'editor-control-theme' as control;
+
+.editor-shell {
+  --editor-font-ui: "Inter Variable", Inter, system-ui, sans-serif;
+  --editor-font-data: "Inconsolata Variable", Inconsolata, ui-monospace,
+    monospace;
+  --editor-control-height: 32px;
+  --editor-control-height-compact: 26px;
+  --editor-font-size-control: 10px;
+  --editor-control-padding-x: 8px;
+  --editor-control-padding-y: 5px;
+  --editor-control-radius: 4px;
+  --editor-control-border-width: 1px;
+  --editor-field-gap: 5px;
+  --editor-field-section-gap: 9px;
+  --editor-choice-size: 15px;
+  --editor-focus-ring-width: 2px;
+  --editor-focus-ring-offset: 1px;
+  --editor-line-height-control: 1.2;
+  --editor-textarea-min-rows: 2.4;
+}
+
+.editor-shell[data-editor-density='compact'] {
+  --editor-control-height: var(--editor-control-height-compact);
+  --editor-font-size-control: 9px;
+  --editor-control-padding-x: 6px;
+  --editor-control-padding-y: 3px;
+  --editor-field-gap: 4px;
+  --editor-field-section-gap: 7px;
+}
+
+:where(.editor-shell .editor-control:not(.editor-control--unstyled)) {
+  box-sizing: border-box;
+  max-width: 100%;
+  font: inherit;
+}
+
+.editor-shell
+  .editor-control:is(
+    .editor-control--text,
+    .editor-control--textarea,
+    .editor-control--select
+  ):not(.editor-control--unstyled) {
+  @include control.boxed-control;
+}
+
+.editor-shell
+  .editor-control.editor-control--text:not(.editor-control--unstyled) {
+  @include control.text-control;
+}
+
+.editor-shell
+  .editor-control.editor-control--select:not(.editor-control--unstyled) {
+  @include control.select-control;
+
+  option {
+    color: var(--editor-text-bright);
+    background: var(--editor-panel);
+  }
+}
+
+.editor-shell
+  .editor-control.editor-control--textarea:not(.editor-control--unstyled) {
+  @include control.textarea-control;
+}
+
+.editor-shell
+  .editor-control.editor-control--compact:not(.editor-control--unstyled) {
+  min-height: var(--editor-control-height-compact);
+  padding: 2px 5px;
+  font-size: var(--editor-font-size-caption, 9px);
+}
+
+.editor-shell
+  .editor-control.editor-control--block:not(.editor-control--unstyled) {
+  width: 100%;
+}
+
+.editor-shell
+  .editor-control.editor-control--code:not(.editor-control--unstyled) {
+  font-family: var(--editor-font-data) !important;
+  font-variant-ligatures: contextual;
+}
+
+.editor-shell
+  .editor-control:is(
+    .editor-control--text,
+    .editor-control--textarea,
+    .editor-control--select
+  ):not(.editor-control--unstyled):hover:not(:disabled):not(:read-only) {
+  @include control.hover;
+}
+
+.editor-shell
+  .editor-control:not(.editor-control--unstyled):focus-visible {
+  @include control.focus;
+}
+
+.editor-shell
+  .editor-control:is(
+    .editor-control--text,
+    .editor-control--textarea
+  )[readonly]:not(.editor-control--unstyled) {
+  @include control.readonly;
+}
+
+.editor-shell
+  .editor-control:not(.editor-control--unstyled):disabled {
+  @include control.disabled;
+}
+
+.editor-shell
+  .editor-control:is(
+    .editor-control--invalid,
+    [aria-invalid='true']
+  ):not(.editor-control--unstyled) {
+  @include control.invalid;
+}
+
+.editor-shell
+  .editor-control.editor-control--warning:not(.editor-control--unstyled) {
+  @include control.warning;
+}
+
+.editor-shell
+  :is(
+    .editor-control--text,
+    .editor-control--textarea
+  )::placeholder {
+  color: var(--editor-subtle);
+  opacity: 1;
+}
+
+.editor-shell
+  :is(
+    .editor-control--text,
+    .editor-control--textarea
+  ):-webkit-autofill {
+  -webkit-text-fill-color: var(--editor-text-bright);
+  box-shadow: 0 0 0 1000px var(--editor-deep) inset;
+  caret-color: var(--editor-accent-strong);
+}
+
+.editor-shell .editor-control.editor-control--choice {
+  flex: 0 0 auto;
+  width: var(--editor-choice-size);
+  height: var(--editor-choice-size);
+  margin: 0;
+  accent-color: var(--editor-accent);
+}
+
+.editor-shell .editor-control.editor-control--range {
+  min-width: 72px;
+  accent-color: var(--editor-accent);
+  cursor: ew-resize;
+}
+
+.editor-shell .editor-control.editor-control--color {
+  min-width: 34px;
+  min-height: var(--editor-control-height);
+  padding: 2px;
+  color: var(--editor-text-bright);
+  background: var(--editor-deep);
+  border: 1px solid var(--editor-edge);
+  border-radius: var(--editor-control-radius);
+  cursor: pointer;
+}
+
+.editor-shell .editor-control.editor-control--file {
+  max-width: 100%;
+  color: var(--editor-muted);
+  font-family: var(--editor-font-data);
+}
+
+.editor-shell .editor-field {
+  display: grid;
+  gap: var(--editor-field-gap);
+  min-width: 0;
+  align-self: start;
+  align-items: start;
+  align-content: start;
+}
+
+// Form groups use the same section rhythm for ordinary and choice fields.
+.editor-shell .editor-field-list {
+  display: grid;
+  gap: var(--editor-field-section-gap);
+  align-items: start;
+  align-content: start;
+  min-width: 0;
+}
+
+// Native choice labels own a hanging text column even with plain text children.
+.editor-shell label:has(> input.editor-control.editor-control--choice) {
+  display: grid;
+  grid-template-columns: var(--editor-choice-size) minmax(0, 1fr);
+  column-gap: var(--editor-field-gap);
+  row-gap: var(--editor-field-gap);
+  align-items: start;
+  align-content: start;
+  white-space: normal;
+
+  > .editor-control--choice {
+    grid-column: 1;
+    grid-row: 1;
+    align-self: start;
+    width: var(--editor-choice-size);
+    height: var(--editor-choice-size);
+    min-height: var(--editor-choice-size);
+    margin: 0;
+  }
+
+  > :not(.editor-control--choice) {
+    grid-column: 2;
+    min-width: 0;
+    white-space: normal;
+  }
+}
+
+// Group a choice label and its caption as one field, with captions under its text.
+.editor-shell .editor-field--choice {
+  grid-template-columns: var(--editor-choice-size) minmax(0, 1fr);
+
+  > label { grid-column: 1 / -1; }
+  > :is(.editor-field-description, .editor-field-message) { grid-column: 2; }
+}
+
+.editor-shell .editor-field-label {
+  min-width: 0;
+  color: var(--editor-muted);
+  font-family: var(--editor-font-ui);
+  font-size: var(--editor-font-size-help, 9px);
+  font-weight: var(--editor-font-weight-medium, 540);
+  letter-spacing: normal;
+  line-height: var(--editor-line-height-label, 1.25);
+  text-transform: none;
+}
+
+:where(.editor-shell .editor-field-description) {
+  display: block;
+  color: var(--editor-muted);
+  font-size: var(--editor-font-size-help, 9px);
+  line-height: 1.2;
+}
+
+:where(.editor-shell .editor-field-message) {
+  color: var(--editor-danger);
+  font-size: var(--editor-font-size-help, 9px);
+  line-height: var(--editor-line-height-caption, 1.35);
+}
+
+.editor-shell .editor-field-affix {
+  box-sizing: border-box;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: var(--editor-control-height);
+  padding-inline: var(--editor-control-padding-x);
+  color: var(--editor-subtle);
+  font-family: var(--editor-font-data) !important;
+  font-size: var(--editor-font-size-control);
+  line-height: var(--editor-line-height-control);
+  white-space: nowrap;
+  background: var(--editor-raised);
+  border: var(--editor-control-border-width) solid var(--editor-edge);
+  border-radius: var(--editor-control-radius);
+}
+
+:where(.editor-shell .input-with-suffix) {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: stretch;
+  min-width: 0;
+}
+
+.editor-shell .input-with-suffix > .editor-control {
+  border-start-end-radius: 0;
+  border-end-end-radius: 0;
+}
+
+.editor-shell .input-with-suffix > .editor-control:focus-visible {
+  position: relative;
+  z-index: 1;
+}
+
+.editor-shell .input-with-suffix > .editor-field-affix {
+  border-left: 0;
+  border-radius: 0 var(--editor-control-radius) var(--editor-control-radius) 0;
+}
+
+.editor-shell .editor-field-group {
+  min-width: 0;
+  margin: 0;
+  padding: var(--editor-field-section-gap);
+  align-items: start;
+  align-content: start;
+  gap: var(--editor-field-section-gap);
+  color: var(--editor-text);
+  background: color-mix(
+    in srgb,
+    var(--editor-deep) 72%,
+    var(--editor-panel)
+  );
+  border: 1px solid var(--editor-edge);
+  border-radius: var(--editor-control-radius);
+}
+
+// A fieldset can group related controls without drawing an inset card over
+// its containing dialog. Its default edge and spacing still apply.
+.editor-shell .editor-field-group.editor-field-group--plain {
+  background: transparent;
+}
+
+.editor-shell .editor-field-legend {
+  padding-inline: 4px;
+  color: var(--editor-text-bright);
+  font-weight: var(--editor-font-weight-strong, 700);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .editor-shell .editor-control {
+    transition-duration: 0ms;
+  }
+}

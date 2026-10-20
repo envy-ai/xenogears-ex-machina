@@ -1,0 +1,92 @@
+// Copied from rpg_creator src/_editor-button-theme.scss at 1f690d0263af8881a2d33ee374a2e5006355748b; see PROVENANCE.md.
+@mixin base(
+  $min-height: 32px,
+  $padding: 6px 10px,
+  $gap: 6px,
+  $font-size: inherit
+) {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: $gap;
+  min-height: $min-height;
+  padding: $padding;
+  color: var(--editor-text);
+  font: inherit;
+  font-size: $font-size;
+  font-weight: 700;
+  line-height: 1.2;
+  text-align: center;
+  background: var(--editor-raised);
+  border: 1px solid var(--editor-edge);
+  border-radius: var(--editor-button-radius, 4px);
+  cursor: pointer;
+  user-select: none;
+}
+
+@mixin hover {
+  color: var(--editor-text-bright);
+  background: var(--editor-hover);
+  border-color: var(--editor-edge-strong);
+}
+
+@mixin active {
+  background: color-mix(
+    in srgb,
+    var(--editor-hover) 72%,
+    var(--editor-deep)
+  );
+  border-color: var(--editor-accent);
+}
+
+@mixin focus {
+  outline: 2px solid var(--editor-accent-strong);
+  outline-offset: 2px;
+}
+
+@mixin primary {
+  color: var(--editor-button-primary-color, var(--editor-deep));
+  background: var(
+    --editor-button-primary-background,
+    linear-gradient(var(--editor-accent-strong), var(--editor-accent))
+  );
+  border-color: var(
+    --editor-button-primary-border,
+    var(--editor-accent-strong)
+  );
+}
+
+@mixin warning {
+  color: color-mix(in srgb, var(--editor-warning) 48%, white);
+  background: color-mix(
+    in srgb,
+    var(--editor-warning) 18%,
+    var(--editor-deep)
+  );
+  border-color: color-mix(
+    in srgb,
+    var(--editor-warning) 76%,
+    var(--editor-edge)
+  );
+}
+
+@mixin danger {
+  color: color-mix(in srgb, var(--editor-danger) 58%, white);
+  background: color-mix(
+    in srgb,
+    var(--editor-danger) 16%,
+    var(--editor-deep)
+  );
+  border-color: color-mix(
+    in srgb,
+    var(--editor-danger) 76%,
+    var(--editor-edge)
+  );
+}
+
+@mixin disabled {
+  opacity: 0.42;
+  cursor: not-allowed;
+  filter: saturate(0.6);
+  transform: none;
+}

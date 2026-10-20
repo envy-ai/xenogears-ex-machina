@@ -1,0 +1,419 @@
+<!-- Adapted from rpg_creator docs/editor-widget-library.md at 1f690d0263af8881a2d33ee374a2e5006355748b; see PROVENANCE.md. -->
+# Studio widget library
+
+Canonical registry for the studio React DOM UI. Read the relevant entry before
+changing UI; import widgets from their owning module. Feature styles own layout
+and placement. Shared widget classes own appearance, focus and semantic state.
+
+The implementation starts from the pinned Saga Foundry registry and only
+includes the layers authorized for studio milestone 1. The shell uses Graphite
+Teal, compact density, Inter for UI and Inconsolata for technical entry. Other
+copied theme tokens remain available through `editorTheme.ts`.
+
+All UI lives under `.editor-shell`. Every icon-only action needs an accessible
+name and tooltip. Text-entry labels belong above their controls. Use native
+keyboard behavior where possible; show errors persistently with their original
+message and stack. Honor reduced motion. Do not create private button/control
+skins, menus, dialogs, reorder mechanisms or docking systems.
+
+| Widget or contract | Source |
+| --- | --- |
+| Buttons | `src/styles/editor-buttons.scss`, `src/styles/_editor-button-theme.scss` |
+| Controls/fields | `src/styles/editor-controls.scss`, `src/styles/_editor-control-theme.scss` |
+| Typography | `src/styles/editor-typography.scss`, `src/styles/_editor-typography-theme.scss` |
+| Surfaces | `src/styles/editor-surfaces.scss` |
+| Context menus and small dialogs | `src/editor/ContextMenu.tsx`, `src/editor/editorCommands.ts` |
+| Dialog shell | `src/editor/EditorDialogShell.tsx` |
+| Number field | `src/editor/NumberField.tsx` |
+| Record select | `src/editor/RecordSelect.tsx` |
+| Docking | `src/editor/DockableWorkspace.tsx`, `src/editor/dockLayout.ts`, `src/editor/workspaceLayout.ts` |
+| Flat/outline reorder | `src/editor/itemReorder.tsx` |
+| Docker lists and list titles | `src/editor/DockerList.tsx` |
+| Native window controls | `src/editor/NativeWindowControls.tsx` |
+| Render failure boundary | `src/editor/EditorRenderErrorBoundary.tsx` |
+
+## Buttons
+
+Every editor button carries `editor-button`. A feature class may add layout or
+identify a specialized control, but it must not replace the base class.
+
+| Class | Use |
+| --- | --- |
+| `editor-button` | Ordinary action |
+| `editor-button--standard` | Explicit ordinary treatment when a semantic modifier is selected dynamically |
+| `editor-button--primary` | Main affirmative action for a surface |
+| `editor-button--warning` | Risky but normally recoverable action |
+| `editor-button--danger` | Destructive or irreversible action |
+| `editor-button--compact` | Dense row, node, timeline, or toolbar action |
+| `editor-button--icon` | Square icon-only control |
+| `editor-button--subtle` | Low-emphasis chrome action |
+| `editor-button--block` | Full available width |
+| `editor-button--unstyled` | Audited escape hatch for a custom interactive visualization |
+
+Example:
+
+```tsx
+<button
+  type="button"
+  className="editor-button editor-button--icon editor-button--danger"
+  aria-label="Delete material"
+  title="Delete material"
+  onClick={removeMaterial}
+>
+  <Trash2 size={14} aria-hidden="true" />
+</button>
+```
+
+Rules:
+
+- Icon-only buttons require both an accessible name and a tooltip.
+- Use `disabled` for native buttons whose action cannot run.
+- Do not use color alone to communicate selection; use `aria-pressed`,
+  `aria-selected`, or the relevant native state.
+- Do not add ellipsis buttons to list items that expose their actions through
+  right-click. `ContextMenuButton` is reserved for discoverable panel,
+  collection, or tool-strip action menus.
+- A single surface normally has one primary action.
+
+## Controls and fields
+
+Every editor `input`, `select`, and `textarea` carries `editor-control` plus
+one type modifier.
+
+| Class | Use |
+| --- | --- |
+| `editor-control--text` | Text, number, search, date-like, and other boxed single-line input |
+| `editor-control--select` | Native select |
+| `editor-control--textarea` | Multiline input |
+| `editor-control--choice` | Checkbox or radio |
+| `editor-control--range` | Range slider |
+| `editor-control--color` | Native color input |
+| `editor-control--file` | Native file input |
+| `editor-control--compact` | Dense dimensions; combine with a type |
+| `editor-control--code` | Inconsolata technical entry; combine with a type |
+| `editor-control--block` | Full available width |
+| `editor-control--invalid` | Invalid state; pair with `aria-invalid` |
+| `editor-control--warning` | Non-blocking warning state |
+| `editor-control--unstyled` | Audited custom-control escape hatch |
+
+Field composition:
+
+| Class | Use |
+| --- | --- |
+| `editor-field` | Top-aligned grid for label/control/description with the shared field gap |
+| `editor-field--choice` | Choice label/caption group with captions aligned under the title |
+| `editor-field-list` | Grid of ordinary or choice fields with the shared section gap |
+| `editor-field-label` | Visible label text and label semantics |
+| `editor-field-description` | Persistent supporting description |
+| `editor-field-message` | Validation message |
+| `editor-field-affix` | Unit, prefix, or suffix |
+
+Use `input-with-suffix` with `editor-field-affix` for a visually joined unit
+or suffix. The composite inherits the active control height, padding, type,
+surface, edge, and radius tokens; do not size or color its suffix locally.
+
+```tsx
+<span className="input-with-suffix">
+  <input
+    className="editor-control editor-control--text"
+    aria-label="Transition duration"
+    type="number"
+  />
+  <span className="editor-field-affix" aria-hidden="true">ms</span>
+</span>
+```
+
+| Class | Use |
+| --- | --- |
+| `editor-field-group` | Themed `fieldset` |
+| `editor-field-group--plain` | Keep fieldset semantics and edge/spacing, but let the parent dialog surface show through |
+| `editor-field-legend` | Visible `legend` |
+
+Fields and field groups align their children to the top when a caller uses grid
+or flex layout. The shared compact dialog body does the same, so extra available
+height does not stretch form controls or the gaps between them.
+`editor-field` owns the same grid and token-based gap for simple labelled controls
+and composite controls. When an adjacent action prevents wrapping a complete
+field in one `<label>`, use an `editor-field` wrapper containing a linked visible
+label and the control/action row. A modal does not need an alignment variant.
+`editor-field-description` is a block caption with compact 1.2 line spacing,
+including when it wraps to multiple lines.
+
+
+Labels with a direct native `editor-control--choice` input use a shared two-column
+grid. Checkbox/radio inputs occupy the first column, while title text occupies
+the second; wrapped lines align with the title's first letter, including labels
+with plain text children. The shared choice-size token is 15px in both densities;
+boxed-control compact heights do not change native choice dimensions. Form
+captions belong to an `editor-field editor-field--choice` wrapper alongside the
+choice label, using `editor-field-description` and the same field gap as text
+fields. Captions occupy the title column, and `aria-describedby` links them to
+the input without adding them to its accessible name. `editor-field-list` and
+grid field groups use `--editor-field-section-gap` between fields, so a grouped
+checkbox and caption have the same outer rhythm as a text field. Native label
+click, Space and Tab interactions remain available.
+
+Text-entry labels go above the field:
+
+```tsx
+<label className="editor-field editor-field-label">
+  <span>Material name</span>
+  <input
+    className="editor-control editor-control--text"
+    value={name}
+    onChange={(event) => setName(event.target.value)}
+  />
+  <span className="editor-field-description">
+    Displayed in the Materials docker.
+  </span>
+</label>
+```
+
+For an editable text field with optional suggestions, keep the
+`editor-control--text` input and associate a native `<datalist>` through its
+`list`/`id` pair. Use a unique ID when the field can mount more than once.
+Native browser behavior owns suggestion pointer and keyboard interaction;
+the input remains free to accept values outside the list. The Assistant Model
+field and tileset Autotile family field use this composition. The caller owns
+when suggestions are populated or cleared.
+
+Invalid state links the message:
+
+```tsx
+<label className="editor-field editor-field-label">
+  <span>Width</span>
+  <input
+    className="editor-control editor-control--text editor-control--invalid"
+    type="number"
+    aria-invalid="true"
+    aria-describedby="material-width-error"
+  />
+  <span className="editor-field-message" id="material-width-error">
+    Width must be a positive integer.
+  </span>
+</label>
+```
+
+Readonly data remains selectable. Disabled data is unavailable. Do not use
+disabled styling to represent readonly values.
+
+## Typography
+
+Choose the semantic HTML heading level from the document outline, then choose
+its visual role independently.
+
+Heading roles:
+
+- `editor-heading--application`
+- `editor-heading--page`
+- `editor-heading--panel`
+- `editor-heading--section`
+- `editor-heading--subsection`
+- `editor-heading--card`
+
+Every heading also carries `editor-heading`.
+
+Recurring text uses `editor-text` with an optional role:
+
+- `editor-text--secondary`
+- `editor-text--caption`
+- `editor-text--help`
+- `editor-text--empty`
+- `editor-text--status`
+- `editor-text--success`
+- `editor-text--warning`
+- `editor-text--danger`
+- `editor-text--code`
+
+`editor-kicker` is the compact uppercase category treatment used above a
+heading. Inter is the editor UI family. Inconsolata is used for IDs,
+coordinates, technical values, and code.
+
+## Themed surfaces
+
+`src/styles/editor-surfaces.scss` owns shared surface mixins:
+
+| Mixin | Purpose |
+| --- | --- |
+| `editor-overlay` | Modal dimming and blur below the native title bar |
+| `editor-titlebar-safe-backdrop` | Leaves native window controls reachable |
+| `editor-window` | Major modal/tool-window surface |
+| `editor-window-header` | Major window header |
+| `editor-window-icon` | Accent icon block |
+| `editor-card` | Raised card or menu |
+| `editor-inset-frame` | Recessed preview or code frame |
+| `editor-list-row` | Shared docker row states |
+
+`editor-card` and `editor-inset-frame` are also neutral class compositions of
+those mixins with a one-pixel border and four-pixel radius. They leave spacing
+and sizing to the caller. The shell may compose these surfaces around technical output.
+
+Feature Sass may consume these mixins when defining a new reusable widget.
+Ordinary feature styles should use an existing class contract instead.
+
+All modal backdrops begin below
+`var(--editor-titlebar-height, 58px)`. Do not blur, cover, or make the native
+window controls unreachable. The shared overlay also marks each dialog as a
+native `no-drag` region. This lets dialogs portalled under the draggable NW.js
+project launcher receive mouse input while preserving the title-bar drag strip.
+
+`editor-dialog-layout` composes with `editor-small-dialog` for a compact modal
+with a fixed header and footer and a scrolling body. Its direct children use
+`editor-dialog-layout__header`, `editor-dialog-layout__body`, and
+`editor-dialog-layout__footer`. The feature chooses width and owns content and
+actions. Body content aligns to the top. Layer Settings and ComfyUI image
+generation share this layout; both still use `EditorDialogShell` for portal
+placement and Escape behavior.
+
+## Context menus
+
+`src/editor/ContextMenu.tsx` owns every custom `role="menu"` implementation.
+`EditorCommand` and `EditorContextMenuRequest` live in
+`src/editor/editorCommands.ts`. Requests specify an exact target, accessible
+label, viewport coordinates, commands and optional `restoreFocus` element.
+Commands support groups, checked state, danger state, disabled reasons, color
+swatches and child commands. Use a disabled reason when an action cannot run.
+
+The widget owns viewport placement, initial focus, Up/Down, Home/End,
+Left/Right, Escape/Tab dismissal, outside-pointer and blur dismissal, and focus
+restoration. `contextMenuPointForElement` positions button-opened menus.
+`isContextMenuKey` recognizes the Context Menu key and Shift+F10.
+`ContextMenuButton` is the visible ellipsis trigger for panel/collection/tool
+strip actions. Ordinary named menu-bar buttons open the same `ContextMenu`.
+
+## Dialogs
+
+Every modal composes `src/editor/EditorDialogShell.tsx`. It portals under the
+editor shell, owns the backdrop and closes only the topmost dialog on Escape.
+Props are `backdropClassName`, `onClose`, optional `testId`, and `children`.
+The child surface retains responsibility for `role="dialog"` or `alertdialog`,
+`aria-modal`, its accessible name, focus and actions. Cancel and Escape must
+produce the same outcome. Backdrops leave the titlebar and native controls
+reachable.
+
+The copied `EditorPromptDialog`, `EditorChoiceDialog` and
+`EditorConfirmDialog` from `ContextMenu.tsx` implement small single decisions.
+They await callbacks, block duplicate confirmation and persist callback errors
+with message/stack. Prompt owns a trimmed text draft, autofocus and empty-value
+blocking; Choice validates against its current options. Confirm accepts title,
+message, confirmLabel, optional dangerous, onConfirm and onCancel. All accept
+an optional actual `dialogRef` and owner identity. Larger composed dialogs use
+`editor-small-dialog editor-dialog-layout` with direct header/body/footer
+classes `editor-dialog-layout__header`, `__body`, `__footer`.
+
+`src/editor/EditorOperationOwners.tsx` keeps optional mounted-owner leases
+without assistant or game dependencies. `EditorOperationOwnersProvider` accepts
+`registry: EditorOperationOwnerRegistry`. Operations expose a schema with
+`parse(unknown)`, a kind, description and execute callback. An
+`EditorExecutionGuard` provides signal/assertCurrent/isCurrent. A successful
+operation marked `releasesOwner` may close its owner. Other operations must
+retain a current owner throughout execution. No registry is needed for normal
+pointer/keyboard widget behavior.
+
+## Fields
+
+`src/editor/NumberField.tsx` composes the shared label and numeric control. It
+requires a visible `label`, a numeric value and onChange callback. Optional
+ariaLabel overrides the accessible input name. Its default conversion uses
+Number(text), permits NaN and does not clamp. Explicit options select integer
+truncation/rounding, emptyAs zero/nan, fallback passthrough/minimum/ignore,
+native min/max/step, and optional clamping. The caller owns these policies and
+commit semantics; compact/className/inputClassName only change composition.
+
+`src/editor/RecordSelect.tsx` renders an ordered record collection of `{id,
+name}`. Props: records, value, onChange(id), optional label, ariaLabel,
+noneOption, filter, disabled, compact, className, selectClassName. Omit the
+visible label only in a compact composition with an accessible name. Features
+do not reproduce record-option mapping.
+
+## Dockable workspace
+
+`src/editor/DockableWorkspace.tsx` provides `useWorkspaceLayout`,
+`DockableWorkspace`, `WorkspacePanel`, `WorkspaceCenter`, and
+`DockableToolStrip`. `src/editor/dockLayout.ts` owns shared transitions;
+`src/editor/workspaceLayout.ts` specializes the core for project/backend/log.
+
+`useWorkspaceLayout()` returns `[layout, setLayout, resetLayout]`, reads the
+studio v1 layout, persists subsequent changes, and applies the original
+viewport geometry constraints on resize. Mount a stable
+`new EditorPreferenceStore({storage})` through
+`<EditorPreferenceProvider store={store}>`; omitted storage means
+`window.localStorage`. This layout-only store accepts
+`xem-studio.workspace-layout.v1`. There are no RPG preference keys or migrations.
+Read/write/parse failures propagate to the application's persistent global
+error UI or render error boundary; storage denial never fabricates success.
+
+`DockableWorkspace` takes layout/setLayout/resetLayout, optional controlsTarget,
+optional `centerless` (default false), and descriptor children. The studio
+passes `centerless`, which gives the right dock the remaining width and omits
+the redundant right zone separator. The left split and inter-stack split
+remain resizable with pointer drag or arrow keys. With only one side zone
+visible, that zone fills the workspace. Existing centered consumers preserve
+the original behavior by default.
+
+Each actual `WorkspacePanel` has an id (`project`, `backend`, `log`), optional
+title/className and content. All panels can be moved, stacked, floated, hidden
+and restored. Use the panel action menu or titlebar Workspace menu from
+controlsTarget; reset restores Project left at 300px and Backend above Log in
+the right dock at weights 3:1.5. Drag the grip/tab for pointer movement;
+keyboard users choose docking/hiding in the panel menu. Workspace layout
+survives reload. Never create an independent movable panel.
+
+`DockableToolStrip` remains available for consumers needing docked tools; it
+accepts layout/setLayout/children and owns edge placement and its action menu.
+Milestone 1 has no editing tools.
+
+## Reordering
+
+Use `src/editor/itemReorder.tsx`. `useItemReorder` accepts optional enabled
+(default true), orientation (vertical), canDrop(sourceId,targetId), and
+onReorder(sourceId,targetId,beforeOrAfter). Spread targetProps on rows and
+pass handleProps to `ReorderGrip`. `previewItemReorder` displays the proposed
+order without mutating caller data; `reorderDestinationIndex` computes the
+final index. The flat hook uses native drag-and-drop; consumers retain ownership of the
+committed order and any keyboard alternatives. Hierarchical controllers use
+`OutlineReorderGrip` and supply keyboard arrow handling plus
+nesting/indent/outdent state.
+Filtering normally disables reorder with a reason in the grip title.
+
+## Docker lists
+
+Use `src/editor/DockerList.tsx` for flat lists and grids in docked panels.
+`DockerList`, `DockerListStack`, `DockerListHeader`, `DockerListBody`,
+`DockerListRow`, `DockerListSelect`, `EditorListTitle`, `DockerListFooter` and
+`DockerListEmpty` own their structural class contracts. Do not reproduce
+`docker-list-*` or `docker-item-*` markup in feature components.
+
+Rows accept selected/intrinsicHeight/columns and optional reorder props
+(label, handleProps, targetProps, enabled, surface). Use `EditorListTitle`
+for ellipsized names with a tooltip and `DockerListEmpty` for an empty list.
+Feature code owns row data, selection, actions and mutation. Nested trees
+retain their distinct outline semantics.
+
+## Native controls and failures
+
+`src/editor/NativeWindowControls.tsx` exports `useNativeWindowControls` and
+`NativeWindowControls`. The hook returns null in a browser; under NW.js it
+tracks native maximize/minimize/restore events and normal client geometry.
+The component provides named and titled minimize, maximize/restore and close
+buttons. Native bridge exceptions propagate. Geometry lives in
+`src/runtime/nativeWindowGeometry.ts`; state tracking in
+`src/runtime/nativeWindowState.ts`. No game-window controller is copied.
+
+`src/editor/EditorRenderErrorBoundary.tsx` preserves a caller-supplied failure
+surface after a rendering/effect failure and logs the original error. The
+application supplies persistent message/stack and recovery controls.
+
+## Styles and enforcement
+
+Import `src/styles/editor.scss` once. It composes the authoritative pinned
+button/control/typography/surface Sass and the selected copied-widget/base/theme
+rules in `_widget-structure.scss`. No generated CSS is committed. Font files
+and their unchanged OFL licenses live under `public/fonts/`.
+
+Run `npm run audit:design-system` after UI changes. The audit inspects actual
+studio TSX tags for button/control/field/text contracts, prevents custom menus
+outside ContextMenu and copied DockerList markup outside its owner, verifies
+registry sources, and compiles feature Sass in memory to detect ordinary
+control/text appearance overrides. It complements typechecking and rendered
+interaction tests; it does not claim accessibility or pixel-perfect rendering.

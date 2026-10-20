@@ -1,0 +1,38 @@
+// Copied from rpg_creator src/_editor-typography-theme.scss at 1f690d0263af8881a2d33ee374a2e5006355748b; see PROVENANCE.md.
+@mixin heading {
+  margin: 0;
+  color: var(--editor-text-bright);
+  font-family: var(--editor-font-ui);
+  font-optical-sizing: auto;
+  line-height: var(--editor-line-height-heading);
+  text-wrap: balance;
+}
+
+@mixin text {
+  color: var(--editor-text);
+  font-family: var(--editor-font-ui);
+  font-size: var(--editor-font-size-body);
+  line-height: var(--editor-line-height-body);
+}
+
+@mixin secondary {
+  color: var(--editor-muted);
+}
+
+@mixin caption {
+  color: var(--editor-subtle);
+  font-size: var(--editor-font-size-caption);
+  line-height: var(--editor-line-height-caption);
+}
+
+@mixin help {
+  color: var(--editor-muted);
+  font-size: var(--editor-font-size-help);
+  font-style: italic;
+}
+
+@mixin code {
+  font-family: var(--editor-font-data) !important;
+  font-variant-ligatures: contextual;
+  font-weight: var(--editor-font-weight-normal);
+}

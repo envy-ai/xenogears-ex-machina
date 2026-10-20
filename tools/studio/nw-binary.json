@@ -1,0 +1,11 @@
+{
+  "version": "0.113.0",
+  "flavor": "normal",
+  "platform": "linux",
+  "arch": "x64",
+  "archive": "nwjs-v0.113.0-linux-x64.tar.gz",
+  "url": "https://dl.nwjs.io/v0.113.0/nwjs-v0.113.0-linux-x64.tar.gz",
+  "sha256": "1963d6dfa40eaeec11e8158fbf8787d765bb1ffd0dbab572433ccbc519c7d17d",
+  "binary_sha256": "bf06f87c78541c10471400a0d77c8b5939307ce776a0af8ec0093c7944c6e4f4",
+  "checksum_source": "nw npm installer downloaded shasum/0.113.0.txt"
+}

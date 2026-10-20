@@ -1,0 +1,21 @@
+@use 'widget-structure';
+@use 'editor-buttons';
+@use 'editor-controls';
+@use 'editor-typography';
+@use 'editor-surfaces';
+
+// A centerless workspace gives the right dock the remaining width. Its left
+// splitter still resizes the Project dock; a redundant right splitter is omitted.
+.dockable-workspace[data-centerless='true'] {
+  grid-template-columns: var(--workspace-left-size) 8px minmax(0, 1fr);
+
+  > .workspace-dock-zone[data-edge='right'] { grid-column: 3; }
+  > .workspace-dock-zone[data-edge='bottom'] { grid-column: 1 / -1; }
+  > .workspace-zone-separator[data-edge='bottom'] { grid-column: 1 / -1; }
+
+  &:not([data-has-left]) { grid-template-columns: 0 0 minmax(0, 1fr); }
+  &:not([data-has-right]) {
+    grid-template-columns: minmax(0, 1fr) 0 0;
+    > .workspace-zone-separator[data-edge='left'] { display: none; }
+  }
+}

@@ -1,0 +1,110 @@
+// Copied from rpg_creator src/editor-buttons.scss at 1f690d0263af8881a2d33ee374a2e5006355748b; see PROVENANCE.md.
+@use 'editor-button-theme' as button;
+
+/*
+ * Shared editor-button contract.
+ *
+ * `:where()` deliberately keeps the base specificity at zero. Every editor
+ * control carries `.editor-button`, while specialized controls (tabs, tree
+ * rows, window chrome, splitters, canvas handles, and so on) can layer their
+ * existing component class over this common theme contract.
+ */
+:where(.editor-shell .editor-button:not(.editor-button--unstyled)) {
+  @include button.base;
+
+  &:hover:not(:disabled) {
+    @include button.hover;
+  }
+
+  &:active:not(:disabled) {
+    @include button.active;
+  }
+
+  &:focus-visible {
+    @include button.focus;
+  }
+
+  &:disabled {
+    @include button.disabled;
+  }
+}
+
+.editor-shell .editor-button:is(
+  .editor-button--standard,
+  .editor-button--primary,
+  .editor-button--warning,
+  .editor-button--danger,
+  .editor-button--block
+) {
+  @include button.base;
+}
+
+.editor-shell .editor-button.editor-button--primary {
+  @include button.primary;
+
+  &:hover:not(:disabled) {
+    color: var(--editor-button-primary-hover-color, var(--editor-deep));
+    background: var(
+      --editor-button-primary-hover-background,
+      linear-gradient(
+        color-mix(in srgb, var(--editor-accent-strong) 84%, white),
+        color-mix(in srgb, var(--editor-accent) 88%, white)
+      )
+    );
+    border-color: var(
+      --editor-button-primary-hover-border,
+      color-mix(in srgb, var(--editor-accent-strong) 78%, white)
+    );
+  }
+}
+
+.editor-shell .editor-button.editor-button--warning {
+  @include button.warning;
+
+  &:hover:not(:disabled) {
+    color: color-mix(in srgb, var(--editor-warning) 32%, white);
+    background: color-mix(
+      in srgb,
+      var(--editor-warning) 27%,
+      var(--editor-deep)
+    );
+    border-color: var(--editor-warning);
+  }
+}
+
+.editor-shell .editor-button.editor-button--danger {
+  @include button.danger;
+
+  &:hover:not(:disabled) {
+    color: color-mix(in srgb, var(--editor-danger) 30%, white);
+    background: color-mix(
+      in srgb,
+      var(--editor-danger) 27%,
+      var(--editor-deep)
+    );
+    border-color: var(--editor-danger);
+  }
+}
+
+:where(.editor-shell .editor-button.editor-button--compact) {
+  min-height: 26px;
+  padding: 3px 7px;
+  gap: 4px;
+  font-size: 9px;
+}
+
+:where(.editor-shell .editor-button.editor-button--icon) {
+  width: 31px;
+  min-width: 31px;
+  padding-inline: 0;
+}
+
+:where(.editor-shell .editor-button.editor-button--subtle) {
+  color: var(--editor-muted);
+  background: transparent;
+  border-color: transparent;
+}
+
+:where(.editor-shell .editor-button.editor-button--block) {
+  width: 100%;
+}

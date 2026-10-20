@@ -1,0 +1,91 @@
+// Copied from rpg_creator src/_editor-control-theme.scss at 1f690d0263af8881a2d33ee374a2e5006355748b; see PROVENANCE.md.
+@mixin boxed-control {
+  min-width: 0;
+  color: var(--editor-text-bright);
+  background-color: var(--editor-deep);
+  border: var(--editor-control-border-width) solid var(--editor-edge);
+  border-radius: var(--editor-control-radius);
+  caret-color: var(--editor-accent-strong);
+  transition:
+    color 100ms ease,
+    background-color 100ms ease,
+    border-color 100ms ease,
+    box-shadow 100ms ease;
+}
+
+@mixin text-control {
+  @include boxed-control;
+  min-height: var(--editor-control-height);
+  padding: var(--editor-control-padding-y) var(--editor-control-padding-x);
+  font-family: var(--editor-font-data) !important;
+  font-size: var(--editor-font-size-control);
+  font-variant-ligatures: contextual;
+  line-height: var(--editor-line-height-control);
+}
+
+@mixin select-control {
+  @include boxed-control;
+  min-height: var(--editor-control-height);
+  padding: var(--editor-control-padding-y)
+    calc(var(--editor-control-padding-x) + 14px)
+    var(--editor-control-padding-y)
+    var(--editor-control-padding-x);
+  font-family: var(--editor-font-ui) !important;
+  font-size: var(--editor-font-size-control);
+  line-height: var(--editor-line-height-control);
+}
+
+@mixin textarea-control {
+  @include text-control;
+  min-height: calc(
+    var(--editor-control-height) * var(--editor-textarea-min-rows)
+  );
+  resize: vertical;
+}
+
+@mixin focus {
+  border-color: var(--editor-accent);
+  outline: var(--editor-focus-ring-width) solid
+    var(--editor-accent-strong);
+  outline-offset: var(--editor-focus-ring-offset);
+  box-shadow: 0 0 0 2px
+    color-mix(in srgb, var(--editor-accent) 18%, transparent);
+}
+
+@mixin hover {
+  color: var(--editor-text-bright);
+  background-color: color-mix(
+    in srgb,
+    var(--editor-hover) 66%,
+    var(--editor-deep)
+  );
+  border-color: var(--editor-edge-strong);
+}
+
+@mixin readonly {
+  color: var(--editor-muted);
+  background-color: color-mix(
+    in srgb,
+    var(--editor-deep) 84%,
+    var(--editor-panel)
+  );
+  border-style: dashed;
+}
+
+@mixin disabled {
+  opacity: 0.46;
+  cursor: not-allowed;
+  filter: saturate(0.55);
+}
+
+@mixin invalid {
+  border-color: var(--editor-danger);
+  box-shadow: 0 0 0 1px
+    color-mix(in srgb, var(--editor-danger) 26%, transparent);
+}
+
+@mixin warning {
+  border-color: var(--editor-warning);
+  box-shadow: 0 0 0 1px
+    color-mix(in srgb, var(--editor-warning) 22%, transparent);
+}

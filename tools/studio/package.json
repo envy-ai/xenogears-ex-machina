@@ -1,0 +1,44 @@
+{
+  "name": "xem-studio",
+  "version": "0.5.0",
+  "private": true,
+  "license": "MIT",
+  "type": "module",
+  "scripts": {
+    "dev": "vite --host 0.0.0.0",
+    "build": "npm run typecheck && vite build",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run tests/unit",
+    "audit:design-system": "node scripts/audit-design-system.mjs",
+    "desktop": "node scripts/desktop.mjs",
+    "test:e2e": "playwright test",
+    "test:nw": "node tests/e2e/nw-smoke.mjs"
+  },
+  "dependencies": {
+    "react": "19.2.7",
+    "react-dom": "19.2.7",
+    "lucide-react": "1.25.0",
+    "zod": "4.4.3"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.61.1",
+    "@types/node": "26.1.1",
+    "@types/react": "19.2.17",
+    "@types/react-dom": "19.2.3",
+    "@vitejs/plugin-react": "6.0.3",
+    "nw": "0.113.0",
+    "sass": "1.101.7",
+    "typescript": "7.0.2",
+    "vite": "8.1.5",
+    "vitest": "4.1.10"
+  },
+  "main": "dist/index.html",
+  "window": {
+    "title": "XEM Studio",
+    "width": 1440,
+    "height": 900,
+    "min_width": 1180,
+    "min_height": 720,
+    "frame": false
+  }
+}
