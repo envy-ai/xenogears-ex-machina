@@ -104,6 +104,7 @@ analysis/scenarios/schema.json
 analysis/slices/forest23.json
 analysis/subsystems.json
 analysis/templates/finding.json
+docs/2026-10-20-sol-briefing.md
 docs/agent/README.md
 docs/agent/acceptance.json
 docs/agent/emulator-parity.json
