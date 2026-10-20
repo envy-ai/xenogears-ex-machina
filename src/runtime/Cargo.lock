@@ -5381,6 +5381,15 @@ name = "xem-storage"
 version = "0.5.0"
 
 [[package]]
+name = "xem-studio"
+version = "0.5.0"
+dependencies = [
+ "serde",
+ "serde_json",
+ "wasm-bindgen",
+]
+
+[[package]]
 name = "xem-ui"
 version = "0.5.0"
 dependencies = [

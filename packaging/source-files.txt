@@ -908,6 +908,9 @@ src/runtime/crates/xem-spu/src/snapshot.rs
 src/runtime/crates/xem-spu/tests/spu.rs
 src/runtime/crates/xem-storage/Cargo.toml
 src/runtime/crates/xem-storage/src/lib.rs
+src/runtime/crates/xem-studio/Cargo.toml
+src/runtime/crates/xem-studio/src/lib.rs
+src/runtime/crates/xem-studio/tests/command.rs
 src/runtime/crates/xem-ui/Cargo.toml
 src/runtime/crates/xem-ui/build.rs
 src/runtime/crates/xem-ui/examples/panel.rs
@@ -1191,3 +1194,5 @@ tools/repository/validate.py
 tools/service_calls.py
 tools/stray_padding.py
 tools/studio/PROVENANCE.md
+tools/studio/README.md
+tools/studio/build-backend.py

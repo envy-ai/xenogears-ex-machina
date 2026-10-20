@@ -41,3 +41,7 @@ node_modules/
 /.claude/worktrees/
 /roms/
 /tmp/
+
+# Studio generated backend bindings and frontend bundle.
+/tools/studio/src/backend/pkg/
+/tools/studio/dist/
