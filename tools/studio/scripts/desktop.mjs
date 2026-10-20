@@ -4,6 +4,7 @@ import { findpath } from 'nw';
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { studioTlsDirectory } from './tls-directory.js';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const dev = process.argv.includes('--dev');
@@ -13,7 +14,7 @@ let launch = root;
 if (dev) {
   launch = resolve(root, '../../tmp/studio/nw-launch');
   mkdirSync(launch, { recursive: true });
-  const tlsDirectory = process.env.XEM_STUDIO_TLS_DIR ?? '/home/bart/xenogears_toolkit/.local/serve';
+  const tlsDirectory = studioTlsDirectory();
   // Serialize only the public certificate into the temporary dev manifest.
   const certificate = new X509Certificate(readFileSync(resolve(tlsDirectory, 'cert.pem')));
   const manifest = {

@@ -1,5 +1,6 @@
 .clang-format
 .editorconfig
+.gitattributes
 .github/workflows/ci.yml
 .github/workflows/release.yml
 .gitignore
@@ -1196,6 +1197,7 @@ tools/stray_padding.py
 tools/studio/PROVENANCE.md
 tools/studio/README.md
 tools/studio/build-backend.py
+tools/studio/docs/dependency-audit.md
 tools/studio/docs/widgets.md
 tools/studio/index.html
 tools/studio/nw-binary.json
@@ -1209,6 +1211,8 @@ tools/studio/public/fonts/inter/Inter-Variable.ttf
 tools/studio/public/fonts/inter/OFL.txt
 tools/studio/scripts/audit-design-system.mjs
 tools/studio/scripts/desktop.mjs
+tools/studio/scripts/tls-directory.d.ts
+tools/studio/scripts/tls-directory.js
 tools/studio/src/App.tsx
 tools/studio/src/backend/service.ts
 tools/studio/src/domain/ids.ts
@@ -1249,8 +1253,11 @@ tools/studio/src/styles/editor-surfaces.scss
 tools/studio/src/styles/editor-typography.scss
 tools/studio/src/styles/editor.scss
 tools/studio/tests/e2e/nw-smoke.mjs
+tools/studio/tests/e2e/serve-built.mjs
 tools/studio/tests/e2e/studio.spec.ts
 tools/studio/tests/unit/files.test.ts
+tools/studio/tests/unit/service.test.ts
+tools/studio/tests/unit/tls-directory.test.ts
 tools/studio/tsconfig.json
 tools/studio/vite.config.ts
 tools/studio/vitest.config.ts

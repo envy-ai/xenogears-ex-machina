@@ -2,7 +2,9 @@
 
 Files under `tools/studio/` that started as copies of Saga Foundry RPG Creator
 (`~/rpg_creator`, licensed AGPL-3.0-only) are listed below, with their source
-path and revision. Each also names them in a header comment.
+path and revision. Code files also name them in a header comment. Font binaries and verbatim OFL
+notices use `public/fonts/README.md` and this table for attribution instead;
+licence text is never modified to add a code-style header.
 
 ## License grant
 
@@ -20,9 +22,9 @@ Source revision: rpg_creator `1f690d0263af8881a2d33ee374a2e5006355748b`.
 | --- | --- | --- |
 | `docs/widgets.md` | `docs/editor-widget-library.md` | Adapted the copied widget/class contracts to studio scope and documented centerless/layout-only/generic-owner changes. |
 | `public/fonts/inconsolata/Inconsolata-Variable.ttf` | `public/fonts/inconsolata/Inconsolata-Variable.ttf` | Unchanged OFL 1.1 binary; source/revision in public/fonts/README.md (binary header exception). |
-| `public/fonts/inconsolata/OFL.txt` | `public/fonts/inconsolata/OFL.txt` | OFL 1.1 text retained with source/revision header; removed upstream trailing whitespace. |
+| `public/fonts/inconsolata/OFL.txt` | `public/fonts/inconsolata/OFL.txt` | Unchanged OFL 1.1 notice, byte-for-byte; source/revision in public/fonts/README.md (verbatim licence header exception). |
 | `public/fonts/inter/Inter-Variable.ttf` | `public/fonts/inter/Inter-Variable.ttf` | Unchanged OFL 1.1 binary; source/revision in public/fonts/README.md (binary header exception). |
-| `public/fonts/inter/OFL.txt` | `public/fonts/inter/OFL.txt` | OFL 1.1 text retained with source/revision header; removed upstream trailing whitespace. |
+| `public/fonts/inter/OFL.txt` | `public/fonts/inter/OFL.txt` | Unchanged OFL 1.1 notice, byte-for-byte; source/revision in public/fonts/README.md (verbatim licence header exception). |
 | `scripts/audit-design-system.mjs` | `scripts/audit_editor_design_system.mjs` | Adapted shared tag scanner and ownership rules to studio; feature Sass appearance audit compiles in memory; removed RPG/domain requirements. |
 | `src/domain/ids.ts` | `src/domain/ids.ts` | Unchanged apart from source/revision header. |
 | `src/editor/ContextMenu.tsx` | `src/editor/ContextMenu.tsx` | Guard type redirected to generic EditorOperationOwners; other behavior unchanged. |
@@ -56,5 +58,5 @@ Source revision: rpg_creator `1f690d0263af8881a2d33ee374a2e5006355748b`.
 
 The font binaries and their OFL 1.1 notices retain their own license;
 the MIT code grant above does not relicense the fonts. Their source/revision
-for binaries is recorded in `public/fonts/README.md`; OFL.txt files carry
-attribution headers above the license text, with upstream trailing whitespace removed. `src/styles/editor.scss` is newly authored composition/layout glue.
+is recorded in `public/fonts/README.md`. The OFL.txt notices are verbatim pinned
+copies, including original whitespace, and have no added attribution header. `src/styles/editor.scss` is newly authored composition/layout glue.

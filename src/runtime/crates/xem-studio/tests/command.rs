@@ -1,4 +1,4 @@
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use xem_studio::Studio;
 
 fn command(studio: &Studio, input: &str) -> Value {
@@ -11,6 +11,8 @@ fn assert_error(studio: &Studio, input: &str, expected_kind: &str) {
         .get("error")
         .and_then(Value::as_object)
         .expect("error response has an error object");
+    assert_eq!(response.as_object().map(serde_json::Map::len), Some(1));
+    assert_eq!(error.len(), 2, "error contains only kind and message");
     assert_eq!(
         error.get("kind").and_then(Value::as_str),
         Some(expected_kind)
@@ -33,10 +35,13 @@ fn version_reports_package_version_and_supported_operations() {
         "operations": ["version", "echo"]
     });
 
-    assert_eq!(command(&studio, r#"{"op":"version"}"#), expected);
+    assert_eq!(
+        command(&studio, r#"{"op":"version"}"#),
+        json!({"ok": expected})
+    );
     assert_eq!(
         command(&studio, r#"{"op":"version","args":null}"#),
-        expected
+        json!({"ok": expected})
     );
 }
 
@@ -46,9 +51,11 @@ fn echo_round_trips_json_values_without_changing_them() {
     let values = [
         Value::Null,
         json!(true),
+        json!(false),
         json!(-17),
         json!(u64::MAX),
         json!(3.125),
+        json!(""),
         json!("雪だるま ☃️ — café 🐉"),
         json!([null, false, 0, "é", [1, {"nested": "値"}]]),
         json!({
@@ -56,12 +63,21 @@ fn echo_round_trips_json_values_without_changing_them() {
             "nested": {"empty": [], "null": null, "values": [1, 2, 3]},
             "large_integer": u64::MAX
         }),
+        json!({
+            "ok": false,
+            "error": {"kind": "user-data", "message": "ordinary JSON content"},
+            "nested": {"ok": null, "error": null}
+        }),
     ];
 
     for value in values {
         let input = json!({ "op": "echo", "args": value });
         let response = command(&studio, &input.to_string());
-        assert_eq!(response, input["args"], "echo changed {input}");
+        assert_eq!(
+            response,
+            json!({"ok": input["args"]}),
+            "echo changed {input}"
+        );
     }
 }
 
@@ -103,6 +119,6 @@ fn an_error_does_not_poison_later_valid_commands() {
     assert_error(&studio, "not json", "malformed_json");
     assert_eq!(
         command(&studio, r#"{"op":"echo","args":{"ok":true}}"#),
-        json!({"ok": true})
+        json!({"ok": {"ok": true}})
     );
 }

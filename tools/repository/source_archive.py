@@ -43,10 +43,18 @@ ALLOWED_SUFFIXES = {
     ".rs", ".cpp", ".sh", ".slint", ".js", ".mjs", ".html", ".css",
     ".wgsl", ".gradle", ".properties", ".xml", ".wat", ".hbs",
 }
-ALLOWED_BASENAMES = {"Makefile", "LICENSE", ".gitignore", ".clang-format", ".editorconfig", "xem-gpu-host"}
+ALLOWED_BASENAMES = {
+    "Makefile", "LICENSE", ".gitattributes", ".gitignore", ".clang-format", ".editorconfig",
+    "xem-gpu-host",
+}
 # Independently licensed non-game data. HRTF provenance/citation ship beside
 # it in hrtf/README.md; studio font provenance and OFL licenses ship with them.
 REVIEWED_DATA = {
+    # Verbatim OFL notices from the same pinned revision; attribution lives beside them.
+    "tools/studio/public/fonts/inter/OFL.txt":
+        "5b9321a4298cfeb6b34354164a1c3afc3db114569984c502b9b35d988fd58c57",
+    "tools/studio/public/fonts/inconsolata/OFL.txt":
+        "29bd0cfd0fb2a45f9b057c834a057724bae1f63b525a8ac83d3e7525706d9f80",
     # OFL 1.1 editor fonts: source revision/license in tools/studio/public/fonts/README.md.
     "tools/studio/public/fonts/inter/Inter-Variable.ttf":
         "29160a80ff49ddcab2c97711247e08b1fab27a484a329ce8b813d820dc559031",

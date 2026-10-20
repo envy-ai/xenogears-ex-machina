@@ -15,9 +15,9 @@
     "test:nw": "node tests/e2e/nw-smoke.mjs"
   },
   "dependencies": {
+    "lucide-react": "1.25.0",
     "react": "19.2.7",
     "react-dom": "19.2.7",
-    "lucide-react": "1.25.0",
     "zod": "4.4.3"
   },
   "devDependencies": {
@@ -29,8 +29,8 @@
     "nw": "0.113.0",
     "sass": "1.101.7",
     "typescript": "7.0.2",
-    "vite": "8.1.5",
-    "vitest": "4.1.10"
+    "vite": "8.1.6",
+    "vitest": "4.1.12"
   },
   "main": "dist/index.html",
   "window": {

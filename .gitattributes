@@ -1,0 +1,3 @@
+# Preserve the pinned upstream OFL notices verbatim, including their whitespace.
+tools/studio/public/fonts/inter/OFL.txt whitespace=-blank-at-eol
+tools/studio/public/fonts/inconsolata/OFL.txt whitespace=-blank-at-eol

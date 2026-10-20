@@ -2,7 +2,9 @@ import { expect, test, type Page } from '@playwright/test';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-const artifactsDirectory = resolve(dirname(fileURLToPath(import.meta.url)), '../../../../tmp/studio');
+const artifactsDirectory = process.env.XEM_STUDIO_PLAYWRIGHT_ARTIFACTS
+  ? resolve(process.env.XEM_STUDIO_PLAYWRIGHT_ARTIFACTS)
+  : resolve(dirname(fileURLToPath(import.meta.url)), '../../../../tmp/studio');
 
 async function expectResponseToFillBackend(page: Page) {
   const bounds = await page.locator('.studio-backend').evaluate((backend) => {
@@ -21,7 +23,7 @@ async function sendEcho(page: Page, value: unknown) {
   const response = page.getByLabel('Backend response');
   await expect.poll(async () => {
     const text = await response.textContent();
-    if (!text || text.startsWith('Send a command')) return undefined;
+    if (text === null || text === 'Send a command to see its reply.') return undefined;
     return JSON.parse(text);
   }).toEqual(value);
 }
@@ -58,9 +60,12 @@ test.beforeEach(async ({ page }) => {
     browserWindow.showDirectoryPicker = async () => directoryHandle;
   });
   const response = await page.goto('/');
+  const pageUrl = new URL(page.url());
+  expect(pageUrl.protocol).toBe('http:');
+  expect(pageUrl.hostname).toBe('localhost');
   expect(response?.headers()['strict-transport-security']).toBeUndefined();
   await expect.poll(() => page.evaluate(() => window.isSecureContext)).toBe(true);
-  console.log(`HTTPS checks: secureContext=true; Strict-Transport-Security=${response?.headers()['strict-transport-security'] ?? 'absent'}`);
+  console.log(`localhost HTTP checks: secureContext=true; Strict-Transport-Security=${response?.headers()['strict-transport-security'] ?? 'absent'}`);
   await expect(page.getByRole('main', { name: 'XEM Studio' })).toBeVisible();
   await expect(page.locator('[data-panel-id="backend"]')).toContainText('xem-studio 0.5.0');
   await sendEcho(page, { from: 'playwright', nested: [null, '🐉'] });
@@ -117,12 +122,21 @@ test('echoes a JSON command into the response and command log', async ({ page })
 
   const log = page.locator('[data-panel-id="log"]');
   await expect(log).toContainText(JSON.stringify({ op: 'echo', args: value }));
-  await expect(log).toContainText(JSON.stringify(value));
+  await expect(log).toContainText(JSON.stringify({ ok: value }));
 });
 
 test('treats an error-shaped JSON value as successful echo data', async ({ page }) => {
-  const value = { error: { kind: 'user-data', message: 'ordinary echoed content' } };
+  const value = {
+    ok: false,
+    error: { kind: 'user-data', message: 'ordinary echoed content' },
+    nested: { ok: null, error: null },
+  };
   await sendEcho(page, value);
+  await expect(page.locator('.studio-errors')).toHaveCount(0);
+});
+
+test('unpacks valid null, scalar and empty-string echo results in the response panel', async ({ page }) => {
+  for (const value of [null, false, 0, '']) await sendEcho(page, value);
   await expect(page.locator('.studio-errors')).toHaveCount(0);
 });
 

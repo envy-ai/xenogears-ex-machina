@@ -193,6 +193,27 @@ class SourceBoundaryTests(unittest.TestCase):
                     b"Original public fixture\n",
                 )
 
+    def test_reviewed_studio_font_notices_reject_reheaders_and_whitespace_changes(self) -> None:
+        repository_root = Path(__file__).resolve().parents[1]
+        notice_paths = (
+            "tools/studio/public/fonts/inter/OFL.txt",
+            "tools/studio/public/fonts/inconsolata/OFL.txt",
+        )
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            for name in notice_paths:
+                original = (repository_root / name).read_bytes()
+                target = root / name
+                target.parent.mkdir(parents=True, exist_ok=True)
+                for label, payload in (
+                    ("added source header", b"# Source: upstream notice\n" + original),
+                    ("changed whitespace", original + b" "),
+                ):
+                    with self.subTest(name=name, mutation=label):
+                        target.write_bytes(payload)
+                        with self.assertRaisesRegex(ValueError, "Reviewed data changed"):
+                            validate_path(root, name)
+
 
 if __name__ == "__main__":
     unittest.main()

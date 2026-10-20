@@ -13,14 +13,18 @@ From the repository root, enter the pinned toolchain and build the backend:
 nix --extra-experimental-features 'nix-command flakes' develop path:./nix/runtime
 npm --prefix tools/studio ci
 python3 tools/studio/build-backend.py
+export XEM_STUDIO_TLS_DIR=/absolute/path/to/local/tls
 npm --prefix tools/studio run dev
 ```
 
 Open `https://localhost:5176/` locally or
 `https://192.168.50.8:5176/` on the LAN. Vite binds `0.0.0.0` and sends no HSTS.
-It reads the existing local certificate/key from
-`/home/bart/xenogears_toolkit/.local/serve/`; set `XEM_STUDIO_TLS_DIR` to another
-local certificate directory containing `cert.pem` and `key.pem` if needed.
+Set `XEM_STUDIO_TLS_DIR` explicitly to an existing local directory containing
+`cert.pem` and `key.pem`; there is no machine-specific fallback. Absolute paths
+are used directly; relative paths resolve from the repository root for both
+Vite and the NW.js launcher, regardless of their working directory. Missing
+configuration or files cause startup to fail with the original diagnostic.
+The built desktop app and production build need no TLS configuration.
 No key contents are copied into the bundle. Browser use requires a certificate
 that the browser trusts; this workflow does not accept certificate warnings or
 change browser/OS trust. NW.js development uses the app-scoped certificate
@@ -48,7 +52,7 @@ opens `https://localhost:5176/`. Its temporary manifest at
 at that address can access native files. The temporary manifest also uses
 NW.js's [additional trust anchors](https://docs.nwjs.io/References/Manifest%20Format/#additional_trust_anchors)
 for the selected local public server certificate. It reads only `cert.pem`,
-using the same `XEM_STUDIO_TLS_DIR` or default directory as Vite, and serializes
+using the same explicitly selected `XEM_STUDIO_TLS_DIR` as Vite, and serializes
 only its public X.509 certificate. TLS and hostname validation remain enabled.
 The packaged manifest has neither `node-remote` nor `additional_trust_anchors`.
 No OS/NSS trust store is changed, and no certificate or sandbox bypass is added.
@@ -100,26 +104,39 @@ systemd-run --user --scope -p MemoryMax=16G -p MemorySwapMax=0 \
   python3 tools/repository/source_archive.py --check
 ```
 
-Unit tests use real temporary Node folders and synthetic browser handles. Every
-frontend test exercises the generated wasm `echo`; no fake backend substitutes
-for it. Browser tests use the pinned shell's `XEM_CHROMIUM`. The NW smoke uses
-a fixture folder and a bounded Xvfb process on Linux, with GPU disabled for that
-headless test only; it writes its result, verifies it, and quits. No sandbox or
-certificate bypass is added to NW.js. The built-app smoke passed. The initial
-`--dev` smoke timed out after 90 seconds with TLS handshake `net_error -202`
-and produced no backend/Node result; `tmp/studio/nw-dev-smoke.log` preserves that
-failure. After adding the approved development-only public certificate anchor,
-the focused `--dev` smoke passed: native fixture file access, backend version,
-wasm echo and rendered window controls. It also verified the actual manifest's
-single public certificate against the selected certificate's fingerprint and
-bytes, and both development fields' absence from the packaged manifest.
-The successful log/result are `tmp/studio/nw-dev-smoke-anchor.log` and
-`tmp/studio/nw-dev-anchor-smoke-result.json`; the actual manifest is
-`tmp/studio/nw-dev-package-anchor.json`. The initial failure remains preserved.
+Browser UI regression runs against the built bundle on loopback HTTP port 5176
+(a localhost secure context), without ignoring certificate errors. The test-only
+server lives in `tests/e2e/serve-built.mjs`; run `npm run build` first and stop
+the dev server while that port is used for the browser run. The separate NW.js
+`--dev` smoke checks the actual HTTPS server, selected public certificate and
+native adapter. The production dev server remains HTTPS on `0.0.0.0:5176`, with
+no HSTS. Browser HTTPS use still requires a normally trusted certificate.
 
-`npm audit --json` currently reports three advisories in the mandated pins:
-Vite 8.1.5 (high), Vitest 4.1.10 and its mocker (moderate). Their versions are
-kept as planned; an automatic audit fix would change the approved toolchain.
+Unit tests use real temporary Node folders and synthetic browser handles.
+File-adapter and browser protocol tests exercise generated wasm `echo`;
+configuration/decoder tests also cover malformed input directly. No fake backend
+substitutes for wasm. Browser tests use the pinned shell's `XEM_CHROMIUM`.
+The NW smoke uses a fixture folder and a bounded Xvfb process on Linux, with GPU
+disabled for that headless test only; it verifies the result and quits. No
+sandbox or certificate bypass is added to NW.js.
+
+Cleanup verification passed: five Rust tests, 17 Vitest tests, nine browser
+regressions, source/design audits, and built/development NW smokes. The dev
+smoke also checks normal TLS/hostname validation, the served public certificate,
+no HSTS, exact manifest origin/anchor and packaged absence. Fresh commands,
+logs and screenshots are under `tmp/studio/cleanup-20261020/checks/`; the earlier
+milestone-one failures and results remain in their original artifact paths.
+
+The cleanup pins Vite 8.1.6 and Vitest 4.1.12, verified against official
+advisories and registry engine/peer metadata before installation. Vite 8.1.6
+fixes the three reported editor advisories without a minor-version upgrade;
+Vitest 4.1.12 includes the patched mocker. Node 24.19.0, the React plugin 6.0.3,
+Sass and the remaining direct pins are unchanged. The assessment and audit
+limits are in [docs/dependency-audit.md](docs/dependency-audit.md).
+
+The runtime evidence below predates this standalone cleanup and is carried
+forward without rerunning the runtime suite. The changed studio protocol is
+covered by its focused native Rust and wasm/frontend checks above.
 
 The existing runtime compatibility check is `cargo build --locked
 --manifest-path src/runtime/Cargo.toml --workspace`. The final runtime suite is
@@ -161,13 +178,20 @@ emits JavaScript, TypeScript declarations and WebAssembly into ignored
 directory. Native callers use the same
 `xem_studio::Studio::new().command(json)` service.
 
-The JSON command envelope is `{ "op": "name", "args": value }`:
+The JSON request is `{ "op": "name", "args": value }`. Every response has
+exactly one outer key: `{"ok":result}` or `{"error":{"kind":...,"message":...}}`.
+Callers inspect that outer key, never the request operation or result truthiness.
+The UI unwraps successful results in the response pane and records raw envelopes
+in Log; errors remain persistent and do not prevent later commands.
+
+Operations:
 
 - `{"op":"version"}` (args absent or null) returns
-  `{"version":"0.5.0","operations":["version","echo"]}`. The version follows
+  `{"ok":{"version":"0.5.0","operations":["version","echo"]}}`. The version follows
   the runtime workspace package version.
-- `{"op":"echo","args":value}` returns `value` unchanged. Any JSON value,
-  including null, is accepted; the args field is required.
+- `{"op":"echo","args":value}` returns `{"ok":value}`. Any JSON value,
+  including null, false, zero, an empty string, and objects with `ok` or `error`
+  keys is accepted unchanged inside `ok`; the args field is required.
 - Failures return `{"error":{"kind":"...","message":"..."}}`. Kinds are
   `malformed_json` for parse errors, `invalid_command` for a missing/non-string
   op or a non-object envelope, `unknown_operation` for an unrecognized op, and

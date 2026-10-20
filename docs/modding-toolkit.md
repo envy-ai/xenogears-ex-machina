@@ -16,7 +16,8 @@ pull requests are planned from this branch.
   - validators;
   - the mod package model and the delta builder.
 
-  Its interface is one service: `Studio::command(json) -> json`. It has typed
+  Its interface is one service: `Studio::command(json) -> json`, returning
+  `{ok: result}` or `{error: {kind, message}}`. It has typed
   operations, explicit errors, and nothing that exists only in a UI. This is
   the pattern of `xem_core::control::Session`. The web frontend calls it through
   wasm-bindgen, in NW.js and the browser alike. A Slint frontend could link the
@@ -31,7 +32,9 @@ pull requests are planned from this branch.
   MIT. Nothing is copied until the user, as rpg_creator's author, has added the
   MIT grant for the copied files to `tools/studio/PROVENANCE.md`. That file also
   lists each copied file's source path and rpg_creator revision, and each copied
-  file names them in a header comment. What comes over is the general layers
+  code file names them in a header comment. Font binaries and verbatim OFL
+  notices keep attribution in the adjacent font README and PROVENANCE instead.
+  What comes over is the general layers
   only:
   - the visual primitives (the editor SCSS themes);
   - the behavioural widgets: dockable workspace, docker lists, context menus,
@@ -226,7 +229,8 @@ Each one ends usable and tested. UI mockups come before each editor's UI work.
   `tools/studio/nw-binary.json`. Milestone one needs no WebGPU. A remote dev page
   uses the approved `https://localhost:5176/*` Node/NW API grant only in its
   temporary development manifest. That manifest trusts the selected local public
-  server certificate through `additional_trust_anchors`, retaining TLS/hostname
+  server certificate selected by explicit `XEM_STUDIO_TLS_DIR` through
+  `additional_trust_anchors`, retaining TLS/hostname
   checks without OS trust changes. Both fields are absent from the packaged
   manifest. See `tools/studio/README.md` for certificate selection and checks.
 - **Upstream fit.** plan.md's Phase 12 specifies Slint editors. The backend's

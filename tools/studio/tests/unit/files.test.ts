@@ -27,7 +27,9 @@ function echoThroughWasm(value: unknown) {
   });
   const studio = new Studio();
   try {
-    return JSON.parse(studio.command(JSON.stringify({ op: 'echo', args: value }))) as unknown;
+    const response = JSON.parse(studio.command(JSON.stringify({ op: 'echo', args: value }))) as unknown;
+    expect(response).toEqual({ ok: value });
+    return (response as { ok: unknown }).ok;
   } finally {
     studio.free();
   }
@@ -36,6 +38,21 @@ function echoThroughWasm(value: unknown) {
 async function openFixture() {
   return openNodeFolder(fixtureRoot, fs, await import('node:path'));
 }
+
+describe('wasm command success envelope', () => {
+  it('keeps null, scalars and ok/error-shaped JSON as successful echo data', () => {
+    const values: unknown[] = [
+      null,
+      false,
+      0,
+      '',
+      { error: { kind: 'user-data', message: 'not a backend error' } },
+      { ok: null, error: { kind: 'nested-user-data', message: 'also ordinary data' } },
+    ];
+
+    for (const value of values) expect(echoThroughWasm(value)).toEqual(value);
+  });
+});
 
 class MemoryFileHandle {
   readonly kind = 'file' as const;

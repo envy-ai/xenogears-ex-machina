@@ -7,7 +7,7 @@ import { NativeWindowControls, useNativeWindowControls } from './editor/NativeWi
 import { DockerList, DockerListHeader, DockerListBody, DockerListRow, DockerListEmpty } from './editor/DockerList';
 import { restoreWorkspacePanel } from './editor/workspaceLayout';
 import { contextMenuPointForElement, type EditorCommand, type EditorContextMenuRequest } from './editor/editorCommands';
-import { loadBackend, type Backend } from './backend/service';
+import { loadBackend, readCommandResult, type Backend } from './backend/service';
 import type { FilesAdapter, FileEntry } from './platform/files';
 import { selectFolder, nativeHost } from './platform/host';
 import { runNativeSmoke } from './smoke';
@@ -60,8 +60,7 @@ export function App() {
       append('Command', request);
       const reply = service.command(request);
       append('Response', reply);
-      const result = JSON.parse(reply);
-      if (result.error) throw new Error(`${result.error.kind}: ${result.error.message}`);
+      const result = readCommandResult<{ version: string; operations: string[] }>(reply);
       setVersion(result); setBackend(service);
     }).catch(report);
     return () => { active = false; window.removeEventListener('error', error); window.removeEventListener('unhandledrejection', rejection); };
@@ -85,14 +84,7 @@ export function App() {
     try {
       const reply = backend.command(command);
       setResponse(reply); append('Response', reply);
-      const result = JSON.parse(reply);
-      // Echo accepts arbitrary JSON, including an object named "error".
-      let echo = false;
-      try {
-        const request = JSON.parse(command);
-        echo = request?.op === 'echo' && Object.hasOwn(request, 'args') && Object.keys(request).every(key => key === 'op' || key === 'args');
-      } catch { /* The original backend diagnostic below describes malformed JSON. */ }
-      if (!echo && result?.error) report(new Error(`${result.error.kind}: ${result.error.message}`));
+      setResponse(JSON.stringify(readCommandResult(reply)));
     } catch (error) { report(error); }
   }, [backend, command, append, report]);
   const openAbout = () => {

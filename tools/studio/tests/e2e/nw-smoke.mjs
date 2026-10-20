@@ -1,9 +1,11 @@
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
 import { X509Certificate } from 'node:crypto';
+import { get as httpsGet } from 'node:https';
 import { copyFile, mkdtemp, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { studioTlsDirectory } from '../../scripts/tls-directory.js';
 
 const scriptDirectory = dirname(fileURLToPath(import.meta.url));
 const studioRoot = resolve(scriptDirectory, '../..');
@@ -15,7 +17,7 @@ await mkdir(temporaryRoot, { recursive: true });
 const runDirectory = await mkdtemp(join(temporaryRoot, 'nw-smoke-'));
 const fixtureDirectory = join(runDirectory, 'fixture');
 const outputPath = join(runDirectory, 'smoke-result.json');
-const preservedResult = join(temporaryRoot, devMode ? `nw-dev${artifactSuffix}-smoke-result.json` : 'nw-smoke-result.json');
+const preservedResult = join(temporaryRoot, devMode ? `nw-dev${artifactSuffix}-smoke-result.json` : `nw${artifactSuffix}-smoke-result.json`);
 const devManifestPath = join(temporaryRoot, 'nw-launch', 'package.json');
 const preservedDevManifest = join(temporaryRoot, `nw-dev-package${artifactSuffix}.json`);
 await mkdir(join(fixtureDirectory, 'scripts'), { recursive: true });
@@ -35,7 +37,39 @@ const args = process.platform === 'linux'
   ? ['--auto-servernum', process.execPath, launcher, ...launcherFlags, ...smokeFlags]
   : [launcher, ...launcherFlags, ...smokeFlags];
 
+async function assertDevServerTls(selectedCertificate) {
+  const certificatePath = join(studioTlsDirectory(), 'cert.pem');
+  const certificatePem = await readFile(certificatePath);
+  await new Promise((resolvePromise, rejectPromise) => {
+    const request = httpsGet('https://localhost:5176/', {
+      ca: certificatePem,
+      rejectUnauthorized: true,
+      servername: 'localhost',
+    }, (response) => {
+      const peerCertificate = new X509Certificate(response.socket.getPeerCertificate().raw);
+      try {
+        assert.equal(response.statusCode, 200);
+        assert.equal(response.socket.authorized, true);
+        assert.equal(response.headers['strict-transport-security'], undefined);
+        assert.equal(peerCertificate.fingerprint256, selectedCertificate.fingerprint256);
+      } catch (error) {
+        response.resume();
+        rejectPromise(error);
+        return;
+      }
+      response.resume();
+      response.once('end', resolvePromise);
+    });
+    request.setTimeout(5_000, () => request.destroy(new Error('TLS development server check timed out')));
+    request.once('error', rejectPromise);
+  });
+}
+
 try {
+  if (devMode) {
+    const selectedCertificate = new X509Certificate(await readFile(join(studioTlsDirectory(), 'cert.pem')));
+    await assertDevServerTls(selectedCertificate);
+  }
   await new Promise((resolvePromise, rejectPromise) => {
     const child = spawn(command, args, {
       cwd: studioRoot,
@@ -69,8 +103,7 @@ try {
     const trustAnchors = temporaryManifest.additional_trust_anchors;
     assert.ok(Array.isArray(trustAnchors));
     assert.equal(trustAnchors.length, 1);
-    const tlsDirectory = process.env.XEM_STUDIO_TLS_DIR ?? '/home/bart/xenogears_toolkit/.local/serve';
-    const selectedCertificate = new X509Certificate(await readFile(join(tlsDirectory, 'cert.pem')));
+    const selectedCertificate = new X509Certificate(await readFile(join(studioTlsDirectory(), 'cert.pem')));
     const configuredAnchor = new X509Certificate(trustAnchors[0]);
     assert.equal(configuredAnchor.fingerprint256, selectedCertificate.fingerprint256);
     assert.equal(configuredAnchor.raw.toString('hex'), selectedCertificate.raw.toString('hex'));
@@ -81,6 +114,7 @@ try {
     version: '0.5.0',
     operations: ['version', 'echo'],
   });
+  assert.deepEqual(result.versionResponse, { ok: result.version });
   assert.equal(result.adapter, 'node');
   assert.equal(result.windowControls, true);
   assert.deepEqual(result.entries, [
@@ -88,6 +122,7 @@ try {
     { name: 'README.txt', kind: 'file' },
   ]);
   assert.deepEqual(result.echo, result.entries);
+  assert.deepEqual(result.echoResponse, { ok: result.entries });
   assert.equal('error' in result, false);
   console.log(`NW ${devMode ? 'dev ' : ''}smoke passed: ${JSON.stringify(result)}`);
 } finally {

@@ -10,7 +10,9 @@ milestone 2 (the field script round trip) builds on this.
 - `src/runtime/crates/xem-studio`: a Rust crate with
   `Studio::command(&str) -> String` (JSON in, JSON out) and a wasm-bindgen
   export of it. Its first operations are `version` (crate version and the
-  operation list) and `echo` (returns its argument). Every frontend test goes
+  operation list) and `echo` (returns its argument). Successes use `{ok: result}`;
+  failures use `{error: {kind, message}}`. The outer envelope distinguishes
+  arbitrary echoed `ok`/`error` data from a failed command. Every frontend test goes
   through `echo`. Unknown operations and malformed JSON return a structured
   error `{error: {kind, message}}`; nothing panics across the boundary.
 - `tools/studio/`: a Vite + React + TypeScript app. Its shell is a dockable
@@ -80,14 +82,15 @@ milestone 2 (the field script round trip) builds on this.
      `nix develop path:./nix/runtime`.
 3. **Frontend scaffold.**
    - `tools/studio/package.json` takes rpg_creator's pins: React 19.2.7,
-     TypeScript 7.0.2, Vite 8.1.5, @vitejs/plugin-react 6.0.3, Sass, Vitest
-     4.1.10, Playwright 1.61.1, nw 0.113.0, lucide-react 1.25.0 and zod 4.4.3.
+     TypeScript 7.0.2, Vite 8.1.6, @vitejs/plugin-react 6.0.3, Sass, Vitest
+     4.1.12, Playwright 1.61.1, nw 0.113.0, lucide-react 1.25.0 and zod 4.4.3.
      Its lock file is committed.
    - Node comes from the Nix shell (Node 24.19.0, as `tools/authoring`).
    - The `nw` npm package downloads the NW.js binary at install. Record its
      version and checksum.
-4. **Copy the widget layers** (rpg_creator `1f690d0`, each with a header
-   comment and a `PROVENANCE.md` row). Their import closure today pulls in about
+4. **Copy the widget layers** (rpg_creator `1f690d0`, code with a source header
+   and a `PROVENANCE.md` row; font binaries and verbatim OFL notices use the
+   adjacent font README and provenance table instead). Their import closure today pulls in about
    27,000 lines of rpg_creator's domain code through four links. Each link is
    cut, not copied:
 

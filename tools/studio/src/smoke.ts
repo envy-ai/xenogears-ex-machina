@@ -1,4 +1,4 @@
-import type { Backend } from './backend/service';
+import { readCommandResult, type Backend } from './backend/service';
 import { nativeHost } from './platform/host';
 import { openNodeFolder } from './platform/node-files';
 
@@ -15,9 +15,13 @@ export async function runNativeSmoke(backend: Backend): Promise<boolean> {
   try {
     const adapter = await openNodeFolder(fixture, fs, nativeHost.require('node:path'));
     const entries = await adapter.list();
-    const version = JSON.parse(backend.command('{"op":"version"}'));
-    const echo = JSON.parse(backend.command(JSON.stringify({ op: 'echo', args: entries })));
-    await fs.writeFile(output, JSON.stringify({ version, entries, echo, adapter: adapter.kind, windowControls: document.querySelector('[role="group"][aria-label="Window controls"]') !== null }));
+    const versionReply = backend.command('{"op":"version"}');
+    const echoReply = backend.command(JSON.stringify({ op: 'echo', args: entries }));
+    const versionResponse = JSON.parse(versionReply);
+    const echoResponse = JSON.parse(echoReply);
+    const version = readCommandResult(versionReply);
+    const echo = readCommandResult(echoReply);
+    await fs.writeFile(output, JSON.stringify({ version, versionResponse, entries, echo, echoResponse, adapter: adapter.kind, windowControls: document.querySelector('[role="group"][aria-label="Window controls"]') !== null }));
   } catch (error) {
     await fs.writeFile(output, JSON.stringify({ error: error instanceof Error ? { message: error.message, stack: error.stack } : String(error) }));
   } finally { nativeHost.App.quit(); }

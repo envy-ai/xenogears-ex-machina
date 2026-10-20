@@ -107,7 +107,7 @@ impl Studio {
 
     pub fn command(&self, input: &str) -> String {
         match Command::parse(input) {
-            Ok(command) => command.execute().into_json(),
+            Ok(command) => json!({ "ok": command.execute().into_json() }),
             Err(error) => error.into_json(),
         }
         .to_string()
