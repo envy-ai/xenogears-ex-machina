@@ -1,4 +1,5 @@
 import { spawn } from 'node:child_process';
+import { X509Certificate } from 'node:crypto';
 import { findpath } from 'nw';
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { resolve, dirname } from 'node:path';
@@ -12,7 +13,17 @@ let launch = root;
 if (dev) {
   launch = resolve(root, '../../tmp/studio/nw-launch');
   mkdirSync(launch, { recursive: true });
-  const manifest = { name: packageManifest.name, version: packageManifest.version, main: 'https://localhost:5176/', window: packageManifest.window };
+  const tlsDirectory = process.env.XEM_STUDIO_TLS_DIR ?? '/home/bart/xenogears_toolkit/.local/serve';
+  // Serialize only the public certificate into the temporary dev manifest.
+  const certificate = new X509Certificate(readFileSync(resolve(tlsDirectory, 'cert.pem')));
+  const manifest = {
+    name: packageManifest.name,
+    version: packageManifest.version,
+    main: 'https://localhost:5176/',
+    'node-remote': 'https://localhost:5176/*',
+    additional_trust_anchors: [certificate.toString()],
+    window: packageManifest.window,
+  };
   writeFileSync(resolve(launch, 'package.json'), JSON.stringify(manifest, null, 2));
 }
 const binary = await findpath('nwjs', { version: '0.113.0', flavor: 'normal' });

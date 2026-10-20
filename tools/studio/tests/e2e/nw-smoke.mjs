@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
+import { X509Certificate } from 'node:crypto';
 import { copyFile, mkdtemp, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -8,11 +9,15 @@ const scriptDirectory = dirname(fileURLToPath(import.meta.url));
 const studioRoot = resolve(scriptDirectory, '../..');
 const repositoryRoot = resolve(studioRoot, '../..');
 const temporaryRoot = resolve(repositoryRoot, 'tmp/studio');
+const devMode = process.argv.includes('--dev');
+const artifactSuffix = process.env.XEM_NW_SMOKE_SUFFIX ? `-${process.env.XEM_NW_SMOKE_SUFFIX}` : '';
 await mkdir(temporaryRoot, { recursive: true });
 const runDirectory = await mkdtemp(join(temporaryRoot, 'nw-smoke-'));
 const fixtureDirectory = join(runDirectory, 'fixture');
 const outputPath = join(runDirectory, 'smoke-result.json');
-const preservedResult = join(temporaryRoot, 'nw-smoke-result.json');
+const preservedResult = join(temporaryRoot, devMode ? `nw-dev${artifactSuffix}-smoke-result.json` : 'nw-smoke-result.json');
+const devManifestPath = join(temporaryRoot, 'nw-launch', 'package.json');
+const preservedDevManifest = join(temporaryRoot, `nw-dev-package${artifactSuffix}.json`);
 await mkdir(join(fixtureDirectory, 'scripts'), { recursive: true });
 await writeFile(join(fixtureDirectory, 'README.txt'), 'XEM Studio NW smoke fixture');
 await writeFile(join(fixtureDirectory, 'scripts', 'intro.txt'), 'field script fixture');
@@ -24,10 +29,11 @@ const smokeFlags = [
   `--studio-smoke=${fixtureDirectory}`,
   `--studio-smoke-output=${outputPath}`,
 ];
+const launcherFlags = devMode ? ['--dev'] : [];
 const command = process.platform === 'linux' ? 'xvfb-run' : process.execPath;
 const args = process.platform === 'linux'
-  ? ['--auto-servernum', process.execPath, launcher, ...smokeFlags]
-  : [launcher, ...smokeFlags];
+  ? ['--auto-servernum', process.execPath, launcher, ...launcherFlags, ...smokeFlags]
+  : [launcher, ...launcherFlags, ...smokeFlags];
 
 try {
   await new Promise((resolvePromise, rejectPromise) => {
@@ -55,6 +61,22 @@ try {
 
   const result = JSON.parse(await readFile(outputPath, 'utf8'));
   await copyFile(outputPath, preservedResult);
+  if (devMode) {
+    const temporaryManifest = JSON.parse(await readFile(join(temporaryRoot, 'nw-launch', 'package.json'), 'utf8'));
+    const packagedManifest = JSON.parse(await readFile(join(studioRoot, 'package.json'), 'utf8'));
+    assert.equal(temporaryManifest.main, 'https://localhost:5176/');
+    assert.equal(temporaryManifest['node-remote'], 'https://localhost:5176/*');
+    const trustAnchors = temporaryManifest.additional_trust_anchors;
+    assert.ok(Array.isArray(trustAnchors));
+    assert.equal(trustAnchors.length, 1);
+    const tlsDirectory = process.env.XEM_STUDIO_TLS_DIR ?? '/home/bart/xenogears_toolkit/.local/serve';
+    const selectedCertificate = new X509Certificate(await readFile(join(tlsDirectory, 'cert.pem')));
+    const configuredAnchor = new X509Certificate(trustAnchors[0]);
+    assert.equal(configuredAnchor.fingerprint256, selectedCertificate.fingerprint256);
+    assert.equal(configuredAnchor.raw.toString('hex'), selectedCertificate.raw.toString('hex'));
+    assert.equal(Object.hasOwn(packagedManifest, 'node-remote'), false);
+    assert.equal(Object.hasOwn(packagedManifest, 'additional_trust_anchors'), false);
+  }
   assert.deepEqual(result.version, {
     version: '0.5.0',
     operations: ['version', 'echo'],
@@ -67,7 +89,14 @@ try {
   ]);
   assert.deepEqual(result.echo, result.entries);
   assert.equal('error' in result, false);
-  console.log(`NW smoke passed: ${JSON.stringify(result)}`);
+  console.log(`NW ${devMode ? 'dev ' : ''}smoke passed: ${JSON.stringify(result)}`);
 } finally {
+  if (devMode) {
+    try {
+      await copyFile(devManifestPath, preservedDevManifest);
+    } catch (error) {
+      if (!(error instanceof Error && 'code' in error && error.code === 'ENOENT')) throw error;
+    }
+  }
   await rm(runDirectory, { recursive: true, force: true });
 }

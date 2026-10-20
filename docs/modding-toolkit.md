@@ -224,8 +224,11 @@ Each one ends usable and tested. UI mockups come before each editor's UI work.
   while the pinned runtime Nix shell supplies Node, Rust, wasm-bindgen and
   Chromium. The downloaded Linux archive/checksum is recorded in
   `tools/studio/nw-binary.json`. Milestone one needs no WebGPU. A remote dev page
-  needs an explicit, narrowly scoped Node/NW API grant; the built local app
-  does not require a remote-origin grant.
+  uses the approved `https://localhost:5176/*` Node/NW API grant only in its
+  temporary development manifest. That manifest trusts the selected local public
+  server certificate through `additional_trust_anchors`, retaining TLS/hostname
+  checks without OS trust changes. Both fields are absent from the packaged
+  manifest. See `tools/studio/README.md` for certificate selection and checks.
 - **Upstream fit.** plan.md's Phase 12 specifies Slint editors. The backend's
   service interface is what keeps that option open: a Slint frontend replaces
   `tools/studio` and calls the same `Studio::command`.
