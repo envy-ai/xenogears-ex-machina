@@ -1,32 +1,48 @@
 # Modding toolkit (fork plan)
 
 The plan for the `modding-toolkit` branch of envy-ai/xenogears-ex-machina: a
-modding tool that runs as an NW.js desktop app beside the native game and as a
-page beside the browser build, from one code base. [plan.md](../plan.md) stays
-authoritative for the project; this file owns only the fork's toolkit work and
-says where it meets plan.md's phases.
+modding studio with a Rust backend and a web frontend. The frontend runs in
+NW.js beside the native game and as a page beside the browser build.
+[plan.md](../plan.md) stays authoritative for the project; this file owns only
+the fork's toolkit work and says where it meets plan.md's phases. No upstream
+pull requests are planned from this branch.
 
-## Relation to plan.md
+## Backend and frontend
 
-- **Phase 11 (mods, authoring bridge).** The runtime parts here, namely mod
-  packages with load order, validation and save compatibility, and the
-  TypeScript authoring stack, are Phase 11 items. They are built to its
-  contract ([authoring/README.md](authoring/README.md): source is authoritative,
-  packages are immutable and validated in full, prebuilt play needs no Node or
-  browser) and are candidates for upstream pull requests.
-- **Phase 12 (editors).** plan.md specifies Slint desktop editors. The NW.js
-  tool is this fork's choice of editor client instead. It uses the same services
-  (the control layer, the decoders, the package loader), so a Slint client can be
-  built on them later without anything existing only in the NW.js UI.
-- **Order.** plan.md puts the toolkit after the Phase 10 release, which still
-  has open items. Ask the maintainer before sending Phase 11 pull requests.
+- **Backend: `xem-studio`.** A Rust crate in the runtime workspace
+  (`src/runtime/crates/xem-studio`). It holds everything that decides anything:
+  - decoders and encoders;
+  - the conversion between bytecode and node graphs;
+  - validators;
+  - the mod package model and the delta builder.
+
+  Its interface is one service: `Studio::command(json) -> json`. It has typed
+  operations, explicit errors, and nothing that exists only in a UI. This is
+  the pattern of `xem_core::control::Session`. The web frontend calls it through
+  wasm-bindgen, in NW.js and the browser alike. A Slint frontend could link the
+  crate natively and call the same operations, leaving the backend as it is.
+- **Frontend: `tools/studio/`.** Plain JavaScript ES modules, HTML and CSS,
+  with no build step, as `src/runtime/web/` is written. Editing a frontend file
+  needs only a reload. `tsc --checkJs` over JSDoc types is a lint, not a build.
+  Only backend changes need a compile, a wasm-bindgen build in the runtime shell.
 - **The decomp mandate holds.** Nothing in `src/decomp/` changes. Runtime
-  additions go in `src/runtime/` and `src/port/`.
+  additions (mod packages, any new control commands) go in `src/runtime/` and
+  `src/port/`.
+
+```
+frontend  tools/studio/        JS modules: node editor, panels, viewport
+            platform/files     Node fs (NW.js) | File System Access API (browser)
+            platform/game      xem-desktop --control over pipes (NW.js)
+                               | the game page's window.xem (browser)
+            nw/  web/          the two entries (NW.js manifest, static page)
+backend   xem-studio (wasm)    Studio::command: scripts, graphs, packages, validation
+runtime   xem-* crates         the game; mod package loading in shared host code
+```
 
 ## What exists to build on
 
-- **One command layer.** `xem_core::control::Session` takes a JSON command and
-  returns a JSON result, the same on every host ([runtime.md, Commands,
+- **One game command layer.** `xem_core::control::Session` takes a JSON command
+  and returns a JSON result, the same on every host ([runtime.md, Commands,
   introspection and snapshots](runtime.md#commands-introspection-and-snapshots)):
   `status`, `frames`, `run_until`, `pad`/`press`/`act`, `inspect`/`write` by
   typed path through `build/game/schema.json`, `globals`,
@@ -34,72 +50,66 @@ says where it meets plan.md's phases.
   `record`/`replay`, `scenario`, `field`, `context`.
 - **Native.** `xem-desktop --control` answers those commands on stdin, one line
   each, while the game plays in its window (`crates/xem-desktop/tests/control.rs`
-  drives it this way). No new socket is needed when the tool launches the game.
+  drives it this way).
 - **Browser.** The page exposes the same commands as `window.xem`
   (`src/runtime/web/xem.js`: `command`, `run`, `runFrames`), fetching disc
   ranges a frame waits for.
-- **Decoders.** `tools/analysis/` has nine bytecode decoders whose `--sweep`
-  decodes every shipped script on both discs with nothing unknown
-  ([scripts/interpreters.md](scripts/interpreters.md)), plus the field bundle
-  (`field.py`), LZSS (`packed.py`, and `tools/packed_container.py`, which
-  re-packs every container exactly) and the disc index. There is no assembler or
-  encoder yet ([later-phases.md, Script machines](later-phases.md#script-machines)).
-- **Authoring pins.** `tools/authoring/package.json` already qualifies
-  TypeScript 7.0.2, esbuild 0.28.2, three 0.186.0, zod 4.6.2,
-  @gltf-transform/core 4.5.0 and manifold-3d 3.5.3 on Node 24.19.0, with a Nix
-  shell in `nix/authoring/`.
+- **Decoders.** `tools/analysis/` has a decoder for every bytecode machine.
+  Each one's `--sweep` decodes every shipped script on both discs with nothing
+  unknown ([scripts/interpreters.md](scripts/interpreters.md)). Alongside them
+  are the field bundle (`field.py`), LZSS (`packed.py`, and
+  `tools/packed_container.py`, which re-packs every container exactly) and the
+  disc index (`tools/extraction/disc_files.py`: sectors 24-38, 7-byte records).
+  There is no assembler or encoder yet
+  ([later-phases.md, Script machines](later-phases.md#script-machines)).
+- **Field events** ([scripts/field-events.md](scripts/field-events.md)):
+  - Up to 32 actors per map, each with 32 event entry PCs, run each frame by
+    `field_event.c`.
+  - 256 primary and 227 extended opcodes, tabled in `tools/analysis/events.py`
+    (`_PRIMARY`/`_EXTENDED`: mnemonic, handler, size, flow, operands, effect)
+    and tested against the C.
 
-## Architecture
+## Node graphs of field scripts
 
-```
-tools/studio/                       one TypeScript code base, one esbuild bundle
-  core/        decoders, encoders, validators, mod package model (no DOM, no Node)
-  ui/          editors and panels (DOM, three.js viewport)
-  platform/
-    files      FileStore  : Node fs (NW.js) | File System Access API (browser)
-    game       GameLink   : xem-desktop --control over pipes (NW.js)
-                          | window.xem of the game page (browser)
-  nw/          NW.js manifest and entry (Node available)
-  web/         static entry, served beside build/web
-```
-
-- **`GameLink`**: `command(json) -> Promise<json>`, `run(json)` (frames across
-  disc fetches), `events` (exit, errors). Both implementations send the same
-  JSON. In NW.js it spawns `xem-desktop --disc <image> --control` and matches
-  each reply line to its request. In the browser the tool and the game page share
-  an origin, and the tool calls the game's `window.xem`, either in an iframe it
-  embeds or in a window it opened. A failed or closed link is an error the UI
-  shows. There is no reconnect fallback.
-- **`FileStore`**: a project folder (the mod's sources, its packages and the
-  user's disc images): `list`, `read`, `write` (atomic), `watch` where
-  available. The browser version needs a Chromium browser, which is already the
-  only one the project qualifies.
-- **Shared core.** Everything that decides anything lives in `core/` and runs
-  unchanged in Node, NW.js and the page, and in `node --test` without a browser.
-- **What is desktop-only.** Running user generators (the supervised Node build of
-  [authoring/README.md](authoring/README.md)) needs process isolation, so it is
-  NW.js only. The browser tool edits data and packages and attaches to the game,
-  but runs no user code.
-- **NW.js.** Node and the DOM share one context, so the platform adapters are
-  thin. Pin the NW.js release whose Chromium is nearest the runtime shell's
-  Chromium 152, and add it to a pinned Nix shell (`nix/authoring` or a new
-  `nix/studio`).
+- **Flow graph per event.** Basic blocks from each instruction's size and flow
+  become nodes, and jumps and branches become edges. This is exact for every
+  script. Recognised shapes fold into higher-level nodes: if/else, a loop that
+  waits on a flag, a camera move sequence. Anything else stays as plain edges.
+- **Actor lanes.** Each map's actors run concurrently, so a cutscene view shows
+  one lane per actor. Links show `request_event_started` and
+  `request_event_finished` (`08`, `09`) and the shared variables that actors
+  wait on.
+- **Back to bytecode.**
+  - Every node keeps the byte span it came from.
+  - Unedited nodes are written back in place, byte for byte.
+  - Edited and new nodes are appended, with a jump out from the original spot
+    and a jump back, because field PCs are absolute u16 offsets.
+- **Units that stay together.** Paired instructions that re-read operands
+  behind them (`10`/`11`, `57`) stay one node. Handlers that advance further
+  (`9a`, `d4`/`fc`, ext `18`/`c6`) and `a6`'s inline jump table become nodes
+  with several exits. Map entry records (bytecode opening with `ff`) and gaps
+  become pinned blocks that cannot be edited.
+- **Names.** The game knows `v0428`, `actor25` and `msg0000`. A name table kept
+  with the mod project gives them readable names; the backend stores and
+  validates it, and the frontend shows it.
+- **Validation.** Reject what the original would read out of range: extended
+  `e3`-`ff`, unchecked table indexes ([scripts/interpreters.md](scripts/interpreters.md)).
 
 ## Mod packages (runtime)
 
 - **What a package changes.** It replaces disc files by their index in the
-  game's own file table (sector 24 on both discs) and states which disc
-  identities it applies to (`xem_disc::identify`).
+  game's own file table and states which disc identities it applies to
+  (`xem_disc::identify`).
 - **No original bytes in packages.** A package must be shareable, so it carries
   binary deltas against the user's own disc files, plus wholly authored files.
-  It never carries original data verbatim. The tool builds deltas; the loader
-  applies them to the user's image and checks the hash of each source file
-  before and of each result after.
+  It never carries original data verbatim. The loader applies deltas to the
+  user's image and checks the hash of each source file before and of each
+  result after.
 - **Where it applies.** A virtual disc layer in shared host code (`xem-disc` and
   `xem-host`) used by every host. A replacement whose size differs is placed past
   the image's last sector, and the file table entries the game reads are patched
-  to match. The exact sector format the port serves (raw 2352-byte sectors, EDC)
-  must be read from `xem-disc` before this is designed.
+  to match. Read the sector format the port serves from `xem-disc` before
+  designing this.
 - **Load order and conflicts.** Deterministic: a manifest list order with
   declared dependencies. Two packages that replace the same file is a conflict
   error unless one declares that it overrides the other.
@@ -113,70 +123,74 @@ tools/studio/                       one TypeScript code base, one esbuild bundle
 
 Each one ends usable and tested. UI mockups come before each editor's UI work.
 
-1. **Scaffold.** `tools/studio` builds one bundle that opens in NW.js and as a
-   page served by `serve.mjs`. `core/` has `node --test` coverage. Add the new
-   files to `packaging/source-files.txt` and check them with
+1. **Skeleton.** The `xem-studio` crate with `Studio::command` and a wasm build.
+   `tools/studio` opens in NW.js and as a page served by `serve.mjs`, loads the
+   backend and reports its version and adapters. Add new authored files to
+   `packaging/source-files.txt` and check them with
    `tools/repository/source_archive.py --check`.
-   *Accept:* both shells start, and the platform self-check reports the right
-   adapters.
-2. **Live attach and inspector.** `GameLink` for both hosts. Panels:
+2. **Field script round trip.** Export `events.py`'s tables once to data the
+   crate reads, so there is still one source of opcode facts. Build the Rust
+   decoder, the flow graph and the encoder.
+   *Accept:* for every map of both discs, the Rust decoder agrees with the
+   Python `--sweep`, and decoding to a graph and encoding back reproduces the
+   event component byte for byte. Synthetic cases run in `cargo test`; the
+   sweep over the real discs is a local test.
+3. **Read-only node view.** Mockup first. Then flow graphs and actor lanes for
+   any map, with the decoder's mnemonics and operands, and the name table.
+   Choose the node-graph library then; one usable without a build step is
+   preferred.
+4. **Live attach and inspector.** The game link for both hosts, and panels for:
    - status, frame step and run;
    - snapshot and restore;
    - a `schema.json` tree with `inspect` and `write`;
-   - globals search;
-   - a memory view.
-   *Accept:* one test script attaches to `xem-desktop --control` (as
-   `control.rs` launches it) and to the browser build (Playwright), runs the same
-   commands, and gets equal results after the same replay.
-3. **Read-only data browsers.** Disc file index, field bundle components and
-   event script disassembly. The opcode tables are exported once from the Python
-   decoders to JSON, so there is still one source of opcode facts.
-   *Accept:* the TypeScript decoders agree with the Python `--sweep` on every
-   script of both discs (a local test, since the discs stay local).
-4. **Mod packages in the runtime.** Format, loader, delta builder, virtual disc
-   layer, conflicts and save compatibility, as above. The tool packages and
-   enables a mod.
+   - jumping from a running actor's PC to its node.
+
+   *Accept:* one test attaches to `xem-desktop --control` (as `control.rs`
+   launches it) and to the browser build (Playwright), runs the same commands,
+   and gets equal results after the same replay.
+5. **Mod packages in the runtime.** The format, loader, delta builder, virtual
+   disc layer, conflicts and save compatibility described above.
    *Accept:* a changed message shows in both hosts, and with packages absent or
    disabled the `memory_hash` matches vanilla.
-5. **Field event editor.** An assembler that preserves layout: absolute u16 PCs,
-   handlers that read neighbouring bytes, and appending rather than inserting
-   ([scripts/field-events.md](scripts/field-events.md)). Validators reject what
-   the original would read out of range.
-   *Accept:* decoding then encoding reproduces every shipped field script on both
-   discs byte for byte, and an edited event plays in both hosts. A "reload this
-   field" control command is added if restoring a snapshot is not enough.
-6. **Map editor.** A three.js viewport for the field bundle: collision, trigger
+6. **Editing.** Node edits, new nodes and new events. Recompile by appending,
+   validate, package, then play the edit in either host.
+   *Accept:* an edited event plays as edited in both hosts, and an untouched map
+   in the same package is byte-identical to the original.
+7. **Map editor.** A three.js viewport for the field bundle: collision, trigger
    zones (palettes, images, triggers and the view block are still undecoded, per
    later-phases.md's data formats table, so decode those first), actor
    placement and entrances.
-7. **Presentation replacements.** Texture packs and 3D models in place of
+8. **Presentation replacements.** Texture packs and 3D models in place of
    sprites (first: Fei's field sprite as a glTF model in Lahan) in the render
-   layer, presentation only, so RAM and timing stay unchanged. This ties in with
-   plan.md's HD-2D mode.
-8. **Authoring bridge and Lua.** Follow Phase 11 and the authoring contract
-   (wall, door and collectible first). The NW.js tool is the desktop client.
+   layer, presentation only, so RAM and timing stay unchanged.
+9. **Other machines and Lua.** Battle AI, battle events and world map scripts
+   get the same graph treatment, using their decoders. Lua extensions follow
+   plan.md Phase 11.
 
 ## Verification
 
-- **Core:** `node --test` over `tools/studio/core`, including round trips of
-  synthetic inputs. Sweeps over the real discs run locally only.
-- **Browser:** Playwright with the runtime shell's Chromium against the built
-  page, inside the user-scope memory limit from the user's AGENTS.md.
+- **Backend:** `cargo test` for `xem-studio`, including round trips of synthetic
+  scripts. The sweeps over the real discs run locally only.
+- **Frontend:** `node --test` for logic that runs without a page, and Playwright
+  with the runtime shell's Chromium against the served page, inside the
+  user-scope memory limit from the user's AGENTS.md.
 - **NW.js:** its bundled ChromeDriver drives the same UI tests.
 - **Native link:** under lavapipe and a headless Wayland, as `control.rs` does.
 - **Runtime crates:** `src/runtime/scripts/suite.sh desktop` or `web` for
-  whichever side changed, and `suite.sh full` once before any upstream pull
-  request.
+  whichever side changed.
 
 ## Risks and open questions
 
-- **Re-encoding.** Field scripts have overlapping handlers and absolute PCs, so
-  edits must append. Some edits may still need relocation tooling.
+- **Re-encoding.** Appending with jumps out and back keeps layout, but
+  instructions that read neighbouring bytes limit where those jumps can go. The
+  round trip in milestone 2 is the proof.
 - **Different file sizes.** Replacements of a different size depend on how the
-  game reads its file table and on sector layout; milestone 4 settles this
+  game reads its file table and on sector layout; milestone 5 settles this
   before committing to the format.
-- **NW.js and WebGPU.** The browser preview inside NW.js depends on NW.js's
-  Chromium build enabling WebGPU on Linux. The native game does not depend on
-  it.
-- **Upstream fit.** The NW.js shell differs from plan.md's Slint editors. Keep
-  the runtime and core pieces free of NW.js so they can go upstream on their own.
+- **NW.js.** It is not in the pinned Nix shells. Pin the release whose Chromium
+  is nearest the runtime shell's Chromium 152, and add it to `nix/authoring` or
+  a new `nix/studio`. The browser preview inside NW.js depends on its Chromium
+  enabling WebGPU on Linux; the native game does not.
+- **Upstream fit.** plan.md's Phase 12 specifies Slint editors. The backend's
+  service interface is what keeps that option open: a Slint frontend replaces
+  `tools/studio` and calls the same `Studio::command`.
