@@ -21,16 +21,36 @@ pull requests are planned from this branch.
   the pattern of `xem_core::control::Session`. The web frontend calls it through
   wasm-bindgen, in NW.js and the browser alike. A Slint frontend could link the
   crate natively and call the same operations, leaving the backend as it is.
-- **Frontend: `tools/studio/`.** Plain JavaScript ES modules, HTML and CSS,
-  with no build step, as `src/runtime/web/` is written. Editing a frontend file
-  needs only a reload. `tsc --checkJs` over JSDoc types is a lint, not a build.
-  Only backend changes need a compile, a wasm-bindgen build in the runtime shell.
+- **Frontend: `tools/studio/`.** React, TypeScript and Vite, the stack of
+  Saga Foundry RPG Creator (`~/rpg_creator`), whose RPG Maker-patterned editor
+  UI it takes widgets from. In development the Vite dev server reloads on save,
+  in the browser and in NW.js pointed at it, so frontend work needs no manual
+  compile. Only backend changes need a compile, a wasm-bindgen build in the
+  runtime shell.
+- **Taken from rpg_creator.** rpg_creator is AGPL-3.0 and this repository is
+  MIT. Nothing is copied until the user, as rpg_creator's author, has added the
+  MIT grant for the copied files to `tools/studio/PROVENANCE.md`. That file also
+  lists each copied file's source path and rpg_creator revision, and each copied
+  file names them in a header comment. What comes over is the general layers
+  only:
+  - the visual primitives (the editor SCSS themes);
+  - the behavioural widgets: dockable workspace, docker lists, context menus,
+    modal and prompt/choice/confirm dialogs, tabs, toolbars, native window
+    controls, and form fields with history (`NumberField`, `RecordSelect`);
+  - the event graph editor's canvas: pan, zoom, wiring, selection, entry nodes
+    and condition nodes with True/False outputs.
+
+  rpg_creator's editor state, project schema and node types stay behind; the
+  studio's node types come from the backend. Its widget registry
+  (`docs/editor-widget-library.md`) is the starting point for the studio's own
+  registry. If both projects keep improving the same widgets, extract a shared
+  package later instead of copying again.
 - **The decomp mandate holds.** Nothing in `src/decomp/` changes. Runtime
   additions (mod packages, any new control commands) go in `src/runtime/` and
   `src/port/`.
 
 ```
-frontend  tools/studio/        JS modules: node editor, panels, viewport
+frontend  tools/studio/        React + TS (Vite): command list, node graph, panels, viewport
             platform/files     Node fs (NW.js) | File System Access API (browser)
             platform/game      xem-desktop --control over pipes (NW.js)
                                | the game page's window.xem (browser)
@@ -89,6 +109,15 @@ runtime   xem-* crates         the game; mod package loading in shared host code
   (`9a`, `d4`/`fc`, ext `18`/`c6`) and `a6`'s inline jump table become nodes
   with several exits. Map entry records (bytecode opening with `ff`) and gaps
   become pinned blocks that cannot be edited.
+- **Two views of one graph.** The main event view is an RPG Maker-style
+  indented command list: folded blocks nest, and an insert-command window offers
+  the commands by category, each with its own form. The node graph is the
+  alternate view, for complex flow and for actor lanes. Both edit the same
+  backend graph. rpg_creator went graph-only and has no list editor, so the list
+  view is new work.
+- **Pages.** Xenogears has no condition-selected pages. Where an event's head
+  branches on flags, the frontend can present the branches as pages; the
+  backend reports that shape and the bytecode stays as it is.
 - **Names.** The game knows `v0428`, `actor25` and `msg0000`. A name table kept
   with the mod project gives them readable names; the backend stores and
   validates it, and the frontend shows it.
@@ -124,8 +153,10 @@ runtime   xem-* crates         the game; mod package loading in shared host code
 Each one ends usable and tested. UI mockups come before each editor's UI work.
 
 1. **Skeleton.** The `xem-studio` crate with `Studio::command` and a wasm build.
-   `tools/studio` opens in NW.js and as a page served by `serve.mjs`, loads the
-   backend and reports its version and adapters. Add new authored files to
+   `tools/studio` is a Vite app with the rpg_creator widget layers copied in
+   (with provenance). It opens in NW.js and as a browser page, loads the backend
+   and reports its version and adapters. Add the NW.js, Vite and React pins to a
+   Nix shell. Add new authored files to
    `packaging/source-files.txt` and check them with
    `tools/repository/source_archive.py --check`.
 2. **Field script round trip.** Export `events.py`'s tables once to data the
@@ -135,10 +166,9 @@ Each one ends usable and tested. UI mockups come before each editor's UI work.
    Python `--sweep`, and decoding to a graph and encoding back reproduces the
    event component byte for byte. Synthetic cases run in `cargo test`; the
    sweep over the real discs is a local test.
-3. **Read-only node view.** Mockup first. Then flow graphs and actor lanes for
-   any map, with the decoder's mnemonics and operands, and the name table.
-   Choose the node-graph library then; one usable without a build step is
-   preferred.
+3. **Read-only views.** Mockups first. Then, for any map, the command list, the
+   flow graph (on the canvas from rpg_creator) and the actor lanes, with the
+   decoder's mnemonics and operands and the name table.
 4. **Live attach and inspector.** The game link for both hosts, and panels for:
    - status, frame step and run;
    - snapshot and restore;
@@ -171,7 +201,7 @@ Each one ends usable and tested. UI mockups come before each editor's UI work.
 
 - **Backend:** `cargo test` for `xem-studio`, including round trips of synthetic
   scripts. The sweeps over the real discs run locally only.
-- **Frontend:** `node --test` for logic that runs without a page, and Playwright
+- **Frontend:** `tsc` typecheck, Vitest for logic that runs without a page, and Playwright
   with the runtime shell's Chromium against the served page, inside the
   user-scope memory limit from the user's AGENTS.md.
 - **NW.js:** its bundled ChromeDriver drives the same UI tests.
