@@ -150,6 +150,7 @@ docs/scripts/worldmap-actor.md
 docs/scripts/worldmap-scene.md
 docs/studio-milestone-1.md
 docs/studio-milestone-2.md
+docs/studio-milestone-3.md
 docs/verification/phase0-agent.json
 docs/verification/phase0-authoring.json
 docs/verification/phase0-gaps.json
