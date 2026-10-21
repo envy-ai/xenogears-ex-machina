@@ -75,7 +75,7 @@ test('shows all workspace panels and the loaded wasm backend version', async ({ 
   await expect(page.locator('[data-panel-id="project"]')).toBeVisible();
   await expect(page.locator('[data-panel-id="backend"]')).toBeVisible();
   await expect(page.locator('[data-panel-id="log"]')).toBeVisible();
-  await expect(page.locator('[data-panel-id="backend"]')).toContainText('Operations: version, echo');
+  await expect(page.locator('[data-panel-id="backend"]')).toContainText('Operations: version, echo, field.decode, field.encode');
   await expectResponseToFillBackend(page);
   await page.screenshot({ path: resolve(artifactsDirectory, 'shell-1440x900.png') });
 });

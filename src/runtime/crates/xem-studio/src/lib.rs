@@ -1,14 +1,16 @@
 //! Host-independent studio commands, shared by native callers and wasm-bindgen.
 //!
 //! See tools/studio/README.md for the JSON protocol. No game data is loaded by
-//! the milestone-one service.
+//! this service without an explicit field.decode command.
+
+pub mod field;
 
 use serde::Deserialize;
 use serde_json::{Value, json};
 #[cfg(target_arch = "wasm32")]
 use wasm_bindgen::prelude::*;
 
-const OPERATIONS: &[&str] = &["version", "echo"];
+const OPERATIONS: &[&str] = &["version", "echo", "field.decode", "field.encode"];
 
 #[derive(Deserialize)]
 #[serde(
@@ -20,6 +22,23 @@ const OPERATIONS: &[&str] = &["version", "echo"];
 enum Command {
     Version,
     Echo(Value),
+    #[serde(rename = "field.decode")]
+    FieldDecode(FieldDecodeArgs),
+    #[serde(rename = "field.encode")]
+    FieldEncode(FieldEncodeArgs),
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct FieldDecodeArgs {
+    bytes: Vec<u8>,
+    declared_size: Option<usize>,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct FieldEncodeArgs {
+    graph: Box<field::FieldGraph>,
 }
 
 impl Command {
@@ -42,14 +61,18 @@ impl Command {
             .map_err(|error| StudioError::new("invalid_args", error.to_string()))
     }
 
-    fn execute(self) -> CommandResult {
-        match self {
+    fn execute(self) -> Result<CommandResult, StudioError> {
+        Ok(match self {
             Self::Version => CommandResult::Version {
                 version: env!("CARGO_PKG_VERSION"),
                 operations: OPERATIONS,
             },
             Self::Echo(value) => CommandResult::Echo(value),
-        }
+            Self::FieldDecode(args) => {
+                CommandResult::FieldGraph(Box::new(field::decode(&args.bytes, args.declared_size)?))
+            }
+            Self::FieldEncode(args) => CommandResult::FieldBytes(field::encode(&args.graph)?),
+        })
     }
 }
 
@@ -59,6 +82,8 @@ enum CommandResult {
         operations: &'static [&'static str],
     },
     Echo(Value),
+    FieldGraph(Box<field::FieldGraph>),
+    FieldBytes(Vec<u8>),
 }
 
 impl CommandResult {
@@ -69,6 +94,8 @@ impl CommandResult {
                 operations,
             } => json!({ "version": version, "operations": operations }),
             Self::Echo(value) => value,
+            Self::FieldGraph(graph) => json!(graph),
+            Self::FieldBytes(bytes) => json!(bytes),
         }
     }
 }
@@ -93,6 +120,12 @@ impl StudioError {
     }
 }
 
+impl From<field::FieldError> for StudioError {
+    fn from(error: field::FieldError) -> Self {
+        Self::new(error.kind, error.message)
+    }
+}
+
 /// The studio service. Each call returns JSON, including when input is invalid.
 #[cfg_attr(target_arch = "wasm32", wasm_bindgen)]
 #[derive(Default)]
@@ -106,8 +139,8 @@ impl Studio {
     }
 
     pub fn command(&self, input: &str) -> String {
-        match Command::parse(input) {
-            Ok(command) => json!({ "ok": command.execute().into_json() }),
+        match Command::parse(input).and_then(Command::execute) {
+            Ok(result) => json!({ "ok": result.into_json() }),
             Err(error) => error.into_json(),
         }
         .to_string()

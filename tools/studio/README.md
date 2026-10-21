@@ -187,7 +187,7 @@ in Log; errors remain persistent and do not prevent later commands.
 Operations:
 
 - `{"op":"version"}` (args absent or null) returns
-  `{"ok":{"version":"0.5.0","operations":["version","echo"]}}`. The version follows
+  `{"ok":{"version":"0.5.0","operations":["version","echo","field.decode","field.encode"]}}`. The version follows
   the runtime workspace package version.
 - `{"op":"echo","args":value}` returns `{"ok":value}`. Any JSON value,
   including null, false, zero, an empty string, and objects with `ok` or `error`
@@ -198,3 +198,25 @@ Operations:
   `invalid_args` for a known operation with invalid arguments or extra fields.
   Messages preserve parser/deserializer diagnostics. Invalid calls do not
   prevent subsequent commands.
+
+
+### Field-event inspection (milestone two)
+
+`{"op":"field.decode","args":{"bytes":[...],"declared_size":1234}}` accepts
+an **already decompressed event component**, including its 128 variable-type
+bytes, actor count and actor/event entry rows. It does not accept a whole map
+bundle or disc. `declared_size` is optional and defaults to the supplied length;
+when present it includes the header and retains at most 16 supplied stream-tail
+bytes. No padding is invented. The result is `{"ok": graph}`.
+
+`{"op":"field.encode","args":{"graph":graph}}` returns `{"ok":[...]}` with the
+same whole stream, including its tail. It assembles explicit header fields and
+storage blocks and validates their source hash and canonical decode. This is
+an unedited round trip: changing bytes, graph semantics, offsets or identity is
+rejected. It provides no editing, insertion, relocation or package-writing API.
+
+The graph schema, diagnostic limits, generator and local both-disc verification
+workflow are documented in [studio-milestone-2.md](../../docs/studio-milestone-2.md).
+Malformed/truncated/unsupported components return structured errors. Known
+Python-sweep overlap and outside-successor cases remain explicit diagnostics;
+a returned inspection graph does not assert executable control flow.

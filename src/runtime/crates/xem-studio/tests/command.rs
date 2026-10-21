@@ -32,7 +32,7 @@ fn version_reports_package_version_and_supported_operations() {
     let studio = Studio::new();
     let expected = json!({
         "version": "0.5.0",
-        "operations": ["version", "echo"]
+        "operations": ["version", "echo", "field.decode", "field.encode"]
     });
 
     assert_eq!(

@@ -149,6 +149,7 @@ docs/scripts/timelines.md
 docs/scripts/worldmap-actor.md
 docs/scripts/worldmap-scene.md
 docs/studio-milestone-1.md
+docs/studio-milestone-2.md
 docs/verification/phase0-agent.json
 docs/verification/phase0-authoring.json
 docs/verification/phase0-gaps.json
@@ -910,8 +911,16 @@ src/runtime/crates/xem-spu/tests/spu.rs
 src/runtime/crates/xem-storage/Cargo.toml
 src/runtime/crates/xem-storage/src/lib.rs
 src/runtime/crates/xem-studio/Cargo.toml
+src/runtime/crates/xem-studio/data/README.md
+src/runtime/crates/xem-studio/data/field-opcodes.json
+src/runtime/crates/xem-studio/src/field/decode.rs
+src/runtime/crates/xem-studio/src/field/graph.rs
+src/runtime/crates/xem-studio/src/field/mod.rs
+src/runtime/crates/xem-studio/src/field/opcodes.rs
 src/runtime/crates/xem-studio/src/lib.rs
 src/runtime/crates/xem-studio/tests/command.rs
+src/runtime/crates/xem-studio/tests/field.rs
+src/runtime/crates/xem-studio/tests/field_sweep.rs
 src/runtime/crates/xem-ui/Cargo.toml
 src/runtime/crates/xem-ui/build.rs
 src/runtime/crates/xem-ui/examples/panel.rs
@@ -1064,6 +1073,7 @@ tests/test_sprite_return.py
 tests/test_sprite_vm.py
 tests/test_staff_roll.py
 tests/test_stat_items.py
+tests/test_studio_field_opcodes.py
 tests/test_sweep_math.py
 tests/test_sweep_trace.py
 tests/test_text_control.py
@@ -1199,6 +1209,7 @@ tools/studio/README.md
 tools/studio/build-backend.py
 tools/studio/docs/dependency-audit.md
 tools/studio/docs/widgets.md
+tools/studio/field_opcodes.py
 tools/studio/index.html
 tools/studio/nw-binary.json
 tools/studio/package-lock.json
@@ -1252,9 +1263,11 @@ tools/studio/src/styles/editor-controls.scss
 tools/studio/src/styles/editor-surfaces.scss
 tools/studio/src/styles/editor-typography.scss
 tools/studio/src/styles/editor.scss
+tools/studio/tests/e2e/field.spec.ts
 tools/studio/tests/e2e/nw-smoke.mjs
 tools/studio/tests/e2e/serve-built.mjs
 tools/studio/tests/e2e/studio.spec.ts
+tools/studio/tests/field_oracle.py
 tools/studio/tests/unit/files.test.ts
 tools/studio/tests/unit/service.test.ts
 tools/studio/tests/unit/tls-directory.test.ts

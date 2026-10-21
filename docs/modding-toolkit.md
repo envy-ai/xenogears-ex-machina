@@ -169,7 +169,9 @@ Each one ends usable and tested. UI mockups come before each editor's UI work.
    *Accept:* for every map of both discs, the Rust decoder agrees with the
    Python `--sweep`, and decoding to a graph and encoding back reproduces the
    event component byte for byte. Synthetic cases run in `cargo test`; the
-   sweep over the real discs is a local test.
+   sweep over the real discs is a local test. The backend protocol, canonical
+   graph, public metadata provenance and exact local checks are documented in
+   [studio-milestone-2.md](studio-milestone-2.md).
 3. **Read-only views.** Mockups first. Then, for any map, the command list, the
    flow graph (on the canvas from rpg_creator) and the actor lanes, with the
    decoder's mnemonics and operands and the name table.
