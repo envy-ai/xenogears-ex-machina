@@ -468,3 +468,13 @@ party selectors and grouped possible variable dependencies; links navigate to
 the source instruction. Map-wide diagnostic references remain available in all
 three views. Ctrl+1/2/3 switches views, Ctrl+F finds within the map, F2 opens names,
 Enter follows an explicit target, and Alt+left/right navigates jump history.
+
+
+### Server disc picker
+
+The browser Disc panel composes the existing `editor-field-list`, above-label
+native select, ordinary buttons and persistent status text. Browse explicitly
+loads the configured server catalogue; native arrows/type-ahead select an image
+and Enter activates a focused button. Loading disables competing server actions.
+Errors use the existing persistent Studio error surface. This composes the
+registered field/button pattern without a separate skin or copied interaction.

@@ -58,6 +58,47 @@ only its public X.509 certificate. TLS and hostname validation remain enabled.
 The packaged manifest has neither `node-remote` nor `additional_trust_anchors`.
 No OS/NSS trust store is changed, and no certificate or sandbox bypass is added.
 
+## Server disc folder
+
+The browser can open images stored on the Studio server without selecting or
+copying them onto the browser's computer. Enable this read-only development/preview
+endpoint explicitly when starting Vite:
+
+```sh
+export XEM_STUDIO_DISC_DIR=/absolute/path/to/discs
+npm --prefix tools/studio run dev
+```
+
+Relative directory configuration resolves from the repository root. No directory
+is exposed by default; an invalid configured directory fails startup with its
+original diagnostic. In Project → Discs, choose **Browse server discs**, select
+**Server disc image**, then **Open server disc**. Native keyboard selection and
+Enter work through the existing controls. The local browser file picker remains
+available, and the desktop path picker is unchanged.
+
+Only regular, nonhidden `.bin`, `.chd` and `.cue` files directly in the configured
+folder are listed/read. Subdirectories and symlinks are excluded. A CUE's BIN
+must be a listed sibling in that same directory; the existing Rust CUE parser
+supplies track boundaries. The endpoint has no write operation and never serves
+project sidecars, arbitrary paths or unsupported files. Clients able to reach
+this Studio origin can read the configured images; this adds no authentication.
+It adds no CORS allowance, Vite filesystem allowance, TLS trust or Node grant.
+
+`GET /__studio/discs` returns the normal `{ok:...}` envelope containing
+`enabled` and `files[{id,name,bytes,etag}]`. The IDs are opaque to callers.
+`GET /__studio/discs/{id}` requires a single closed `Range: bytes=start-end`
+(inclusive, at most 8 MiB) and the listed `If-Match` ETag. It returns HTTP 206
+with exact Content-Range, Content-Length and ETag, or a non-success status and
+`{error:{kind,message}}`. There is no unbounded whole-file GET. The server checks the open
+file identity before and after reading; changing an image invalidates its old
+listing. Refresh the catalogue and reopen rather than mixing old/new chunks.
+Catalogue requests and each range read have a 30-second abort deadline, including
+the CUE acquisition before a disc session exists. Both ends check ranges and exact response lengths, and the existing wasm loader
+fills only requested binary ranges. Disc contents are not sent as JSON arrays.
+
+Names still belong to the project folder selected on the browser's computer.
+The server image endpoint does not grant remote project-folder writes.
+
 ## Workspace
 
 Project lists files and opens subfolders through the selected platform adapter.

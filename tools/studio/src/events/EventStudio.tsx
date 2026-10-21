@@ -3,6 +3,7 @@ import { readCommandResult, type Backend } from '../backend/service';
 import { browserDiscReader, browserCueDiscReader, openNodeDiscReader, openNodeCueDiscReader, openDiscSession, type DiscSession, type DiscMap, type DiscByteReader } from '../backend/discs';
 import type { FilesAdapter } from '../platform/files';
 import { nativeHost } from '../platform/host';
+import { listServerDiscs, openServerDiscReader, type ServerDisc, type ServerDiscs } from '../backend/remote-discs';
 import { GraphCanvas } from '../editor/GraphCanvas';
 import { useNameHistory } from '../editor/NameHistory';
 import { DockerList, DockerListBody, DockerListRow, DockerListEmpty } from '../editor/DockerList';
@@ -174,6 +175,10 @@ function useStudio(backend: Backend | null, folder: FilesAdapter | null, report:
       : await openNodeDiscReader(path, fs);
     await openReader(reader);
   }, [backend, openReader]);
+  const openServerDisc = useCallback(async (file: ServerDisc, catalogue: ServerDiscs) => {
+    if (!backend) throw new Error('The backend is not ready');
+    await openReader(await openServerDiscReader(backend, file, catalogue));
+  }, [backend, openReader]);
   const loadMap = useCallback(async (discId: number, number: number) => {
     const disc = discsRef.current.find(disc => disc.session.id === discId);
     if (!disc) throw new Error(`Disc session ${discId} is not open`);
@@ -249,7 +254,7 @@ function useStudio(backend: Backend | null, folder: FilesAdapter | null, report:
     };
     window.addEventListener('keydown', key); return () => window.removeEventListener('keydown', key);
   }, [graph, selection, setView, follow]);
-  const state = { backend, discs, activeDisc, setActiveDisc: selectDisc, map, graph, selection, select, structure, lanes, view, setView, busy, filter, setFilter, find, setFind, rename, setRename, history, sidecarReady, sidecarError, filterRef, findRef, openFiles, openNativePath, loadMap, closeDisc, follow, navigate, install, report, renderTimes };
+  const state = { backend, discs, activeDisc, setActiveDisc: selectDisc, map, graph, selection, select, structure, lanes, view, setView, busy, filter, setFilter, find, setFind, rename, setRename, history, sidecarReady, sidecarError, filterRef, findRef, openFiles, openNativePath, openServerDisc, loadMap, closeDisc, follow, navigate, install, report, renderTimes };
   const latest = useRef(state); latest.current = state;
   useEffect(() => {
     if (import.meta.env.VITE_XEM_STUDIO_TEST !== '1' || !backend) return;
@@ -275,6 +280,25 @@ export function EventStudioProvider({ backend, folder, report, log, children }: 
 export function DiscBrowser() {
   const s = useEvents();
   const [path, setPath] = useState('');
+  const [catalogue, setCatalogue] = useState<ServerDiscs | null>(null);
+  const [serverId, setServerId] = useState('');
+  const [serverLoading, setServerLoading] = useState(false);
+  const browseServer = async () => {
+    setServerLoading(true); setCatalogue(null); setServerId('');
+    try {
+      const result = await listServerDiscs();
+      setCatalogue(result); setServerId(result.files[0]?.id ?? '');
+    } catch (error) { s.report(error); }
+    finally { setServerLoading(false); }
+  };
+  const openServer = async () => {
+    if (!catalogue) return;
+    const file = catalogue.files.find(file => file.id === serverId);
+    if (!file) throw new Error('Select an image from the server disc catalogue');
+    setServerLoading(true);
+    try { await s.openServerDisc(file, catalogue); }
+    finally { setServerLoading(false); }
+  };
   const disc = s.discs.find(disc => disc.session.id === s.activeDisc);
   const maps = disc?.maps.filter(map => `${map.map} ${map.placeholder ? 'placeholder' : ''}`.includes(s.filter.toLowerCase())) ?? [];
   return <section className="event-disc-browser" aria-label="Disc and map browser" onKeyDown={event => {
@@ -286,10 +310,18 @@ export function DiscBrowser() {
     <h2 className="editor-heading editor-heading--section">Discs</h2>
     {nativeHost ? <form onSubmit={event => { event.preventDefault(); s.openNativePath(path).catch(s.report); }} className="editor-field-list"><label className="editor-field editor-field-label"><span>Disc image path</span><input className="editor-control editor-control--text" value={path} onChange={event => setPath(event.target.value)} /></label><button className="editor-button" disabled={!s.backend || Boolean(s.busy)} type="submit">Open disc path</button></form>
       : <label className="editor-field editor-field-label"><span>Open disc files</span><input className="editor-control editor-control--file" type="file" multiple accept=".chd,.bin,.cue" disabled={!s.backend || Boolean(s.busy)} onChange={event => { const files = [...event.target.files ?? []]; event.target.value = ''; s.openFiles(files).catch(s.report); }} /></label>}
+    {!nativeHost && <div className="editor-field-list" aria-label="Server discs">
+      <button className="editor-button" disabled={!s.backend || Boolean(s.busy) || serverLoading} onClick={() => void browseServer()}>Browse server discs</button>
+      {catalogue?.enabled && <><label className="editor-field editor-field-label"><span>Server disc image</span><select className="editor-control editor-control--select" value={serverId} disabled={serverLoading || Boolean(s.busy)} onChange={event => setServerId(event.target.value)}>
+        {!catalogue.files.length && <option value="">No supported images in the server folder</option>}
+        {catalogue.files.map(file => <option key={file.id} value={file.id}>{file.name}</option>)}
+      </select></label><button className="editor-button" disabled={!serverId || serverLoading || Boolean(s.busy)} onClick={() => openServer().catch(s.report)}>Open server disc</button></>}
+      <p className="editor-text editor-text--secondary" role="status">{serverLoading ? 'Reading server discs…' : catalogue ? catalogue.enabled ? 'Server files · read only' : 'Server disc access is not configured.' : 'Open an image from the configured server folder.'}</p>
+    </div>}
     <p className="editor-text" role="status">{s.busy || (s.discs.length ? `${s.discs.length} recognized disc sessions` : 'Open your own CHD or BIN/CUE image.')}</p>
     {s.discs.map(item => <div className="event-disc-row" key={item.session.id}><button className="editor-button" aria-pressed={s.activeDisc === item.session.id} onClick={() => s.setActiveDisc(item.session.id)}>Disc {item.session.status.identity?.disc ?? 'test'} · {item.maps.length} maps</button><button className="editor-button editor-button--compact" aria-label={`Close disc ${item.session.id}`} title="Close disc" onClick={() => s.closeDisc(item.session.id).catch(s.report)}>Close</button></div>)}
     <label className="editor-field editor-field-label"><span>Filter maps</span><input ref={s.filterRef} className="editor-control editor-control--text" value={s.filter} onChange={event => s.setFilter(event.target.value)} /></label>
-    <DockerList><DockerListBody>{maps.map(item => <DockerListRow key={item.map} columns="1fr"><button data-map={item.map} className="editor-button event-map-row" aria-pressed={s.map === item.map && s.activeDisc === disc?.session.id} onClick={() => disc && s.loadMap(disc.session.id, item.map).catch(s.report)}><span>Map {item.map}</span><span className="editor-text editor-text--secondary">{item.placeholder ? 'Placeholder' : `${item.actor_count} actors · ${item.script_size} bytes`}</span></button></DockerListRow>)}{!maps.length && <DockerListEmpty>{disc ? 'No matching maps.' : 'No disc open.'}</DockerListEmpty>}</DockerListBody></DockerList>
+    <DockerList><DockerListBody>{maps.map(item => <DockerListRow key={item.map} intrinsicHeight columns="1fr"><button data-map={item.map} className="editor-button event-map-row" aria-pressed={s.map === item.map && s.activeDisc === disc?.session.id} onClick={() => disc && s.loadMap(disc.session.id, item.map).catch(s.report)}><span>Map {item.map}</span><span className="editor-text editor-text--secondary">{item.placeholder ? 'Placeholder' : `${item.actor_count} actors · ${item.script_size} bytes`}</span></button></DockerListRow>)}{!maps.length && <DockerListEmpty>{disc ? 'No matching maps.' : 'No disc open.'}</DockerListEmpty>}</DockerListBody></DockerList>
     {s.graph && s.map !== null && <ActorTree graph={s.graph} names={s.history.value} map={s.map} selection={s.selection} onSelect={s.select} />}
   </section>;
 }

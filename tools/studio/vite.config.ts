@@ -3,6 +3,7 @@ import react from '@vitejs/plugin-react';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { studioTlsDirectory } from './scripts/tls-directory.js';
+import { studioDiscServer } from './scripts/disc-server.js';
 
 export default defineConfig(({ command }) => {
   const fixturePackage = process.env.XEM_STUDIO_WASM_PACKAGE;
@@ -15,7 +16,7 @@ export default defineConfig(({ command }) => {
     { find: /^\.\/pkg\/xem_studio$/, replacement: resolve(packageDirectory, 'xem_studio.js') },
     { find: /^\.\/pkg\/xem_studio_bg\.wasm(\?.*)?$/, replacement: `${resolve(packageDirectory, 'xem_studio_bg.wasm')}$1` },
   ] },
-  plugins: [react()],
+  plugins: [react(), studioDiscServer()],
   base: './',
   server: {
     host: '0.0.0.0', port: 5176, strictPort: true,

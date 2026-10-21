@@ -5,7 +5,7 @@ import { cleanupAfterFailure } from '../platform/errors';
 
 const DEFAULT_TIMEOUT_MS = 120_000;
 const MAX_FILL_BYTES = 8 << 20;
-const MAX_CUE_BYTES = 64 << 10;
+export const MAX_CUE_BYTES = 64 << 10;
 const SECTOR_BYTES = 2352;
 
 export interface DiscByteReader {
@@ -100,7 +100,7 @@ function range(start: number, end: number, bytes: number): void {
   if (start > end || end > bytes) throw new Error(`Disc range [${start},${end}) is outside ${bytes} bytes`);
 }
 
-function readRange(start: number, end: number, bytes: number): void {
+export function readRange(start: number, end: number, bytes: number): void {
   range(start, end, bytes);
   if (end - start > MAX_FILL_BYTES) throw new Error(`Read at most ${MAX_FILL_BYTES} disc bytes at once`);
 }
@@ -170,7 +170,7 @@ export async function openNodeDiscReader(path: string, fs: Pick<typeof Fs, 'open
   }
 }
 
-function cueTrack(backend: Backend, text: string): CueTrack {
+export function cueTrack(backend: Backend, text: string): CueTrack {
   if (new TextEncoder().encode(text).length > MAX_CUE_BYTES) throw new Error('CUE sheet exceeds 64 KiB');
   const track = command<CueTrack>(backend, 'disc.cue', { text });
   if (typeof track.file !== 'string' || !track.file) throw new Error('Invalid CUE companion filename');
