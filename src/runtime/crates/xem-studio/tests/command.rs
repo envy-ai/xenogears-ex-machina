@@ -32,7 +32,11 @@ fn version_reports_package_version_and_supported_operations() {
     let studio = Studio::new();
     let expected = json!({
         "version": "0.5.0",
-        "operations": ["version", "echo", "field.decode", "field.encode"]
+        "operations": [
+            "version", "echo", "field.decode", "field.encode", "disc.open",
+            "disc.poll", "disc.missing", "disc.close", "disc.maps", "field.map_events",
+            "field.structure", "names.validate", "field.lanes", "disc.cue"
+        ]
     });
 
     assert_eq!(
@@ -42,6 +46,42 @@ fn version_reports_package_version_and_supported_operations() {
     assert_eq!(
         command(&studio, r#"{"op":"version","args":null}"#),
         json!({"ok": expected})
+    );
+}
+
+#[test]
+fn cue_command_returns_the_first_mode2_track_and_rejects_time_overflow() {
+    let studio = Studio::new();
+    let overflow = concat!(
+        "FILE x.bin BINARY\n",
+        "TRACK 01 MODE2/2352\n",
+        "INDEX 01 4294967295:00:00\n",
+    );
+    let text = concat!(
+        "FILE \"disc.bin\" BINARY\n",
+        "TRACK 01 MODE2/2352\n",
+        "INDEX 01 00:02:00\n",
+        "TRACK 02 AUDIO\n",
+        "INDEX 00 09:59:00\n",
+    );
+    assert_eq!(
+        command(
+            &studio,
+            &json!({"op":"disc.cue","args":{"text":text}}).to_string()
+        ),
+        json!({
+            "ok": {"file":"disc.bin","number":1,"start":150,"end":44925}
+        })
+    );
+    assert_error(
+        &studio,
+        &json!({"op":"disc.cue","args":{"text":overflow}}).to_string(),
+        "invalid_cue",
+    );
+    assert_error(
+        &studio,
+        &json!({"op":"disc.cue","args":{"text":" ".repeat(65_537)}}).to_string(),
+        "invalid_args",
     );
 }
 

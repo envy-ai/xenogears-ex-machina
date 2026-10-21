@@ -42,10 +42,14 @@ fn words(line: &str) -> Vec<String> {
 
 /// All files a cue sheet needs, including any separate audio tracks.
 pub fn files(text: &str) -> Vec<String> {
-    text.lines().filter_map(|line| {
-        let words = words(line);
-        (words.first()?.eq_ignore_ascii_case("FILE")).then(|| words.get(1).cloned()).flatten()
-    }).collect()
+    text.lines()
+        .filter_map(|line| {
+            let words = words(line);
+            (words.first()?.eq_ignore_ascii_case("FILE"))
+                .then(|| words.get(1).cloned())
+                .flatten()
+        })
+        .collect()
 }
 
 /// `mm:ss:ff` to a sector count.
@@ -53,7 +57,12 @@ fn msf(text: &str) -> Result<u32> {
     let parts: Vec<&str> = text.split(':').collect();
     let parsed: Option<Vec<u32>> = parts.iter().map(|p| p.parse().ok()).collect();
     match parsed.as_deref() {
-        Some(&[m, s, f]) if s < 60 && f < 75 => Ok((m * 60 + s) * 75 + f),
+        Some(&[m, s, f]) if s < 60 && f < 75 => m
+            .checked_mul(60)
+            .and_then(|value| value.checked_add(s))
+            .and_then(|value| value.checked_mul(75))
+            .and_then(|value| value.checked_add(f))
+            .ok_or_else(|| format_error(format!("cue: time exceeds sector range {text}"))),
         _ => Err(format_error(format!("cue: bad time {text}"))),
     }
 }

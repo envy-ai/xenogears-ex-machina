@@ -1,8 +1,9 @@
 # XEM Studio
 
-Milestone one supplies a dockable shell and a host-independent Rust/wasm
-command service. It browses a user-selected folder; it does not edit game data
-or connect to the running game.
+The studio has a dockable shell and a host-independent Rust/wasm command
+service. Its field-event backend inspects original components without editing
+game data or connecting to the running game. Milestone-three event views are
+implemented only after explicit approval of their mockups.
 
 ## Try it
 
@@ -187,8 +188,11 @@ in Log; errors remain persistent and do not prevent later commands.
 Operations:
 
 - `{"op":"version"}` (args absent or null) returns
-  `{"ok":{"version":"0.5.0","operations":["version","echo","field.decode","field.encode"]}}`. The version follows
-  the runtime workspace package version.
+  `{"ok":{"version":"0.5.0","operations":[...]}}`. The version follows
+  the runtime workspace package version. Current operations are `version`, `echo`,
+  `field.decode`, `field.encode`, `disc.open`, `disc.poll`, `disc.missing`,
+  `disc.close`, `disc.maps`, `field.map_events`, `field.structure`,
+  `names.validate`, `field.lanes` and `disc.cue`.
 - `{"op":"echo","args":value}` returns `{"ok":value}`. Any JSON value,
   including null, false, zero, an empty string, and objects with `ok` or `error`
   keys is accepted unchanged inside `ok`; the args field is required.
@@ -220,3 +224,136 @@ workflow are documented in [studio-milestone-2.md](../../docs/studio-milestone-2
 Malformed/truncated/unsupported components return structured errors. Known
 Python-sweep overlap and outside-successor cases remain explicit diagnostics;
 a returned inspection graph does not assert executable control flow.
+
+### Read-only event backend (milestone three)
+
+The additional operations below retain the same typed request and outer
+`ok`/`error` envelope. `version.operations` advertises the complete current list;
+consumers must not assume the milestone-two four-operation list is final.
+The UI for these operations requires separately approved mockups.
+
+Disc sessions belong to one `Studio` instance. Native Rust callers open CHD,
+BIN or CUE paths; wasm callers supply a random-access image reader:
+
+```json
+{"op":"disc.open","args":{"kind":"native","path":"/local/disc.chd"}}
+{"op":"disc.open","args":{"kind":"pull","name":"disc.chd","bytes":12345678}}
+{"op":"disc.poll","args":{"session":1}}
+{"op":"disc.missing","args":{"session":1}}
+{"op":"disc.maps","args":{"session":1}}
+{"op":"field.map_events","args":{"session":1,"map":2}}
+{"op":"disc.close","args":{"session":1}}
+```
+
+`{"op":"disc.cue","args":{"text":"..."}}` uses the existing `xem-disc`
+CUE parser and returns `{file,number,start,end}` for the first MODE2/2352 track.
+Start/end are sectors within the named BIN; end is null when it runs to EOF.
+Pull adapters present that track as a virtual image, translating each byte range
+by `start * 2352` and respecting the next track boundary. The browser requires
+the matching user-selected companion file; Node resolves it beside the selected
+CUE. No second CUE parser or whole-image copy is needed. Sheets over 64 KiB and
+invalid/overflowing sector times are rejected explicitly.
+
+Opening/polling returns `session`, `name`, `bytes`, `state` (`pending`/`ready`),
+`phase`, `identity`, `missing` ranges and cache accounting. Identity includes the
+recognized disc/serial, boot path/LBA and boot executable SHA-256. This is the
+existing `xem_disc::identify` identity check, not whole-track Redump verification.
+Unknown images fail explicitly. A native open failure returns no live handle;
+a later failed session must be closed by its owner. Handles are never reused.
+
+Pending replies expose half-open `[start,end]` byte ranges. Fill them through
+`studio.disc_fill(session, offset, Uint8Array)` and unwrap its JSON envelope, then
+retry the pending operation. This is the only extra wasm method: bytes never
+travel through JSON fills. Offsets must be nonnegative safe JavaScript integers;
+fills contain complete requested 256 KiB chunks (or the final short file chunk)
+and fit the 8 MiB range-cache budget. Decoded CHD hunks have a separate 4 MiB
+budget. `disc.missing` drains the currently requested ranges; callers must not
+discard a pending reply's ranges or interleave competing reads on one session.
+Read, cancellation and timeout failures must retain their original diagnostics.
+
+`disc.maps` returns pending progress (`completed`, `total`, `missing`) or ready
+`maps` rows: `map`, `file`, `slot`, `placeholder`, `actor_count`, `script_size`
+(bytecode length) and `stream_size` (whole decompressed stream). Placeholder
+counts/sizes are null; absent/invalid index records are errors, not placeholders.
+`field.map_events` similarly returns pending ranges or ready `placeholder` and
+`component`. A real component contains `bytes` (whole decompressed stream),
+`declared_size` (including the header), `bytecode_offset`, `component_end`
+(relative to bytecode), and `actor_count`. Pass `bytes` and `declared_size` to
+`field.decode`; never pass the raw map bundle. Placeholders have null component.
+The loader bounds bundles to 32 MiB and event allocations to 2 MiB and reports
+malformed headers, truncated data and invalid LZSS distances/crossings explicitly.
+
+```json
+{"op":"field.structure","args":{"graph":{},"actor":0,"event":2}}
+{"op":"field.lanes","args":{"graph":{}}}
+```
+
+Replace `{}` with an actual canonical `field.decode` graph. Structure validates
+that graph and returns schema version 1, actor/event, entry PC, skipped state,
+`body.nodes`, and fold counts (`ifs`, `loops`, `switches`, `gotos`). Nodes are
+`instruction`, `if`, `loop`, `switch`, `label` or `goto`. Each instruction owner
+contains its PC and exact original outgoing edge records. Loop bodies own their
+header once; switch cases retain inline-table slot PCs. The public Rust
+`structure::flatten` reads those owners and reproduces reachable PCs/edges;
+labels are anchors, not duplicate instruction owners. Conservative fallbacks
+remain explicit, including excessive nesting and irreducible/shared regions.
+Skipped `ff` entries have no reachable instructions. No fold changes bytecode.
+
+Lanes returns all actors and their 32 event slots, request links, per-event
+reachable PCs/skips and variable accesses, plus dependencies grouped by canonical
+variable slot. `08`/`09` actor operands are literal selectors: direct actors,
+self (`fb`) and symbolic party slots (`ff/fe/fd`). Self can resolve to the source
+actor; party membership cannot be inferred statically. Packed event low five
+bits select the entry and high three bits retain priority. Invalid direct actors
+remain unresolved. Variable roles use the generated source-proven access facts
+in [data/README.md](../../src/runtime/crates/xem-studio/data/README.md).
+Odd variable references retain their raw value/alias diagnostic but share the
+original `reference >> 1` slot. Invalid, indirect or unknown-role accesses never
+create invented concrete dependencies. Grouped readers/writers express possible
+shared-state relationships, not an event execution timeline.
+
+#### Names sidecar contract
+
+```json
+{"op":"names.validate","args":{"json":"{\"schema_version\":1,\"variables\":{\"4\":\"Gate open\"},\"maps\":{\"2\":{\"actors\":{\"0\":{\"name\":\"Gatekeeper\",\"events\":{\"2\":\"Talk\"}}}}},\"messages\":{\"12\":\"Greeting\"}}","context":{"actor_counts":{"2":8}}}}
+```
+
+The original sidecar text is supplied as a string so duplicate JSON keys cannot
+be lost before validation. Success returns the validated `table` and variable,
+actor, event and message name counts. Unknown keys, duplicate names within a
+scope (Unicode lowercasing), noncanonical decimal IDs and invalid names fail.
+Names are nonempty with no surrounding whitespace/control characters. Variable
+slots are 0–1023, field IDs 0–4095, events 0–31, messages 0–65535. Message ID
+validation checks the operand domain only: message text/bank existence is not
+claimed. Actor bounds require loaded map `actor_counts`; missing context is
+`names_context_required`, never a guessed zero. Merge known non-placeholder
+metadata across open discs. Variables/messages alone need no disc context.
+
+The backend never reads or writes `names.json`. The frontend file adapter owns
+that sole user-data write and must preserve an invalid existing sidecar and its
+original error instead of replacing or repairing it. Game data remains read-only.
+
+The `test-fixtures` Cargo feature is default-disabled and accepts exactly one
+invented boot-executable identity for synthetic disc tests. No request or
+environment variable bypass exists. Fixture wasm/dist must stay in separate
+ignored test paths; never use that feature for the normal studio bundle.
+
+The milestone-three local component/structure sweep passed for the existing
+both-disc extracts: disc 1 has 730 real maps and no placeholders; disc 2 has
+205 real maps and 525 placeholders. It compared bundle hashes, whole decoded
+components/boundaries, instruction/header/diagnostic semantics and unedited
+encoding with Python. All 746,496 actor/event slots were checked for unique
+reachable instruction ownership and exact flattened edges (778,140 distinct
+per-map decoded instructions across the corpus). Fold counts are event totals,
+including shared-entry aliases; they are not unique source constructs. Gotos
+count explicit fallback instruction owners, including ordinary/terminal rows
+inside an unstructured region; they are not a count of jump opcodes:
+
+| Disc | Event slots | Skipped slots | Ifs | Loops | Switches | Gotos |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| 1 | 579,744 | 474,041 | 10,211 | 111,769 | 4 | 687,352 |
+| 2 | 166,752 | 134,629 | 3,339 | 34,873 | 4 | 292,398 |
+
+This is backend corpus evidence, not a real-disc UI performance result. The
+scoped run completed in 166.55 seconds; its exact invocation, source identities
+and output are retained in `tmp/studio/milestone-3/checks/both-disc-sweep-v1.*`.

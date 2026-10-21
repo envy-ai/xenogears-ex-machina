@@ -1,16 +1,35 @@
 //! Host-independent studio commands, shared by native callers and wasm-bindgen.
 //!
 //! See tools/studio/README.md for the JSON protocol. No game data is loaded by
-//! this service without an explicit field.decode command.
+//! this service without an explicit field or disc command.
 
+pub mod disc;
 pub mod field;
+pub mod names;
+pub mod packed;
 
 use serde::Deserialize;
 use serde_json::{Value, json};
+use std::cell::RefCell;
 #[cfg(target_arch = "wasm32")]
 use wasm_bindgen::prelude::*;
 
-const OPERATIONS: &[&str] = &["version", "echo", "field.decode", "field.encode"];
+const OPERATIONS: &[&str] = &[
+    "version",
+    "echo",
+    "field.decode",
+    "field.encode",
+    "disc.open",
+    "disc.poll",
+    "disc.missing",
+    "disc.close",
+    "disc.maps",
+    "field.map_events",
+    "field.structure",
+    "names.validate",
+    "field.lanes",
+    "disc.cue",
+];
 
 #[derive(Deserialize)]
 #[serde(
@@ -26,6 +45,67 @@ enum Command {
     FieldDecode(FieldDecodeArgs),
     #[serde(rename = "field.encode")]
     FieldEncode(FieldEncodeArgs),
+    #[serde(rename = "disc.open")]
+    DiscOpen(disc::OpenArgs),
+    #[serde(rename = "disc.poll")]
+    DiscPoll(SessionArgs),
+    #[serde(rename = "disc.missing")]
+    DiscMissing(SessionArgs),
+    #[serde(rename = "disc.close")]
+    DiscClose(SessionArgs),
+    #[serde(rename = "disc.maps")]
+    DiscMaps(SessionArgs),
+    #[serde(rename = "field.map_events")]
+    FieldMapEvents(MapArgs),
+    #[serde(rename = "field.structure")]
+    FieldStructure(FieldStructureArgs),
+    #[serde(rename = "names.validate")]
+    NamesValidate(NamesArgs),
+    #[serde(rename = "field.lanes")]
+    FieldLanes(FieldLanesArgs),
+    #[serde(rename = "disc.cue")]
+    DiscCue(CueArgs),
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct CueArgs {
+    text: String,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct FieldStructureArgs {
+    graph: Box<field::FieldGraph>,
+    actor: usize,
+    event: usize,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct FieldLanesArgs {
+    graph: Box<field::FieldGraph>,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct NamesArgs {
+    json: String,
+    #[serde(default)]
+    context: names::NamesContext,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct SessionArgs {
+    session: u32,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct MapArgs {
+    session: u32,
+    map: u32,
 }
 
 #[derive(Deserialize)]
@@ -61,8 +141,17 @@ impl Command {
             .map_err(|error| StudioError::new("invalid_args", error.to_string()))
     }
 
-    fn execute(self) -> Result<CommandResult, StudioError> {
+    fn execute(self, studio: &Studio) -> Result<CommandResult, StudioError> {
         Ok(match self {
+            Self::DiscCue(args) => {
+                if args.text.len() > 65536 {
+                    return Err(StudioError::new("invalid_args", "cue sheet exceeds 64 KiB"));
+                }
+                let track = xem_disc::parse_cue(&args.text)
+                    .map_err(|error| StudioError::new("invalid_cue", error.to_string()))?;
+                CommandResult::Json(json!({"file": track.file, "number": track.number,
+                    "start": track.start, "end": track.end}))
+            }
             Self::Version => CommandResult::Version {
                 version: env!("CARGO_PKG_VERSION"),
                 operations: OPERATIONS,
@@ -72,6 +161,34 @@ impl Command {
                 CommandResult::FieldGraph(Box::new(field::decode(&args.bytes, args.declared_size)?))
             }
             Self::FieldEncode(args) => CommandResult::FieldBytes(field::encode(&args.graph)?),
+            Self::DiscOpen(args) => CommandResult::Json(studio.discs.borrow_mut().open(args)?),
+            Self::DiscPoll(args) => {
+                CommandResult::Json(studio.discs.borrow_mut().poll(args.session)?)
+            }
+            Self::DiscMissing(args) => {
+                CommandResult::Json(studio.discs.borrow_mut().missing(args.session)?)
+            }
+            Self::DiscClose(args) => {
+                CommandResult::Json(studio.discs.borrow_mut().close(args.session)?)
+            }
+            Self::DiscMaps(args) => {
+                CommandResult::Json(studio.discs.borrow_mut().maps(args.session)?)
+            }
+            Self::FieldMapEvents(args) => CommandResult::Json(
+                studio
+                    .discs
+                    .borrow_mut()
+                    .map_events(args.session, args.map)?,
+            ),
+            Self::FieldStructure(args) => CommandResult::Json(json!(field::structure::structure(
+                &args.graph,
+                args.actor,
+                args.event
+            )?)),
+            Self::NamesValidate(args) => {
+                CommandResult::Json(json!(names::validate(&args.json, &args.context)?))
+            }
+            Self::FieldLanes(args) => CommandResult::Json(json!(field::lanes::lanes(&args.graph)?)),
         })
     }
 }
@@ -84,6 +201,7 @@ enum CommandResult {
     Echo(Value),
     FieldGraph(Box<field::FieldGraph>),
     FieldBytes(Vec<u8>),
+    Json(Value),
 }
 
 impl CommandResult {
@@ -96,6 +214,7 @@ impl CommandResult {
             Self::Echo(value) => value,
             Self::FieldGraph(graph) => json!(graph),
             Self::FieldBytes(bytes) => json!(bytes),
+            Self::Json(value) => value,
         }
     }
 }
@@ -129,17 +248,40 @@ impl From<field::FieldError> for StudioError {
 /// The studio service. Each call returns JSON, including when input is invalid.
 #[cfg_attr(target_arch = "wasm32", wasm_bindgen)]
 #[derive(Default)]
-pub struct Studio;
+pub struct Studio {
+    discs: RefCell<disc::DiscSessions>,
+}
 
 #[cfg_attr(target_arch = "wasm32", wasm_bindgen)]
 impl Studio {
     #[cfg_attr(target_arch = "wasm32", wasm_bindgen(constructor))]
     pub fn new() -> Self {
-        Self
+        Self::default()
+    }
+
+    /// Binary range fill beside the JSON command interface. The wasm binding
+    /// consumes Uint8Array, never JSON number arrays.
+    pub fn disc_fill(&self, session: u32, offset: f64, data: &[u8]) -> String {
+        if !offset.is_finite()
+            || !(0.0..=9_007_199_254_740_991.0).contains(&offset)
+            || offset.fract() != 0.0
+        {
+            return StudioError::new(
+                "invalid_args",
+                "disc fill offset must be a nonnegative safe JavaScript integer",
+            )
+            .into_json()
+            .to_string();
+        }
+        match self.discs.borrow_mut().fill(session, offset as u64, data) {
+            Ok(value) => json!({ "ok": value }),
+            Err(error) => error.into_json(),
+        }
+        .to_string()
     }
 
     pub fn command(&self, input: &str) -> String {
-        match Command::parse(input).and_then(Command::execute) {
+        match Command::parse(input).and_then(|command| command.execute(self)) {
             Ok(result) => json!({ "ok": result.into_json() }),
             Err(error) => error.into_json(),
         }

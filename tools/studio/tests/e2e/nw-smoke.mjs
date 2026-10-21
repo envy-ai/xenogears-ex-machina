@@ -112,7 +112,11 @@ try {
   }
   assert.deepEqual(result.version, {
     version: '0.5.0',
-    operations: ['version', 'echo', 'field.decode', 'field.encode'],
+    operations: [
+      'version', 'echo', 'field.decode', 'field.encode', 'disc.open', 'disc.poll',
+      'disc.missing', 'disc.close', 'disc.maps', 'field.map_events', 'field.structure',
+      'names.validate', 'field.lanes', 'disc.cue',
+    ],
   });
   assert.deepEqual(result.versionResponse, { ok: result.version });
   assert.equal(result.adapter, 'node');

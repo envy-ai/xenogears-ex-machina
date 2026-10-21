@@ -2,7 +2,9 @@
 
 mod decode;
 mod graph;
+pub mod lanes;
 mod opcodes;
+pub mod structure;
 
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};

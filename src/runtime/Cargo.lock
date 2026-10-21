@@ -5388,6 +5388,7 @@ dependencies = [
  "serde_json",
  "sha2",
  "wasm-bindgen",
+ "xem-disc",
 ]
 
 [[package]]

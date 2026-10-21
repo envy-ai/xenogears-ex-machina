@@ -18,9 +18,21 @@ def digest(value: object) -> str:
     return hashlib.sha256(encoded).hexdigest()
 
 
-def record(disc: int, map_id: int, package: events.EventPackage | None, output: Path) -> dict:
+def record(
+    disc: int,
+    map_id: int,
+    package: events.EventPackage | None,
+    source_path: Path,
+    bundle: bytes,
+    output: Path,
+) -> dict:
+    bundle_facts = {
+        "bundle_path": str(source_path.resolve()),
+        "bundle_size": len(bundle),
+        "bundle_sha256": hashlib.sha256(bundle).hexdigest(),
+    }
     if package is None:
-        return {"disc": disc, "map": map_id, "placeholder": True}
+        return {"disc": disc, "map": map_id, "placeholder": True, **bundle_facts}
 
     rows = b"".join(struct.pack("<32H", *row) for row in package.entries)
     component = (
@@ -78,9 +90,13 @@ def record(disc: int, map_id: int, package: events.EventPackage | None, output: 
         "disc": disc,
         "map": map_id,
         "placeholder": False,
+        **bundle_facts,
         "path": str(path),
         "bytecode_stream_size": len(package.bytecode),
         "declared_size": declared_size,
+        "bytecode_offset": package.bytecode_offset,
+        "component_end": declared_size - package.bytecode_offset,
+        "actor_count": len(package.entries),
         "component_size": len(component),
         "source_sha256": hashlib.sha256(component).hexdigest(),
         "declared_sha256": hashlib.sha256(component[:declared_size]).hexdigest(),
@@ -120,8 +136,9 @@ def main() -> int:
         extract = root / "extract" / f"disc{disc}"
         raw_disc = root / "discs" / f"disc{disc}.bin"
         for map_id, path in events.map_files(extract, raw_disc):
-            package = events.map_events(path.read_bytes())
-            record_json = record(disc, map_id, package, output)
+            bundle = path.read_bytes()
+            package = events.map_events(bundle)
+            record_json = record(disc, map_id, package, path, bundle, output)
             serialized = json.dumps(record_json, separators=(",", ":"))
             print(serialized, flush=True)
     return 0

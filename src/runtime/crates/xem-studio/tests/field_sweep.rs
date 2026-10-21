@@ -9,6 +9,9 @@ use std::{
     process::{Command, Stdio},
 };
 use xem_studio::Studio;
+use xem_studio::disc::extract_events;
+use xem_studio::field::FieldGraph;
+use xem_studio::field::structure::{self, StructureIndex};
 
 fn sha256(bytes: &[u8]) -> String {
     Sha256::digest(bytes)
@@ -72,22 +75,71 @@ fn error_kind(response: &Value) -> Option<&str> {
     response.get("error")?.get("kind")?.as_str()
 }
 
+fn structure_checks(graph_value: &Value, disc: usize, map: usize) -> [usize; 6] {
+    let graph: FieldGraph = serde_json::from_value(graph_value.clone())
+        .expect("canonical decoded graph deserializes for structure checks");
+    let index = StructureIndex::new(&graph).expect("canonical graph builds a structure index");
+    let mut summary = [0; 6];
+    for actor in 0..graph.actors.len() {
+        for event in 0..32 {
+            let tree = index.event(actor, event).unwrap_or_else(|error| {
+                panic!("disc {disc} map {map} actor {actor} event {event}: {error}")
+            });
+            let reachable = index.reachable_pcs(actor, event).unwrap_or_else(|error| {
+                panic!("disc {disc} map {map} actor {actor} event {event}: {error}")
+            });
+            let flattened = structure::flatten(&tree);
+            if flattened.instruction_pcs != reachable {
+                panic!(
+                    "disc {disc} map {map} actor {actor} event {event}: structure does not own each reachable instruction exactly once"
+                );
+            }
+            let mut expected_edges: Vec<_> = graph
+                .edges
+                .iter()
+                .filter(|edge| reachable.binary_search(&edge.from_pc).is_ok())
+                .cloned()
+                .collect();
+            expected_edges.sort_by_key(|edge| edge.from_pc);
+            if flattened.edges != expected_edges {
+                panic!(
+                    "disc {disc} map {map} actor {actor} event {event}: flattened structure edges differ from the decoded graph"
+                );
+            }
+            summary[0] += 1;
+            summary[1] += usize::from(tree.skipped);
+            summary[2] += tree.counts.ifs;
+            summary[3] += tree.counts.loops;
+            summary[4] += tree.counts.switches;
+            summary[5] += tree.counts.gotos;
+        }
+    }
+    summary
+}
+
 #[test]
 fn matches_python_walk_for_both_discs_when_private_extracts_are_available() {
     let Ok(extract_root) = env::var("XEM_STUDIO_EXTRACT_ROOT") else {
         eprintln!("field sweep cross-check skipped: XEM_STUDIO_EXTRACT_ROOT is unset");
         return;
     };
+    let extract_directory = PathBuf::from(&extract_root)
+        .join("extract")
+        .canonicalize()
+        .expect("local extract directory exists");
 
     let repository = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .ancestors()
         .nth(4)
         .expect("crate is inside the repository")
         .to_path_buf();
-    let run_id = std::process::id();
+    let nonce = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .expect("system clock after Unix epoch")
+        .as_nanos();
     let run_directory = repository
-        .join("tmp/studio/milestone-2-20261020")
-        .join(format!("oracle-run-{run_id}"));
+        .join("tmp/studio/milestone-3")
+        .join(format!("oracle-run-{}-{nonce}", std::process::id()));
     fs::create_dir_all(run_directory.parent().expect("oracle run has parent"))
         .expect("create ignored parent for the local oracle output");
     fs::create_dir(&run_directory)
@@ -118,6 +170,7 @@ fn matches_python_walk_for_both_discs_when_private_extracts_are_available() {
     let mut maps = [0_usize; 2];
     let mut placeholders = [0_usize; 2];
     let mut instructions_total = 0_usize;
+    let mut structure_totals = [[0_usize; 6]; 2];
     let mut line = String::new();
 
     loop {
@@ -138,10 +191,41 @@ fn matches_python_walk_for_both_discs_when_private_extracts_are_available() {
             (1..=2).contains(&disc),
             "oracle reported an invalid disc number"
         );
+        let bundle_path = PathBuf::from(
+            record["bundle_path"]
+                .as_str()
+                .expect("oracle summary includes source bundle path"),
+        )
+        .canonicalize()
+        .expect("local extracted map bundle exists");
+        assert!(
+            bundle_path.starts_with(&extract_directory),
+            "oracle bundle path escaped the authorized local extract"
+        );
+        let bundle = fs::read(&bundle_path).expect("read local extracted map bundle");
+        if bundle.len() != record["bundle_size"].as_u64().unwrap() as usize
+            || sha256(&bundle) != record["bundle_sha256"].as_str().unwrap()
+        {
+            panic!("disc {disc}: extracted map bundle differs from its Python source digest");
+        }
+        let extracted = extract_events(&bundle).unwrap_or_else(|error| {
+            panic!(
+                "disc {disc}: Rust bundle extraction returned {}",
+                error.kind
+            )
+        });
         if record["placeholder"] == true {
+            assert!(
+                extracted.is_none(),
+                "disc {disc} map {map}: Rust treated a Python placeholder as a component"
+            );
             placeholders[disc - 1] += 1;
+            println!("field sweep map disc={disc} map={map} placeholder=true");
             continue;
         }
+        let events = extracted.unwrap_or_else(|| {
+            panic!("disc {disc} map {map}: Rust treated a Python component as a placeholder")
+        });
         maps[disc - 1] += 1;
 
         let private_path = PathBuf::from(record["path"].as_str().expect("oracle summary path"));
@@ -153,6 +237,29 @@ fn matches_python_walk_for_both_discs_when_private_extracts_are_available() {
         assert_eq!(
             component.len(),
             record["component_size"].as_u64().unwrap() as usize
+        );
+        if events.bytes != component {
+            panic!("disc {disc} map {map}: Rust event component bytes differ from Python");
+        }
+        assert_eq!(
+            events.declared_size,
+            record["declared_size"].as_u64().unwrap() as usize,
+            "disc {disc} map {map}: declared component boundary differs"
+        );
+        assert_eq!(
+            events.bytecode_offset,
+            record["bytecode_offset"].as_u64().unwrap() as usize,
+            "disc {disc} map {map}: actor table boundary differs"
+        );
+        assert_eq!(
+            events.component_end,
+            record["component_end"].as_u64().unwrap() as usize,
+            "disc {disc} map {map}: retained tail boundary differs"
+        );
+        assert_eq!(
+            events.actor_count,
+            record["actor_count"].as_u64().unwrap() as usize,
+            "disc {disc} map {map}: actor count differs"
         );
         let component_hash = sha256(&component);
         if component_hash != record["source_sha256"] {
@@ -173,6 +280,14 @@ fn matches_python_walk_for_both_discs_when_private_extracts_are_available() {
         let graph = response
             .get("ok")
             .expect("successful field decode has ok response");
+
+        let structure_summary = structure_checks(graph, disc, map);
+        for (total, value) in structure_totals[disc - 1]
+            .iter_mut()
+            .zip(structure_summary.iter().copied())
+        {
+            *total += value;
+        }
 
         if graph["source_sha256"] != record["source_sha256"] {
             panic!(
@@ -249,6 +364,16 @@ fn matches_python_walk_for_both_discs_when_private_extracts_are_available() {
         if sha256(&encoded[..declared_size]) != record["declared_sha256"] {
             panic!("disc {disc} map {map}: declared-component round trip differs");
         }
+        println!(
+            "field sweep map disc={disc} map={map} placeholder=false instructions={} events={} skipped={} ifs={} loops={} switches={} gotos={}",
+            actual.len(),
+            structure_summary[0],
+            structure_summary[1],
+            structure_summary[2],
+            structure_summary[3],
+            structure_summary[4],
+            structure_summary[5]
+        );
     }
 
     let status = child.wait().expect("wait for Python field oracle");
@@ -270,7 +395,23 @@ fn matches_python_walk_for_both_discs_when_private_extracts_are_available() {
         "placeholder map slots are accounted for"
     );
     println!(
-        "Python/Rust field cross-check passed: disc1 maps={} placeholders={}; disc2 maps={} placeholders={}; instructions={}",
-        maps[0], placeholders[0], maps[1], placeholders[1], instructions_total
+        "Python/Rust field/structure cross-check passed: disc1 maps={} placeholders={} events={} skipped={} ifs={} loops={} switches={} gotos={}; disc2 maps={} placeholders={} events={} skipped={} ifs={} loops={} switches={} gotos={}; instructions={}",
+        maps[0],
+        placeholders[0],
+        structure_totals[0][0],
+        structure_totals[0][1],
+        structure_totals[0][2],
+        structure_totals[0][3],
+        structure_totals[0][4],
+        structure_totals[0][5],
+        maps[1],
+        placeholders[1],
+        structure_totals[1][0],
+        structure_totals[1][1],
+        structure_totals[1][2],
+        structure_totals[1][3],
+        structure_totals[1][4],
+        structure_totals[1][5],
+        instructions_total
     );
 }

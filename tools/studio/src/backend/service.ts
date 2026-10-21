@@ -2,7 +2,11 @@ import init, { Studio } from './pkg/xem_studio';
 import wasmPath from './pkg/xem_studio_bg.wasm?url';
 import { nativeHost } from '../platform/host';
 
-export interface Backend { command(json: string): string }
+export interface Backend {
+  command(json: string): string;
+  /** Binary disc transport; command-only backends remain usable for other ops. */
+  disc_fill?(session: number, offset: number, bytes: Uint8Array): string;
+}
 
 /** Decode the transport envelope; an echoed error-shaped value remains data. */
 export function readCommandResult<T = unknown>(reply: string): T {
