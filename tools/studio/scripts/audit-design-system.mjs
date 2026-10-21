@@ -97,7 +97,7 @@ for (const file of files.filter(file => file.endsWith('.tsx'))) {
 
 // Feature styles own placement. Shared widget sources own reusable appearance.
 // Compile Sass in memory so nested feature selectors cannot evade the audit.
-const sharedStyles = new Set(['editor.scss', '_widget-structure.scss', '_editor-button-theme.scss', '_editor-control-theme.scss', '_editor-typography-theme.scss', 'editor-buttons.scss', 'editor-controls.scss', 'editor-typography.scss', 'editor-surfaces.scss'].map(name => path.join(sourceRoot, 'styles', name)));
+const sharedStyles = new Set(['editor.scss', '_widget-structure.scss', '_editor-button-theme.scss', '_editor-control-theme.scss', '_editor-typography-theme.scss', 'editor-buttons.scss', 'editor-controls.scss', 'editor-typography.scss', 'editor-surfaces.scss', 'graph-canvas.scss'].map(name => path.join(sourceRoot, 'styles', name)));
 const appearance = new Set(['color', 'background', 'background-color', 'border', 'border-color', 'border-radius', 'box-shadow', 'font', 'font-family', 'font-size', 'font-style', 'font-weight', 'line-height', 'letter-spacing', 'text-transform', 'outline', 'outline-color', 'accent-color', 'caret-color']);
 for (const file of files.filter(file => /\.(?:scss|css)$/.test(file) && !sharedStyles.has(file))) {
   const css = file.endsWith('.scss') ? sass.compile(file).css : fs.readFileSync(file, 'utf8');

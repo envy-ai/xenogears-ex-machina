@@ -32,6 +32,8 @@ export interface EditorDialogShellProps {
    * (`dialog` or `alertdialog`), `aria-modal`, and accessible name.
    */
   children: ReactNode;
+  /** Trap keyboard focus and restore the opener for ordinary modal forms. */
+  containFocus?: boolean;
 }
 
 /**
@@ -45,6 +47,7 @@ export function EditorDialogShell({
   backdropClassName,
   onClose,
   testId,
+  containFocus = false,
   children
 }: EditorDialogShellProps) {
   const id = useMemo(() => Symbol('editor-dialog'), []);
@@ -96,6 +99,24 @@ export function EditorDialogShell({
       }
     };
   }, [id]);
+
+  useEffect(() => {
+    if (!containFocus) return;
+    const previous = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    const focusables = () => [...(surface()?.querySelectorAll<HTMLElement>('button:not(:disabled),input:not(:disabled),select:not(:disabled),textarea:not(:disabled),[tabindex="0"]') ?? [])];
+    const focusFirst = () => focusables()[0]?.focus();
+    const frame = requestAnimationFrame(() => { if (!surface()?.contains(document.activeElement)) focusFirst(); });
+    const focus = (event: FocusEvent) => {
+      if (activeEditorDialogs.at(-1)?.id === id && !surface()?.contains(event.target as Node)) focusFirst();
+    };
+    const tab = (event: KeyboardEvent) => {
+      if (event.key !== 'Tab' || activeEditorDialogs.at(-1)?.id !== id) return;
+      const items = focusables(); const index = items.indexOf(document.activeElement as HTMLElement);
+      event.preventDefault(); items[(index + (event.shiftKey ? -1 : 1) + items.length) % items.length]?.focus();
+    };
+    document.addEventListener('focusin', focus); document.addEventListener('keydown', tab, true);
+    return () => { cancelAnimationFrame(frame); document.removeEventListener('focusin', focus); document.removeEventListener('keydown', tab, true); if (previous?.isConnected) previous.focus(); };
+  }, [containFocus, id]);
 
   return createPortal(
     <div ref={backdropRef} className={backdropClassName} role="presentation" data-testid={testId}>

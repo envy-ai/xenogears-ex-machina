@@ -44,15 +44,15 @@ export const DEFAULT_WORKSPACE_LAYOUT: WorkspaceLayoutV1 = {
     left: { size: 300, stacks: [
       { id: 'project', panels: ['project'], activePanel: 'project', weight: 1 }
     ] },
-    right: { size: 326, stacks: [
-      { id: 'backend', panels: ['backend'], activePanel: 'backend', weight: 3 },
-      { id: 'log', panels: ['log'], activePanel: 'log', weight: 1.5 }
-    ] },
-    bottom: { size: 260, stacks: [] }
+    right: { size: 326, stacks: [] },
+    bottom: { size: 220, stacks: [
+      { id: 'backend', panels: ['backend'], activePanel: 'backend', weight: 2 },
+      { id: 'log', panels: ['log'], activePanel: 'log', weight: 1 }
+    ] }
   },
   floating: [],
   hidden: [],
-  lastDock: { project: 'left', backend: 'right', log: 'right' },
+  lastDock: { project: 'left', backend: 'bottom', log: 'bottom' },
   toolStripEdge: 'top'
 };
 

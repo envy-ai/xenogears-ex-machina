@@ -1,0 +1,29 @@
+// Event features own layout. Shared editor widgets own appearance and focus.
+.event-command-view, .event-lanes-view { display: flex; flex-direction: column; height: 100%; min-height: 0; gap: 6px; }
+.event-command-list, .event-actor-tree { flex: 1; min-height: 0; height: 100%; }
+.event-window { position: relative; overflow: auto; flex: 1; min-height: 0; }
+.event-window-spacer { position: relative; width: 100%; }
+.event-window-items { position: absolute; top: 0; left: 0; width: 100%; }
+.event-command-row, .event-link-row { height: 32px; min-height: 32px; gap: 6px; }
+.event-tree-row { height: 28px; min-height: 28px; }
+.event-command-text { display: block; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; user-select: text; }
+.event-command-row button, .event-tree-row button, .event-link-row button { min-width: 0; text-align: left; }
+.event-inline-choice { display: flex; align-items: center; gap: 6px; margin-left: auto; white-space: nowrap; }
+.event-diagnostics { padding: 6px 8px; max-height: 24%; overflow: auto; flex-shrink: 0; }
+.event-diagnostic-content { display: grid; gap: 4px; }
+.event-diagnostic-line { display: flex; align-items: baseline; gap: 8px; }
+.event-diagnostic-line > span { overflow-wrap: anywhere; }
+.event-instruction-detail { padding: 8px; max-height: 32%; overflow: auto; flex-shrink: 0; }
+.event-instruction-detail p, .event-instruction-detail pre { margin: 4px 0; white-space: pre-wrap; overflow-wrap: anywhere; }
+.event-detail-heading { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.event-edge-actions { display: flex; align-items: center; gap: 4px; flex-wrap: wrap; }
+.event-lanes-caption { padding: 6px 8px; flex-shrink: 0; }
+.event-lanes-grid { flex: 3; }
+.event-lane-width { min-width: 1120px; }
+.event-lane-row { height: 100px; margin-bottom: 6px; padding: 8px; display: grid; grid-template-columns: 144px minmax(0, 1fr); gap: 10px; }
+.event-lane-title { display: flex; flex-direction: column; gap: 6px; min-width: 0; overflow: hidden; }
+.event-lane-slots { display: grid; grid-template-columns: repeat(32, minmax(0, 1fr)); gap: 2px; }
+.event-lane-slots > button { display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 2px; min-width: 0; overflow: hidden; }
+.event-lane-lower { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); flex: 2; min-height: 120px; gap: 6px; }
+.event-lane-links, .event-lane-references { min-width: 0; min-height: 0; }
+.event-lane-accesses { padding: 6px 8px; max-height: 25%; overflow: auto; flex-shrink: 0; }

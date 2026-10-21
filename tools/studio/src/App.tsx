@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { FolderOpen, RefreshCw, File, Folder, ArrowUp } from 'lucide-react';
-import { DockableWorkspace, WorkspacePanel, useWorkspaceLayout } from './editor/DockableWorkspace';
+import { DockableWorkspace, WorkspacePanel, WorkspaceCenter, useWorkspaceLayout } from './editor/DockableWorkspace';
 import { ContextMenu } from './editor/ContextMenu';
 import { EditorDialogShell } from './editor/EditorDialogShell';
 import { NativeWindowControls, useNativeWindowControls } from './editor/NativeWindowControls';
@@ -11,6 +11,7 @@ import { loadBackend, readCommandResult, type Backend } from './backend/service'
 import type { FilesAdapter, FileEntry } from './platform/files';
 import { selectFolder, nativeHost } from './platform/host';
 import { runNativeSmoke } from './smoke';
+import { EventStudioProvider, DiscBrowser, EventViews } from './events/EventStudio';
 
 interface LogEntry { id: number; time: string; kind: string; text: string }
 const fullError = (error: unknown): string => error instanceof AggregateError
@@ -133,9 +134,9 @@ export function App() {
     Help: [{ id: 'about', label: 'About XEM Studio', execute: openAbout }],
   };
 
-  return <main className="editor-shell studio-shell" data-editor-theme="graphite-teal" data-editor-density="comfortable" aria-label="XEM Studio">
+  return <EventStudioProvider backend={backend} folder={folder} report={report} log={append}><main className="editor-shell studio-shell" data-editor-theme="graphite-teal" data-editor-density="compact" aria-label="XEM Studio">
     <header className="studio-titlebar">
-      <strong className="editor-text">XEM Studio</strong><span className="editor-text editor-text--secondary">Milestone 1</span>
+      <strong className="editor-text">XEM Studio</strong><span className="editor-text editor-text--secondary">Field event studio</span>
       <div className="studio-titlebar-actions" ref={setControlsTarget} />
       <NativeWindowControls bridge={controls} placement="editor" />
     </header>
@@ -146,14 +147,16 @@ export function App() {
     }}>{label}</button>)}</nav>
     <ContextMenu request={menu} onClose={() => setMenu(null)} />
     {errors.length > 0 && <section className="studio-errors" role="alert" aria-label="Studio errors"><strong className="editor-text editor-text--danger">Operation failed</strong>{errors.map((error, index) => <pre className="editor-text editor-text--danger" key={index}>{error}</pre>)}<button className="editor-button" onClick={() => setErrors([])}>Dismiss errors</button></section>}
-    <DockableWorkspace centerless layout={layout} setLayout={setLayout} resetLayout={resetLayout} controlsTarget={controlsTarget}>
+    <DockableWorkspace layout={layout} setLayout={setLayout} resetLayout={resetLayout} controlsTarget={controlsTarget}>
       <WorkspacePanel id="project" title="Project">
         <section className="studio-project" data-studio-panel="project" aria-label="Project files" tabIndex={-1}>
           <div className="studio-toolbar"><button className="editor-button" onClick={open} title="Open folder (Ctrl+O)"><FolderOpen size={16} /> Open folder…</button><button className="editor-button editor-button--icon" aria-label="Refresh folder" disabled={!folder} onClick={() => folder && browse(folder, directory).catch(report)}><RefreshCw size={16} /></button></div>
           {folder && <div className="studio-toolbar"><button className="editor-button editor-button--icon" aria-label="Parent folder" disabled={!directory} onClick={() => browse(folder, directory.split('/').slice(0, -1).join('/')).catch(report)}><ArrowUp size={16} /></button><span className="editor-text">{folder.name}/{directory}</span></div>}
           <DockerList><DockerListHeader><span className="editor-text editor-text--secondary">{folder ? `${entries.length} entries · ${folder.kind}` : 'No folder open'}</span></DockerListHeader><DockerListBody>{entries.map(entry => <DockerListRow key={entry.name} columns="1fr"><button className="editor-button studio-file" disabled={entry.kind === 'file'} onClick={() => folder && browse(folder, [directory, entry.name].filter(Boolean).join('/')).catch(report)}>{entry.kind === 'directory' ? <Folder size={16} /> : <File size={16} />}{entry.name}</button></DockerListRow>)}{!entries.length && <DockerListEmpty>{folder ? 'This folder is empty.' : 'Open a folder to browse its files.'}</DockerListEmpty>}</DockerListBody></DockerList>
+          <DiscBrowser />
         </section>
       </WorkspacePanel>
+      <WorkspaceCenter><EventViews /></WorkspaceCenter>
       <WorkspacePanel id="backend" title="Backend"><section className="studio-backend" data-studio-panel="backend" aria-label="Backend commands" tabIndex={-1}>
         <p className="editor-text"><span className="studio-ready" aria-hidden="true" />{version ? `xem-studio ${version.version} · Operations: ${version.operations.join(', ')}` : 'Loading backend…'}</p>
         <label className="editor-field-label"><span>Command (JSON)</span><textarea className="editor-control editor-control--textarea editor-control--code studio-command" spellCheck={false} value={command} onChange={event => setCommand(event.target.value)} /></label>
@@ -163,6 +166,6 @@ export function App() {
       <WorkspacePanel id="log" title="Log"><section className="studio-log" data-studio-panel="log" aria-label="Command log" tabIndex={-1}><div className="studio-toolbar"><span className="editor-text editor-text--secondary">{log.length} entries</span><button className="editor-button" onClick={() => navigator.clipboard.writeText(log.map(entry => `${entry.time} ${entry.kind} ${entry.text}`).join('\n')).catch(report)}>Copy log</button></div><div className="studio-log-entries">{log.map(entry => <div className="studio-log-entry" key={entry.id}><time className="editor-text editor-text--secondary">{entry.time}</time><span className="editor-text">{entry.kind}</span><pre className="editor-text editor-text--code">{entry.text}</pre></div>)}</div></section></WorkspacePanel>
     </DockableWorkspace>
     <footer className="studio-status"><span className="editor-text">{backend ? 'Backend ready' : 'Backend loading'} · {nativeHost ? 'Desktop' : 'Browser'}</span><span className="editor-text editor-text--secondary">Drag tabs to dock · F6 panels · F10 menus</span></footer>
-    {about && <EditorDialogShell backdropClassName="editor-dialog-backdrop" onClose={closeAbout}><section className="editor-small-dialog studio-about" role="dialog" aria-modal="true" aria-label="About XEM Studio" ref={aboutSurface}><h2 className="editor-heading editor-heading--page">XEM Studio</h2><p className="editor-text">Milestone 1 · Backend {version?.version ?? 'loading'}</p><p className="editor-text">A local modding workspace for Xenogears Ex Machina.</p><p className="editor-text editor-text--secondary">UI widgets adapted from Saga Foundry RPG Creator with permission under MIT. Inter and Inconsolata: OFL 1.1.</p><button className="editor-button" autoFocus onClick={closeAbout}>Close</button></section></EditorDialogShell>}
-  </main>;
+    {about && <EditorDialogShell backdropClassName="editor-dialog-backdrop" onClose={closeAbout}><section className="editor-small-dialog studio-about" role="dialog" aria-modal="true" aria-label="About XEM Studio" ref={aboutSurface}><h2 className="editor-heading editor-heading--page">XEM Studio</h2><p className="editor-text">Milestone 3 · Backend {version?.version ?? 'loading'}</p><p className="editor-text">A local modding workspace for Xenogears Ex Machina.</p><p className="editor-text editor-text--secondary">UI widgets adapted from Saga Foundry RPG Creator with permission under MIT. Inter and Inconsolata: OFL 1.1.</p><button className="editor-button" autoFocus onClick={closeAbout}>Close</button></section></EditorDialogShell>}
+  </main></EventStudioProvider>;
 }

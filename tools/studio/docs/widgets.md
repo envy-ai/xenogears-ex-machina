@@ -6,7 +6,7 @@ changing UI; import widgets from their owning module. Feature styles own layout
 and placement. Shared widget classes own appearance, focus and semantic state.
 
 The implementation starts from the pinned Saga Foundry registry and only
-includes the layers authorized for studio milestone 1. The shell uses Graphite
+includes the general layers authorized for studio milestones 1 and 3. The shell uses Graphite
 Teal, compact density, Inter for UI and Inconsolata for technical entry. Other
 copied theme tokens remain available through `editorTheme.ts`.
 
@@ -417,3 +417,54 @@ outside ContextMenu and copied DockerList markup outside its owner, verifies
 registry sources, and compiles feature Sass in memory to detect ordinary
 control/text appearance overrides. It complements typechecking and rendered
 interaction tests; it does not claim accessibility or pixel-perfect rendering.
+
+
+## Read-only graph canvas
+
+`src/editor/GraphCanvas.tsx` and `src/styles/graph-canvas.scss` own the shared
+canvas contract. Callers provide nodes with explicit world position/dimensions,
+labels/content, exact edge kind/status and selection; they own automatic layout
+and domain navigation. The canvas owns readonly node frames/ports, cubic wires,
+selection focus, viewport culling, pan and zoom. It has no palette, inspector,
+node editing, project schema, draft recovery or graph history.
+
+Middle-drag or Space+drag pans; wheel zoom stays anchored under the pointer.
+The copied zoom limits are 0.1–1.8. Home/Fit fits the supplied bounds; +/- zooms.
+Arrow keys move focus/selection; Enter activates the selected node through the
+caller. External selection is revealed even when initially outside the viewport.
+Edges retain `data-kind`/`data-status`; diagnostic targets are labelled
+non-executable markers, not invented decoded instructions. Source ranges and the
+bounded MIT grant are in PROVENANCE. New canvas appearance is shared Sass;
+ordinary controls retain the registered button/control classes.
+
+## Names history and modal fields
+
+`src/editor/deltaHistory.ts` supplies the copied generic reversible JSON delta
+module. `src/editor/NameHistory.tsx` owns the name transaction controller/hook:
+`value` is the last successfully saved table, `draft` is editable, and commit,
+undo and redo validate/persist through the caller before changing committed
+state or history. A rejected save preserves the draft and original error; a
+rejected undo/redo preserves both stacks. Reset loads already validated data
+without saving it. Focus/blur groups a field edit; Enter commits, Escape cancels
+a draft, and Ctrl/Cmd+Z / Shift+Z / Y use the same metadata history.
+
+The caller must report persistence failures to the persistent application error
+surface and display the hook's error; invalid sidecars must not be replaced.
+Only the names editor uses this history. Read-only game graphs never enter it.
+`EditorDialogShell`'s `containFocus` option traps focus in the topmost modal form
+and restores its connected opener. The names editor exercises it; its fields
+retain visible labels above native shared controls.
+
+## Event inspection widgets
+
+`src/events/CommandList.tsx`, `ActorTree.tsx`, `ActorLanes.tsx`,
+`MapDiagnostics.tsx` and `useWindowedRows.ts` compose registered DockerList,
+button, surface and typography contracts. Feature Sass owns layout only.
+Command rows retain exact PCs and original diagnostics, expose raw storage on
+demand, copy/select text, and fold only backend-proven structured blocks.
+List/tree/lanes bound mounted rows with the shared row window helper. Tree
+arrows/Home/End navigate the 32 event slots per actor. Lanes preserve symbolic
+party selectors and grouped possible variable dependencies; links navigate to
+the source instruction. Map-wide diagnostic references remain available in all
+three views. Ctrl+1/2/3 switches views, Ctrl+F finds within the map, F2 opens names,
+Enter follows an explicit target, and Alt+left/right navigates jump history.

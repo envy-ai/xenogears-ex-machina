@@ -2,6 +2,7 @@ import { preview } from 'vite';
 
 const server = await preview({
   configFile: false,
+  build: { outDir: process.env.XEM_STUDIO_TEST_DIST ?? 'dist' },
   preview: { host: '127.0.0.1', port: 5176, strictPort: true },
 });
 

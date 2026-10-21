@@ -149,3 +149,45 @@ fn names_validate_command_keeps_invalid_sidecar_text_unmodified() {
     assert_eq!(response["error"]["kind"], "invalid_names");
     assert_eq!(sidecar, original);
 }
+
+#[test]
+fn names_command_parses_json_object_map_ids_as_canonical_u32_keys() {
+    let studio = Studio::new();
+    let sidecar = r#"{"schema_version":1,"maps":{"0":{"actors":{"1":{"name":"Hero","events":{"5":"Talk"}}}}}}"#;
+    let valid = json!({
+        "op": "names.validate",
+        "args": {"json": sidecar, "context": {"actor_counts": {"0": 2}}}
+    });
+    let response: serde_json::Value =
+        serde_json::from_str(&studio.command(&valid.to_string())).expect("JSON response");
+    assert_eq!(response["ok"]["actor_count"], 1);
+    assert_eq!(response["ok"]["event_count"], 1);
+    assert_eq!(
+        response["ok"]["table"]["maps"]["0"]["actors"]["1"]["name"],
+        "Hero"
+    );
+
+    let noncanonical = json!({
+        "op": "names.validate",
+        "args": {"json": "{\"schema_version\":1}", "context": {"actor_counts": {"00": 2}}}
+    });
+    let response: serde_json::Value =
+        serde_json::from_str(&studio.command(&noncanonical.to_string())).expect("JSON response");
+    assert_eq!(response["error"]["kind"], "invalid_args");
+
+    let out_of_range = json!({
+        "op": "names.validate",
+        "args": {"json": "{\"schema_version\":1}", "context": {"actor_counts": {"4096": 0}}}
+    });
+    let response: serde_json::Value =
+        serde_json::from_str(&studio.command(&out_of_range.to_string())).expect("JSON response");
+    assert_eq!(response["error"]["kind"], "invalid_names");
+
+    let missing_context = json!({
+        "op": "names.validate",
+        "args": {"json": "{\"schema_version\":1,\"maps\":{\"0\":{\"actors\":{\"0\":{\"name\":\"Hero\"}}}}}"}
+    });
+    let response: serde_json::Value =
+        serde_json::from_str(&studio.command(&missing_context.to_string())).expect("JSON response");
+    assert_eq!(response["error"]["kind"], "names_context_required");
+}

@@ -28,9 +28,9 @@ that UI approval does not block independent backend verification.
   permission covers those additions. Continue backend and mockup work.
 
 The delivered mockups are `tmp/studio/milestone-3/mockups/v1/01-command-list.png`,
-`02-flow-graph.png` and `03-actor-lanes.png`; approval is pending. The current
-MIT grant is explicitly limited to the files already listed in PROVENANCE.
-Proposed new copying stays held: generic portions of pinned
+`02-flow-graph.png` and `03-actor-lanes.png`. Bart approved all three layouts
+and the bounded MIT extension on 2026-10-21 at 03:28:46 UTC ("Yes, and yes.").
+The permitted extraction is limited to the general portions below: generic portions of pinned
 `src/editor/EventGraphEditor.tsx` (zoom/world constants 111–122, viewport/culling
 around 607–741, coordinate/gesture/fit/zoom/pan helpers 2526–2836, and canvas/
 wire/focus rendering around 4103–4280), plus generic `deltaHistory.ts` 1–813 and
@@ -38,8 +38,8 @@ focused form-history logic in `editorState.ts` 3552–3582/3606–3648. These ar
 candidate source regions, not permission to copy entire mixed-domain ranges;
 actual extraction rows must identify precisely the portions retained. RPG node
 schemas, palette/inspector, graph history, recovery and project-specific reducer
-remain excluded. The permission question requests a bounded MIT extension for
-those general layers, not a rewrite of the existing grant.
+remain excluded. The extension and exact retained ranges are recorded in PROVENANCE with source
+hashes, attribution and licence notices.
 
 ## 2. Disc/component backend
 
@@ -125,3 +125,55 @@ metadata files in sorted `packaging/source-files.txt`; never list private inputs
 or generated wasm/dist. Monitor disk headroom (53 GiB at start); no deletion/GC.
 Protect the five main-checkout PR46 files using the prior exact hash baseline.
 Finish with scoped local commits, clean tracked state and reviewable evidence.
+
+
+## Verified implementation checkpoints
+
+The backend/nonvisual checkpoint is local commit `ee7ac31e`: strict disc sessions,
+component extraction, structure, lanes, names and binary range transport. Its
+Python/Rust sweep covers 935 real maps, 525 placeholders and 746,496 actor/event
+slots with exact component bytes, instruction semantics, unique reachable
+ownership and flattened edges. Commands, source identities, fold counts,
+failed attempts and audit limits remain in
+`tmp/studio/milestone-3/checks/verification-evidence.md`.
+
+After both explicit approvals, the UI adds the three synchronized read-only
+views, disc/map and actor/event navigation, original diagnostics, raw inspection,
+shortcuts, and validated names sidecar history/persistence. The bounded generic
+canvas/history extractions and source ranges are in `tools/studio/PROVENANCE.md`.
+Independent Astra review identified navigation, native Enter handling, disc
+ownership, pending name transactions, diagnostic edge visibility, canvas bounds
+and canceled-load status issues; these were corrected and the focused closure
+reviewed. A names-context JSON-key regression found in browser acceptance was
+fixed with a native protocol regression and fresh wasm parity/build checks.
+
+Focused frontend evidence includes 26 Vitest cases, typecheck, Sass/Vite builds,
+design audit, all three synthetic view/name journeys (passes retained across
+affected retries), production hook absence, and 11 existing shell/protocol browser
+regressions. One optional native graph-fixture browser case was explicitly
+skipped in that regression invocation; separate native/wasm parity evidence is
+retained. The synthetic NW path/map-list smoke passes. Real browser and NW
+checks each opened both original BINs in place, recognized 730 disc-1 real maps
+and 205 disc-2 real maps plus 525 placeholders, and rendered disc 1 map 2.
+
+| Host | Initial list | First graph | First lanes |
+| --- | ---: | ---: | ---: |
+| Pinned Chromium browser | 168.7 ms | 25.3 ms | 109.7 ms |
+| NW.js 0.113.0, headless GPU disabled | 204.6 ms | 42.8 ms | 98.9 ms |
+
+All observed times meet the planned 1 s / 2 s / 1 s targets. These are the initial
+actor 0/event 0 views, with map component bytes ready before timing. The list
+includes decoding/structure/paint; graph and lanes include first derivation,
+mount and paint. Disc indexing and component I/O are excluded. The authoritative
+Python/Rust sweep and both actual UI hosts agree on **2,358** decoded map
+instructions; the plan's approximately 3,400 was an estimate. The failed harness
+guard requiring more than 3,000 is preserved rather than counted as a pass.
+
+UI commands, stage exits, source/bundle/input hashes, screenshots, earlier
+failures and final audit results are retained under
+`tmp/studio/milestone-3-ui-20261020/`, with the final acceptance batch in
+`acceptance-20261021/`. The original backend evidence's pending-approval note is
+historical and superseded by the approval record above. No game data, fixture
+build products, private paths or screenshots belong in the source archive.
+No full runtime suite was repeated for these standalone editor views; unchanged
+runtime and development TLS evidence is reused with its existing caveats.

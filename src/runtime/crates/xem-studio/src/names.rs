@@ -12,8 +12,28 @@ use std::{
 pub struct NamesContext {
     /// Loaded map metadata, merged across open discs. A missing map is unknown,
     /// not an assertion that its actor table is empty.
-    #[serde(default)]
+    #[serde(default, deserialize_with = "actor_counts_from_json")]
     pub actor_counts: BTreeMap<u32, usize>,
+}
+
+// JSON object keys are strings, including when the typed command enum is
+// deserialized through serde_json::Value. Parse them explicitly and retain the
+// native numeric-key API without accepting aliases such as "00".
+fn actor_counts_from_json<'de, D: de::Deserializer<'de>>(
+    deserializer: D,
+) -> Result<BTreeMap<u32, usize>, D::Error> {
+    let raw = BTreeMap::<String, usize>::deserialize(deserializer)?;
+    raw.into_iter()
+        .map(|(key, count)| {
+            let id = key.parse::<u32>().map_err(de::Error::custom)?;
+            if key != id.to_string() {
+                return Err(de::Error::custom(
+                    "actor_counts keys must be canonical decimal map IDs",
+                ));
+            }
+            Ok((id, count))
+        })
+        .collect()
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]

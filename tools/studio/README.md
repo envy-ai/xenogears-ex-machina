@@ -2,8 +2,8 @@
 
 The studio has a dockable shell and a host-independent Rust/wasm command
 service. Its field-event backend inspects original components without editing
-game data or connecting to the running game. Milestone-three event views are
-implemented only after explicit approval of their mockups.
+game data or connecting to the running game. Milestone-three views use the explicitly approved command-list, graph and
+actor-lane layouts. Names are the only editable project metadata.
 
 ## Try it
 
@@ -230,7 +230,7 @@ a returned inspection graph does not assert executable control flow.
 The additional operations below retain the same typed request and outer
 `ok`/`error` envelope. `version.operations` advertises the complete current list;
 consumers must not assume the milestone-two four-operation list is final.
-The UI for these operations requires separately approved mockups.
+The corresponding read-only views use the approved milestone-three mockups.
 
 Disc sessions belong to one `Studio` instance. Native Rust callers open CHD,
 BIN or CUE paths; wasm callers supply a random-access image reader:
@@ -357,3 +357,85 @@ inside an unstructured region; they are not a count of jump opcodes:
 This is backend corpus evidence, not a real-disc UI performance result. The
 scoped run completed in 166.55 seconds; its exact invocation, source identities
 and output are retained in `tmp/studio/milestone-3/checks/both-disc-sweep-v1.*`.
+
+
+### Event views
+
+Open a project folder for `names.json`, then open your own disc image in Project.
+Browsers select a CHD or BIN; select a CUE and its companion BIN together. NW.js
+opens a local CHD/BIN/CUE path through the same bounded binary range transport.
+The disc identity and indexing progress remain visible. Switch between the two
+disc sessions, filter maps by number, and select a real map; placeholders remain
+labelled. Selecting another disc clears the previous loaded map view.
+
+Expand an actor to see its 32 event slots (Load, Idle, Talk, Touch, then numbered
+entries). The command list folds proven structures and exposes original raw PC,
+bytes, edges and diagnostics. The graph is a read-only layered view, with pan,
+zoom, selection and offscreen culling. Unfollowed/outside paths have explicit
+non-executable destination markers. Lanes show actor/event spans, start/finish
+request links and possible shared-variable dependencies, without a guessed
+execution timeline. All views retain map diagnostic references.
+
+Ctrl+1/2/3 switches views; Ctrl+F finds within the map; Enter follows a jump/call;
+Alt+left/right navigates followed targets. F2 opens names for the selected event
+or actor, or a variable slot/message ID. Only validated tables are saved through
+the opened folder's file adapter. A bad existing sidecar remains untouched with
+its original error visible. Undo/redo persists the same validated metadata path.
+No disc bytes, scripts or message text are edited or decoded as text.
+
+The extended source grant and exact canvas/history ranges are in PROVENANCE.
+Only an explicit `VITE_XEM_STUDIO_TEST=1` build installs the synthetic component/
+automation entry. `XEM_STUDIO_WASM_PACKAGE` selects a separate ignored fixture
+WASM directory only when that test build flag is present; normal builds refuse
+that override. Test builds, fixtures, bundles, private inputs and screenshots
+remain ignored. No production identity override is added.
+
+
+### Event-view verification modes
+
+The normal `npm --prefix tools/studio run test:e2e` checks the production bundle,
+including absence of the test hook. Synthetic event-view journeys are explicitly
+skipped in this mode. Build a separate ignored bundle with
+`VITE_XEM_STUDIO_TEST=1`, then set that same flag when running
+`tests/e2e/events.spec.ts`. Set `XEM_STUDIO_TEST_DIST` to the built directory
+(relative to `tools/studio` for Playwright). The production-hook assertion is
+skipped only in this explicit test mode. Keep test artifacts in fresh ignored
+paths and run these commands in the pinned shell and outer memory scope above.
+
+Local real-disc browser checks use `tests/e2e/events-real-disc.spec.ts`, the
+ordinary identity-validating wasm package in a test-hook bundle, and all of
+`VITE_XEM_STUDIO_TEST=1`, `XEM_STUDIO_EXTRACT_ROOT`,
+`XEM_STUDIO_DISC1_PATH` and `XEM_STUDIO_DISC2_PATH`. Without the private-input
+gates the case is explicitly skipped. The NW equivalents are
+`tests/e2e/nw-real-discs-smoke.mjs` and `tests/e2e/nw-events-smoke.mjs` (run from
+`tools/studio`); the synthetic smoke requires an explicit
+`XEM_STUDIO_SYNTHETIC_DISC_IMAGE` and its isolated fixture wasm bundle. No harness
+requires an old timestamped run's metadata. These desktop tests use fresh local
+manifests with neither development permission, and do not change TLS trust.
+
+First-render timings start after component bytes are available: the initial
+list includes decode, structure and paint; graph and lanes include their first
+mount/data derivation and paint. Disc opening/indexing and component I/O are
+excluded. The tests require actual rendered content from disc 1 map 2: its 2,358 decoded
+instructions match the Python/Rust corpus sweep. The plan's approximate 3,400
+count was an estimate, not the observed component size. Cached tab changes are
+not first-render evidence.
+
+
+The local milestone-three real-disc checks opened both existing BIN images in
+Chromium and NW.js, with normal production disc identity validation. The initial
+actor 0/event 0 of disc 1 map 2 measured:
+
+| Host | List | Graph | Lanes |
+| --- | ---: | ---: | ---: |
+| Chromium 152 | 168.7 ms | 25.3 ms | 109.7 ms |
+| NW.js 0.113.0 (headless, GPU disabled) | 204.6 ms | 42.8 ms | 98.9 ms |
+
+These observations meet the respective 1 s / 2 s / 1 s targets, with the timing
+boundary above. They do not measure every event or every map's rendering cost.
+The both-disc backend sweep remains the exhaustive component/structure check.
+Exact commands, input/bundle hashes, failed attempts and screenshots are retained
+under `tmp/studio/milestone-3-ui-20261020/`; the final acceptance batch is
+`acceptance-20261021/`. UI acceptance uses synthetic data in committed fixtures;
+real disc inputs remain local and gated. Development TLS, file adapters and
+runtime evidence are reused where unchanged, with their recorded limitations.

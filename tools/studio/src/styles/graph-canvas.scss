@@ -1,0 +1,100 @@
+// Studio-owned shared canvas appearance. Graph geometry/interactions are adapted
+// from rpg_creator's pinned EventGraphEditor.tsx; see PROVENANCE.md.
+@use 'editor-surfaces' as surface;
+
+.graph-canvas {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  height: 100%;
+}
+
+.graph-canvas__toolbar {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 8px;
+  border-bottom: 1px solid var(--editor-edge);
+  background: var(--editor-panel);
+}
+
+.graph-canvas__viewport {
+  @include surface.editor-inset-frame;
+  position: relative;
+  flex: 1;
+  min-height: 180px;
+  overflow: auto;
+  overscroll-behavior: contain;
+  touch-action: none;
+  outline-offset: -2px;
+  background-image: radial-gradient(var(--editor-edge) 1px, transparent 1px);
+  background-size: 20px 20px;
+
+  &:focus-visible { outline: 2px solid var(--editor-accent); }
+  &[data-pan-mode='true'] { cursor: grab; }
+  &[data-panning='true'], &[data-panning='true'] * { cursor: grabbing; }
+}
+
+.graph-canvas__extent { position: relative; }
+.graph-canvas__world { position: absolute; transform-origin: 0 0; }
+.graph-canvas__wires { position: absolute; inset: 0; overflow: visible; pointer-events: none; }
+.graph-canvas__wires marker path { fill: var(--editor-muted); }
+
+.graph-canvas__wire {
+  fill: none;
+  stroke: var(--editor-muted);
+  stroke-width: 2;
+  vector-effect: non-scaling-stroke;
+
+  &[data-kind='branch'] { stroke: var(--editor-accent); }
+  &[data-kind='table_entry'] { stroke: var(--editor-accent); stroke-dasharray: 2 3; }
+  &[data-kind='jump'] { stroke-dasharray: 8 2; }
+  &[data-kind='call'] { stroke: var(--editor-secondary); stroke-dasharray: 8 3; }
+  &[data-kind='return'] { stroke: var(--editor-secondary); stroke-dasharray: 3 3; }
+  &[data-kind='skip'] { stroke: var(--editor-warning); stroke-dasharray: 8 2 2 2; }
+  &[data-kind='inner'] { stroke: var(--editor-warning); stroke-dasharray: 1 3; }
+  &[data-kind='wait'] { stroke-dasharray: 4 3; }
+  &[data-kind='rerun'], &[data-kind='hang'] { stroke-dasharray: 1 3; }
+  &[data-status='not_followed'] { stroke: var(--editor-warning); stroke-dasharray: 6 4; }
+  &[data-status='outside_stream'] { stroke: var(--editor-danger); stroke-dasharray: 3 4; }
+  &[data-selected='true'] { stroke-width: 3; }
+}
+
+.graph-canvas__node {
+  @include surface.editor-card;
+  position: absolute;
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 12px;
+  border: 1px solid var(--editor-edge);
+  border-left: 3px solid var(--editor-accent);
+  border-radius: 4px;
+  cursor: pointer;
+
+  &[data-selected='true'] {
+    border-color: var(--editor-accent);
+    background: var(--editor-selection-background);
+    box-shadow: 0 0 0 2px color-mix(in srgb, var(--editor-accent) 30%, transparent);
+  }
+  &:focus-visible { outline: 2px solid var(--editor-accent-strong); outline-offset: 3px; }
+}
+
+.graph-canvas__label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.graph-canvas__content { min-height: 0; overflow: auto; user-select: text; }
+.graph-canvas__port {
+  position: absolute;
+  top: 50%;
+  width: 9px;
+  height: 9px;
+  border: 1px solid var(--editor-accent);
+  border-radius: 50%;
+  background: var(--editor-panel);
+  transform: translateY(-50%);
+}
+.graph-canvas__port--input { left: -6px; }
+.graph-canvas__port--output { right: -6px; }
