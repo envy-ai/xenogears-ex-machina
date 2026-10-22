@@ -5,19 +5,19 @@ use serde_json::Value;
 #[cfg(feature = "test-fixtures")]
 use serde_json::json;
 #[cfg(feature = "test-fixtures")]
+use sha2::Digest;
+#[cfg(feature = "test-fixtures")]
 use std::fs::OpenOptions;
 #[cfg(feature = "test-fixtures")]
 use std::io::Write;
 #[cfg(feature = "test-fixtures")]
 use std::time::{SystemTime, UNIX_EPOCH};
 #[cfg(feature = "test-fixtures")]
-use sha2::Digest;
+use xem_disc::mods::{BuildFile, BuildSpec, DiscTarget, Package, PackageSet};
 #[cfg(feature = "test-fixtures")]
 use xem_studio::Studio;
 use xem_studio::disc::extract_events;
 use xem_studio::disc::{DiscSessions, OpenArgs};
-#[cfg(feature = "test-fixtures")]
-use xem_disc::mods::{BuildFile, BuildSpec, DiscTarget, Package, PackageSet};
 
 fn pull_fixture(sessions: &mut DiscSessions, image: &[u8]) -> (u32, Value) {
     let opened = sessions
@@ -344,21 +344,30 @@ fn synthetic_package_overlay_reports_prepared_executable_mirror_and_raw_reads() 
         summary["untouched_source_sha256"],
         xem_disc::identify::hex(&sha2::Sha256::digest([0u8; 4]))
     );
-    assert_eq!(summary["untouched_source_sha256"], summary["untouched_overlay_sha256"]);
+    assert_eq!(
+        summary["untouched_source_sha256"],
+        summary["untouched_overlay_sha256"]
+    );
     assert_ne!(summary["source_sha256"], summary["replacement_sha256"]);
     assert_ne!(summary["executable"], json!(fixture.executable));
     assert_eq!(summary["boot_mirror"], summary["executable"]);
     assert_eq!(summary["boot_mirror_sha256"], summary["executable_sha256"]);
     assert_eq!(summary["executable_sha256"].as_str().unwrap().len(), 64);
     assert_eq!(summary["mirror_index"].as_array().unwrap().len(), 0x8000);
-    assert_eq!(summary["embedded_index_sha256"], summary["mirror_index_sha256"]);
+    assert_eq!(
+        summary["embedded_index_sha256"],
+        summary["mirror_index_sha256"]
+    );
     let progress = &summary["missing_read_progress"];
     let preparation = &progress["preparation"];
     let inspection = &progress["inspection"];
     assert!(preparation["attempts"].as_u64().unwrap() > 1);
     assert!(preparation["ranges"].as_u64().unwrap() > 0);
     assert!(preparation["bytes"].as_u64().unwrap() > 0);
-    assert!(preparation["resident_source_bytes"].as_u64().unwrap() <= preparation["cache_budget_bytes"].as_u64().unwrap());
+    assert!(
+        preparation["resident_source_bytes"].as_u64().unwrap()
+            <= preparation["cache_budget_bytes"].as_u64().unwrap()
+    );
     assert!(inspection["ranges"].as_u64().is_some());
     assert!(inspection["bytes"].as_u64().is_some());
 
@@ -389,7 +398,9 @@ fn write_overlay_parity_fixture(
         output_path.starts_with(&fixture_root),
         "synthetic parity output must remain under ignored tmp/studio"
     );
-    let parent = output_path.parent().expect("parity fixture path has parent");
+    let parent = output_path
+        .parent()
+        .expect("parity fixture path has parent");
     std::fs::create_dir_all(parent).expect("create ignored parity output parent");
     let stem = output_path
         .file_stem()
@@ -418,6 +429,7 @@ fn write_new(path: &std::path::Path, bytes: &[u8]) {
         .create_new(true)
         .open(path)
         .expect("create a new synthetic parity fixture file");
-    file.write_all(bytes).expect("write synthetic parity fixture");
+    file.write_all(bytes)
+        .expect("write synthetic parity fixture");
     file.sync_all().expect("finish synthetic parity fixture");
 }

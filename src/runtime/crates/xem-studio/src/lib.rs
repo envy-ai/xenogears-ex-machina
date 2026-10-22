@@ -6,8 +6,8 @@
 pub mod disc;
 pub mod field;
 pub mod names;
-pub mod packed;
 pub mod packages;
+pub mod packed;
 
 #[cfg(feature = "test-fixtures")]
 mod package_fixture_overlay;
