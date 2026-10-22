@@ -345,12 +345,13 @@ export function EventViews() {
       const incoming = incomingEdges.get(instruction.pc) ?? [];
       layer.set(instruction.pc, incoming.reduce((maximum, edge) => Math.max(maximum, (layer.get(edge.from_pc) ?? 0) + 1), 0));
     }
+    const verticalSpacing = 220;
     const levels = new Map<number, number>();
-    const nodes = rows.map(instruction => { const x = layer.get(instruction.pc) ?? 0; const row = levels.get(x) ?? 0; levels.set(x, row + 1); return { id: String(instruction.pc), x: row * 310, y: x * 110, width: 280, height: 84, label: `${formatPc(instruction.pc)} ${instructionPhrase(instruction, names, s.map!, s.selection.actor)}` }; });
+    const nodes = rows.map(instruction => { const x = layer.get(instruction.pc) ?? 0; const row = levels.get(x) ?? 0; levels.set(x, row + 1); return { id: String(instruction.pc), x: row * 310, y: x * verticalSpacing, width: 280, height: 84, label: `${formatPc(instruction.pc)} ${instructionPhrase(instruction, names, s.map!, s.selection.actor)}` }; });
     const missing = new Map<string, { pc: number; status: string }>();
     for (const edge of s.graph.edges) if (reachable.has(edge.from_pc) && !reachable.has(edge.to_pc)) missing.set(`target:${edge.to_pc}:${edge.status}`, { pc: edge.to_pc, status: edge.status });
     let marker = 0;
-    for (const [id, target] of missing) nodes.push({ id, x: -310, y: marker++ * 110, width: 280, height: 84, label: `${target.status} target ${formatPc(target.pc)} · not an instruction owner` });
+    for (const [id, target] of missing) nodes.push({ id, x: -310, y: marker++ * verticalSpacing, width: 280, height: 84, label: `${target.status} target ${formatPc(target.pc)} · not an instruction owner` });
     return nodes;
   }, [s.graph, s.map, reachable, names, s.view, s.selection.actor]);
   const graphEdges = useMemo(() => s.graph?.edges.filter(edge => reachable.has(edge.from_pc)).map((edge, index) => ({ id: `${index}`, from: String(edge.from_pc), to: reachable.has(edge.to_pc) ? String(edge.to_pc) : `target:${edge.to_pc}:${edge.status}`, kind: edge.kind, status: edge.status, fromPort: edge.kind === 'branch' || edge.kind === 'table_entry' ? 'right' as const : 'bottom' as const })) ?? [], [s.graph, reachable]);
