@@ -1307,6 +1307,12 @@ def link(out, objects, args, units, coverage=None):
     else:
         built.replace(final)
         print(f"wrote {final} ({final.stat().st_size} bytes)")
+    # Bind this generated layout to the final linked module, after asyncify.
+    # Studio refuses an unbound schema; normal inspect clients keep their API.
+    schema_path = out / "schema.json"
+    schema_data = json.loads(schema_path.read_text())
+    schema_data["module_sha256"] = hashlib.sha256(final.read_bytes()).hexdigest()
+    schema_path.write_text(json.dumps(schema_data, sort_keys=True, separators=(",", ":")) + "\n")
     # When the last build finished (play.sh compares the sources with it).
     (out / "stamp").touch()
 

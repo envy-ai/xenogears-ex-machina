@@ -22,6 +22,7 @@ const page = {
   game: { available: false },
   stubs: false,
   schema: false,
+  sessionGeneration: 0,
   rendererError: null,
   frameError: null,
   hidden: document.hidden,
@@ -179,11 +180,12 @@ const host = {
   cards,
   flushCards: () => cards.flush(),
   appOperation: (request) => appOperation(request),
-  fillDisc: () => disc.fillGameReads(app),
+  fillDisc: (check) => disc.fillGameReads(app, check),
   async boot({ executable = true, run = false, rewind = run } = {}) {
     if (!page.game.available) throw new Error(`no game module: ${page.game.error}`);
     const instance = await instantiate(page.game);
     const status = JSON.parse(app.boot(instance, page.game.names, executable, page.game.moduleId, rewind));
+    page.sessionGeneration += 1;
     audio.reset();
     app.set_running(run);
     if (cards.notice) operationStatus(cards.notice);
@@ -242,6 +244,7 @@ const host = {
             stubs: page.stubs, schema: page.schema }
         : { available: false, url: page.game.url, error: page.game.error },
       rendererError: page.rendererError,
+      sessionGeneration: page.sessionGeneration,
       frameError: page.frameError,
       deviceLosses: page.deviceLosses,
       audio: audio.status(),

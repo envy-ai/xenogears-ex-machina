@@ -216,6 +216,34 @@ goes on as without; [State interchange](#state-interchange)).
   assembly, written without parsing the inline blocks and assembled
   without them; only `menu_common.c` stays out (its types incomplete even
   after its target's headers).
+- **Studio live inspection.** The read-only `schema` command returns the loaded
+  schema with its runtime content identity. It requires `module_sha256` to match
+  the attached game module; the normal `tools/game_module.py --stubs --release`
+  build stamps this association after linking. Native and browser boots reject
+  a declared mismatch. An older unbound schema remains usable by existing
+  runtime inspect clients, but cannot satisfy Studio's live-schema contract.
+  `status` additionally reports `identity`, active `mode`, and inserted drive
+  `disc`; the snapshot identity groups both game discs and does not identify
+  which one is currently inserted.
+  Desktop `--control-paused` (requires `--control`, desktop window only) starts
+  the automatic host loop paused before its first frame. The host command
+  `host_running {running: bool}` pauses/resumes automatic pacing and acknowledges
+  `{running}`; omit `running` to query. `status.host_running` reports the same
+  state. Explicit shared commands remain available while paused. Ordinary
+  desktop launches retain automatic pacing.
+  Browser clients use `setRunning(false)` and verify `status().running` before
+  deterministic work. `commandJson(text)` exposes the existing raw JSON boundary
+  for exact 64-bit integer inspection/write tokens; frame work still uses `run`
+  or `runFrames` to complete pending disc reads. `status().page.sessionGeneration`
+  increments on each successful boot; clients invalidate old pending work,
+  schema state and snapshot names if it changes.
+  Browser `window.xem.run(command, {signal})` and `runFrames(count, {signal})`
+  accept an optional AbortSignal. Their asynchronous disc continuations retain the
+  original boot generation and reject before issuing further frame commands after
+  a reboot or cancellation. `cancellableRun: true` advertises that contract; other
+  clients can keep omitting the options argument. A pending file read may complete,
+  but guarded fills and frame continuation stop before mutating a replacement session.
+
 - **Snapshots** (`Runtime::snapshot`/`restore`) hold the module's low memory
   (port data, shadow stack, asyncify area), the scratchpad and I/O pages and
   the PS1's 2 MB of RAM (zero runs compressed), the module's stack pointer and

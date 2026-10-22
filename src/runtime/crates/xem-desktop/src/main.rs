@@ -54,6 +54,7 @@ struct Options {
     xr_stick: Vec<(u64, [f32; 2])>,
     /// Agents' commands on stdin while the game plays (`--control`).
     control: bool,
+    control_paused: bool,
 }
 
 fn options() -> Result<Options, String> {
@@ -78,6 +79,7 @@ fn options() -> Result<Options, String> {
         xr_pad: Vec::new(),
         xr_stick: Vec::new(),
         control: false,
+        control_paused: false,
     };
     let mut args = std::env::args().skip(1);
     while let Some(arg) = args.next() {
@@ -110,6 +112,7 @@ fn options() -> Result<Options, String> {
             }
             "--xr" => options.xr = true,
             "--control" => options.control = true,
+            "--control-paused" => options.control_paused = true,
             "--xr-pause" => {
                 let value = args.next().ok_or("--xr-pause needs FRAME,COUNT")?;
                 let (at, count) = value.split_once(',').ok_or("--xr-pause needs FRAME,COUNT")?;
@@ -206,6 +209,8 @@ fn options() -> Result<Options, String> {
                      --xr-stick holds the right stick at X/Y (each -1 to 1, Y up) from headset frame N to the next entry; \
                      --xr-capture-at saves both eyes at those headset frames (looking from within the scene, \
                      each eye's picture as the renderer drew it too: left-picture.png, right-picture.png).\n\
+                     --control-paused with --control starts the desktop automatic loop paused.\n\
+                     host_running {{running: bool}} pauses/resumes it; omitted running queries it.\n\
                      --control answers JSON commands on stdin, a line each, while the game plays: \
                      the command layer's (status, context, navigate, act, ...; status adds renderer.movie, \
                      whether the window last showed a rebuilt movie frame), settings, \
@@ -252,6 +257,9 @@ fn options() -> Result<Options, String> {
         && *at > exit
     {
         return Err(format!("--save-state-at frame {at} comes after --exit-at-frame {exit}"));
+    }
+    if options.control_paused && (!options.control || options.xr) {
+        return Err("--control-paused requires --control in the desktop window".into());
     }
     Ok(options)
 }
@@ -452,7 +460,8 @@ fn open_game(options: &Options, disc: &std::path::Path) -> Result<Game, String> 
     };
     let (session, identity) = xem_game::boot(disc, &boot).map_err(|e| e.to_string())?;
     eprintln!("xem-desktop: {}", identity.boot_path);
-    let game = Game::new(session);
+    let mut game = Game::new(session);
+    game.set_control_running(!options.control_paused);
     if !game.has_audio() {
         eprintln!("xem-desktop: no audio device; the game runs silent");
     }

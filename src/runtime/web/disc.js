@@ -9,11 +9,13 @@ import * as storage from './storage.js';
 const files = new Map();
 
 /** Fetch `[[id, start, end], ...]` from the imports' files. */
-async function fetchRanges(app, ranges) {
+async function fetchRanges(app, ranges, check = () => {}) {
   for (const [id, start, end] of ranges) {
+    check();
     const file = files.get(id);
     if (!file) throw new Error(`no file for disc import ${id}`);
     const bytes = new Uint8Array(await file.slice(start, end).arrayBuffer());
+    check();
     app.disc_fill(id, start, bytes);
   }
 }
@@ -63,13 +65,15 @@ export function serveGameReads(app) {
 
 /** Fetch everything the game's disc reads wait for, including a fetch the
  * animation loop started; resolves once nothing is missing. */
-export async function fillGameReads(app) {
+export async function fillGameReads(app, check = () => {}) {
   if (files.size === 0) throw new Error('no disc is open');
   for (;;) {
+    check();
     if (serving) await serving;
+    check();
     const ranges = JSON.parse(app.disc_missing());
     if (ranges.length === 0) return;
-    await fetchRanges(app, ranges);
+    await fetchRanges(app, ranges, check);
   }
 }
 

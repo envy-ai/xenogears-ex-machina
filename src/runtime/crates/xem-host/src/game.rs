@@ -28,6 +28,8 @@ pub struct Game {
     /// A session log drives the pads (`schedule`): the player's buttons are
     /// not applied.
     scripted: bool,
+    /// Agent ownership of the automatic host loop; shared commands still execute.
+    control_running: bool,
     /// Frames the game runs at most (a scripted session's end).
     frame_limit: Option<u64>,
     timeline_revision: u64,
@@ -80,6 +82,7 @@ impl Game {
             music_paced: Instant::now(),
             samples: Vec::new(),
             scripted: false,
+            control_running: true,
             frame_limit: None,
             timeline_revision: 0,
             rewind_held: [false;2],
@@ -129,7 +132,18 @@ impl Game {
 
     /// A shared control or native file command; an error is its plain text.
     pub fn command(&mut self, command: &serde_json::Value) -> Result<serde_json::Value,String> {
-        let reply = xem_game::storage::command(&mut self.session,command);
+        if command.get("cmd").and_then(serde_json::Value::as_str) == Some("host_running") {
+            if let Some(value) = command.get("running") {
+                self.set_control_running(value.as_bool().ok_or("host_running needs a boolean running")?);
+            }
+            return Ok(serde_json::json!({ "running": self.control_running }));
+        }
+        let mut reply = xem_game::storage::command(&mut self.session,command);
+        if command.get("cmd").and_then(serde_json::Value::as_str) == Some("status")
+            && let Some(status) = reply.as_object_mut()
+        {
+            status.insert("host_running".into(), self.control_running.into());
+        }
         if let Some(error) = reply.get("error") {
             return Err(error.as_str().map_or_else(|| error.to_string(), str::to_owned));
         }
@@ -296,6 +310,7 @@ impl Game {
     /// Binaural, which presents the sound), then queues their sound at its
     /// master volume. Returns the frames run.
     pub fn update(&mut self, buttons: u16, settings: &xem_settings::Settings, mut focused: impl FnMut() -> bool) -> Result<u32, String> {
+        if !self.control_running { return Ok(0); }
         self.sync_time_settings(settings)?;
         self.session.set_binaural(settings.binaural);
         // A presentation just started takes the listener's view too.
@@ -423,6 +438,14 @@ impl Game {
         }
     }
 
+    /// Pause/resume only automatic host pacing, without changing game state.
+    /// Paused sessions remain available for explicit control commands.
+    pub fn set_control_running(&mut self, running: bool) {
+        if self.control_running == running { return; }
+        self.control_running = running;
+        if running { self.resume(); } else { self.pause(); }
+    }
+
     /// Stops the game clock and the sound (the host went to the background):
     /// nothing runs until [`resume`](Self::resume), and queued sound is
     /// dropped.
@@ -538,6 +561,28 @@ mod tests {
     use super::*;
     #[cfg(not(debug_assertions))]
     use xem_settings::FastForwardRate;
+
+    #[test]
+    fn host_running_controls_only_automatic_frames_and_requires_a_boolean() {
+        use serde_json::json;
+
+        let session = Session::new(xem_core::Runtime::new(NativeModule::new()), None, Duration::default);
+        let mut game = Game::new(session);
+        let settings = xem_settings::Settings::default();
+
+        assert_eq!(game.command(&json!({"cmd":"host_running"})).unwrap()["running"], true);
+        assert_eq!(game.command(&json!({"cmd":"host_running","running":false})).unwrap()["running"], false);
+        assert!(game.command(&json!({"cmd":"host_running","running":"false"})).unwrap_err().contains("boolean"));
+        assert_eq!(game.command(&json!({"cmd":"host_running"})).unwrap()["running"], false, "an invalid update preserves the paused state");
+
+        game.paced = Instant::now() - FRAME * 2;
+        assert_eq!(game.update(0, &settings, || true).unwrap(), 0);
+        assert_eq!(game.frames_run(), 0, "the paused host loop must not advance the game");
+
+        let status = game.command(&json!({"cmd":"status"})).unwrap();
+        assert_eq!(status["host_running"], false, "shared commands remain available while the host loop is paused");
+        assert_eq!(game.command(&json!({"cmd":"host_running"})).unwrap()["running"], false);
+    }
 
     #[test]
     fn a_refused_state_load_reports_the_runtimes_message_as_it_is() {

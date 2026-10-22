@@ -2,13 +2,13 @@
 //! from game memory with the schema tools/game_schema.py derives from the
 //! recovered C's debug information (build/game/schema.json).
 
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value, json};
 use std::collections::HashMap;
 
 use crate::memory::GameMemory;
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Serialize)]
 pub struct Global {
     pub address: u32,
     pub image: Option<String>,
@@ -16,7 +16,7 @@ pub struct Global {
     pub ty: Option<usize>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Serialize)]
 pub struct Member {
     pub name: Option<String>,
     pub offset: u32,
@@ -26,7 +26,7 @@ pub struct Member {
     pub bit_offset: Option<u32>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Serialize)]
 #[serde(tag = "kind", rename_all = "lowercase")]
 pub enum Type {
     Base { name: String, size: u32, encoding: String },
@@ -40,8 +40,11 @@ pub enum Type {
     Opaque { name: Option<String> },
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Serialize)]
 pub struct Schema {
+    /// Normal build association, stamped after linking the final game module.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub module_sha256: Option<String>,
     pub globals: HashMap<String, Global>,
     pub types: Vec<Type>,
     #[serde(default)]

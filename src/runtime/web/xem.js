@@ -22,30 +22,47 @@ export function createAutomation(host) {
   const parse = (text) => JSON.parse(text);
   const command = (cmd) => parse(app.command(JSON.stringify(cmd)));
 
-  /** A `frames` or `run_until` command run to completion across disc fetches. */
-  async function run(cmd) {
+  // Async disc work must never continue against a replacement session.
+  const continuation = (signal) => {
+    const generation = host.pageStatus().sessionGeneration;
+    return () => {
+      signal?.throwIfAborted();
+      if (host.pageStatus().sessionGeneration !== generation) throw new Error('the game session changed during asynchronous frame work');
+    };
+  };
+
+  /** A `frames` or `run_until` command run to completion across disc fetches.
+   * Optional signal cancels before any subsequent runtime command. */
+  async function run(cmd, { signal } = {}) {
+    const check = continuation(signal);
+    check();
     const total = cmd.cmd === 'frames' ? (cmd.count ?? 1) : cmd.max_frames;
     if (!['frames', 'run_until'].includes(cmd.cmd)) return command(cmd);
     if (total > MAX_FRAMES_PER_COMMAND) return command(cmd); // the runtime's error
     let done = 0;
     let stalls = 0;
     for (;;) {
+      check();
       const left = total - done;
       const reply = command(cmd.cmd === 'frames' ? { ...cmd, count: left } : { ...cmd, max_frames: left });
       if (!reply.blocked) {
         await host.flushCards();
+        check();
         if (cmd.cmd === 'frames' || reply.error) return reply;
         return { ...reply, frames: done + reply.frames };
       }
       done += reply.frames;
       stalls = reply.frames === 0 ? stalls + 1 : 0;
       if (stalls > MAX_STALLS) throw new Error('the disc read does not complete');
-      await host.fillDisc();
+      await host.fillDisc(check);
+      check();
     }
   }
 
   return Object.freeze({
     version: 4,
+    /** run accepts AbortSignal and guards its original session at every continuation. */
+    cancellableRun: true,
     /** Renderer, disc, session, loop, audio, storage and page state. */
     status: () => ({ ...parse(app.status()), page: host.pageStatus() }),
     /** Start a session on a fresh game module instance: `{executable: false}`
@@ -56,6 +73,9 @@ export function createAutomation(host) {
     setRunning: (running) => app.set_running(Boolean(running)),
     /** Any control command, e.g. {cmd: 'inspect', path: 'mode_next_mode'}; errors come back as {error}. */
     command,
+    /** Raw shared command JSON in/out, preserving exact 64-bit integer tokens.
+     * Frame work can block on disc fetches: use run/runFrames for that work. */
+    commandJson: (text) => app.command(text),
     /** First-person inspection, as the native hosts' `first_person` command:
      * `{on, yaw, pitch}`, each optional (on absent toggles it as Toggle
      * first-person view does, or turns it on where a look is given; yaw
@@ -70,10 +90,14 @@ export function createAutomation(host) {
      * for (resolves to the reply xem-headless --control gives); other commands as `command`. */
     run,
     /** Advance `count` frames however many that takes (commands of at most 10 000). */
-    async runFrames(count) {
+    async runFrames(count, { signal } = {}) {
+      const check = continuation(signal);
+      check();
       let reply = null;
       for (let left = count; left > 0; left -= MAX_FRAMES_PER_COMMAND) {
-        reply = await run({ cmd: 'frames', count: Math.min(left, MAX_FRAMES_PER_COMMAND) });
+        check();
+        reply = await run({ cmd: 'frames', count: Math.min(left, MAX_FRAMES_PER_COMMAND) }, { signal });
+        check();
         if (reply.error) break;
       }
       return reply ?? command({ cmd: 'status' });

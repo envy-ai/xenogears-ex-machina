@@ -6,6 +6,7 @@
 use serde_json::json;
 use std::{cell::{Cell,RefCell},rc::Rc,time::Duration};
 use xem_core::control::Session;
+use xem_core::inspect::Schema;
 use xem_core::devices::Device;
 use xem_core::devices::card::{CardStorage, formatted};
 use xem_core::memory::OutOfBounds;
@@ -252,6 +253,53 @@ fn session() -> Session<Counter> {
     let started = std::time::Instant::now();
     Session::new(Runtime::new(Counter::new()),None,move || started.elapsed())
 }
+
+#[test]
+fn schema_command_requires_the_session_module_binding_and_returns_its_schema_and_identity() {
+    let schema = |module_sha256: Option<&str>| {
+        let mut value = json!({"globals": {}, "types": [], "records": {}});
+        if let Some(digest) = module_sha256 {
+            value["module_sha256"] = json!(digest);
+        }
+        Schema::parse(&value.to_string()).unwrap()
+    };
+    let mut runtime = Runtime::new(Counter::new());
+    runtime.identity.module = "synthetic-module-sha256".into();
+    runtime.identity.disc = "synthetic-disc".into();
+    runtime.identity.packages = vec!["synthetic-package".into()];
+    runtime.services().mode = Some(4);
+    runtime.services().insert_disc(2, disc());
+
+    let matching = schema(Some("synthetic-module-sha256"));
+    let mut session = Session::new(runtime, Some(matching), Duration::default);
+    let reply = session.execute(&json!({"cmd":"schema"}));
+    assert_eq!(reply["identity"]["module"], "synthetic-module-sha256");
+    assert_eq!(reply["identity"]["disc"], "synthetic-disc");
+    assert_eq!(reply["identity"]["packages"], json!(["synthetic-package"]));
+    assert_eq!(reply["schema"]["module_sha256"], "synthetic-module-sha256");
+    assert_eq!(reply["schema"]["globals"], json!({}));
+
+    let status = session.execute(&json!({"cmd":"status"}));
+    assert_eq!(status["identity"]["module"], "synthetic-module-sha256");
+    assert_eq!(status["mode"], 4);
+    assert_eq!(status["disc"], 2);
+
+    session.schema = Some(schema(None));
+    let absent = session.execute(&json!({"cmd":"schema"}));
+    assert!(absent["error"].as_str().unwrap().contains("matching module_sha256"), "{absent}");
+    session.schema = Some(schema(Some("another-module")));
+    let mismatch = session.execute(&json!({"cmd":"schema"}));
+    assert!(mismatch["error"].as_str().unwrap().contains("matching module_sha256"), "{mismatch}");
+}
+
+#[test]
+fn explicit_frame_commands_advance_the_public_synthetic_runtime() {
+    let mut session = session();
+    let reply = session.execute(&json!({"cmd":"frames","count":2}));
+    assert!(reply.get("error").is_none(), "{reply}");
+    assert_eq!(session.runtime.frames(), 2);
+}
+
 fn timed_session() -> (Session<Counter>,Rc<Cell<Duration>>) {
     let clock = Rc::new(Cell::new(Duration::ZERO));
     let source = clock.clone();

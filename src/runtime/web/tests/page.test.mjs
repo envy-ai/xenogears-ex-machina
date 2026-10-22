@@ -8,6 +8,53 @@ import { readFileSync } from 'node:fs';
 import { after, before, describe, test } from 'node:test';
 import { runInNewContext } from 'node:vm';
 import { NO_WEBGPU, WEBGPU, pixelStats, settingsSection, shot, start, status, syntheticDisc } from './support.mjs';
+import { createAutomation } from '../xem.js';
+
+function deferred() {
+  let resolve;
+  const promise = new Promise(done => { resolve = done; });
+  return { promise, resolve };
+}
+
+function blockedAutomation() {
+  const commands = [];
+  const fill = deferred();
+  const started = deferred();
+  let generation = 1;
+  const xem = createAutomation({
+    app: {
+      command(text) {
+        commands.push(JSON.parse(text));
+        return JSON.stringify({ blocked: true, frames: 0 });
+      },
+    },
+    pageStatus: () => ({ sessionGeneration: generation }),
+    async fillDisc(check) { started.resolve(); await fill.promise; check(); },
+    async flushCards() {},
+  });
+  return { xem, commands, fill, started, replaceSession() { generation += 1; } };
+}
+
+test('a replacement session stops async frame continuation after a deferred disc fill', async () => {
+  const probe = blockedAutomation();
+  const running = probe.xem.run({ cmd: 'frames', count: 3 });
+  await probe.started.promise;
+  probe.replaceSession();
+  probe.fill.resolve();
+  await assert.rejects(running, /session changed during asynchronous frame work/);
+  assert.deepEqual(probe.commands, [{ cmd: 'frames', count: 3 }], 'no later frame command reaches the replacement session');
+});
+
+test('cancellation stops async frame continuation after a deferred disc fill', async () => {
+  const probe = blockedAutomation();
+  const cancellation = new AbortController();
+  const running = probe.xem.run({ cmd: 'frames', count: 3 }, { signal: cancellation.signal });
+  await probe.started.promise;
+  cancellation.abort(new Error('owned game link closed'));
+  probe.fill.resolve();
+  await assert.rejects(running, /owned game link closed/);
+  assert.deepEqual(probe.commands, [{ cmd: 'frames', count: 3 }], 'no later frame command reaches the closed session');
+});
 
 async function canvasShot(page, name) {
   const png = await page.locator('canvas').screenshot({ path: shot(name) });

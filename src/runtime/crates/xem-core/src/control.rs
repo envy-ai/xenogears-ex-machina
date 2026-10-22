@@ -925,6 +925,7 @@ impl<M: GameModule> Session<M> {
     }
 
     fn status(&mut self) -> Value {
+        let identity = self.runtime.identity.clone();
         let stopped = self.stopped.clone();
         let actor_view = self.runtime.services().actor_view;
         let attack_page = self.runtime.services().attack_page;
@@ -951,6 +952,9 @@ impl<M: GameModule> Session<M> {
             "kanji_font_notice": services.kanji_font_notice,
         });
         json!({
+            "identity": identity,
+            "mode": services.mode,
+            "disc": services.cd.inserted(),
             "vblanks": services.clock.vblanks,
             "cycles": services.clock.now,
             "pads": services.pads.0.iter().map(|p| json!({"connected": p.connected, "buttons": names_of(p.buttons)})).collect::<Vec<_>>(),
@@ -998,6 +1002,15 @@ impl<M: GameModule> Session<M> {
             "debug_status" => Ok(self.debug_status()),
             "debug_tick" => { self.tick_debug()?; Ok(self.debug_status()) }
             "status" => Ok(self.status()),
+            // Return the schema actually used by this session, never a client-selected
+            // file. The identity binds the inspector model to this connection/module.
+            "schema" => {
+                let schema = self.schema()?;
+                if schema.module_sha256.as_deref() != Some(self.runtime.identity.module.as_str()) {
+                    return Err("schema is absent a matching module_sha256 build binding; rebuild tools/game_module.py".into());
+                }
+                Ok(json!({ "identity": self.runtime.identity, "schema": schema }))
+            },
             "reset" => {
                 self.record_control(json!({"cmd":"reset"}));
                 self.reset_game();

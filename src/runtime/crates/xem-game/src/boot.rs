@@ -102,6 +102,9 @@ pub fn boot_source(
     runtime.services().insert_disc(identity.disc.map_or(0, |disc| disc.number()), source);
     // The module's schema (build/game/schema.json, embedded by build.rs).
     let schema = Schema::parse(include_str!(concat!(env!("OUT_DIR"), "/schema.json")))?;
+    if schema.module_sha256.as_deref().is_some_and(|id| id != runtime.identity.module) {
+        return Err("schema module_sha256 does not match the embedded game module".into());
+    }
     let started = std::time::Instant::now();
     Ok((Session::new(runtime,Some(schema),move || started.elapsed()),identity))
 }

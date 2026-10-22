@@ -1552,6 +1552,9 @@ impl XemApp {
             (None, None, None, None)
         };
         let schema = self.schema.as_deref().map(Schema::parse).transpose().map_err(|e| error(format!("schema: {e}")))?;
+        if schema.as_ref().and_then(|schema| schema.module_sha256.as_deref()).is_some_and(|id| id != module_id) {
+            return Err(error("schema module_sha256 does not match the loaded game module"));
+        }
         self.session = None;
         self.audio = Default::default();
         self.running = false;
