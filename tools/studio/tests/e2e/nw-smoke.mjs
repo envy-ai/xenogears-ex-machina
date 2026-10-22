@@ -115,7 +115,7 @@ try {
     operations: [
       'version', 'echo', 'field.decode', 'field.encode', 'disc.open', 'disc.poll',
       'disc.missing', 'disc.close', 'disc.maps', 'field.map_events', 'field.structure',
-      'names.validate', 'field.lanes', 'disc.cue',
+      'names.validate', 'field.lanes', 'disc.cue', 'package.build', 'package.inspect', 'package.bundle',
     ],
   });
   assert.deepEqual(result.versionResponse, { ok: result.version });

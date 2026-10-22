@@ -12,6 +12,12 @@ crate-type = ["cdylib", "rlib"]
 
 [features]
 test-fixtures = []
+cli = []
+
+[[bin]]
+name = "xem-package"
+path = "src/bin/xem-package.rs"
+required-features = ["cli"]
 
 [dependencies]
 serde.workspace = true

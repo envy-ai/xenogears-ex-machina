@@ -529,3 +529,40 @@ selection means the runtime's current actor. Ambiguous aliases, gaps, other mode
 or mismatches show an unavailable reason. Name drafts and read-only game bytes
 remain intact. Implementation/provenance and numeric limits are documented in
 [src/game/README.md](src/game/README.md).
+
+
+## Runtime package builder (milestone five)
+
+The shared `xem-disc::mods` implementation builds and validates data-only packages.
+Studio adds three commands through its existing response envelope:
+
+- `package.build`: `{spec:{id,discs,requires,overrides},files:[{disc,slot,source,result}]}`.
+  `discs` contains `{serial,sha256}` original boot identities; `disc` names one
+  declared serial, and `slot` is a zero-based game-index record. `source` and
+  `result` are byte arrays; `source:null` explicitly declares wholly authored
+  content. The result contains `bytes`, `identity` and `manifest`.
+- `package.inspect`: `{bytes:[...]}` returns the validated manifest and identity.
+- `package.bundle`: `{packages:[[...],...]}` returns a length-prefixed package-set
+  `bytes` container and its ordered `identities`, rejecting dependency/conflict
+  errors. It preserves the given order rather than sorting packages implicitly.
+
+The same builder has a native file adapter, with no GUI or executable package
+scripts. In the pinned runtime shell:
+
+```sh
+cargo run --manifest-path src/runtime/Cargo.toml --locked -p xem-studio \
+  --features cli --bin xem-package -- build recipe.json tmp/new.xemmod
+cargo run --manifest-path src/runtime/Cargo.toml --locked -p xem-studio \
+  --features cli --bin xem-package -- inspect tmp/new.xemmod
+cargo run --manifest-path src/runtime/Cargo.toml --locked -p xem-studio \
+  --features cli --bin xem-package -- bundle tmp/active.xemmods tmp/new.xemmod
+```
+
+Recipe paths are resolved relative to the recipe file and are not stored in the
+package. The strict recipe object has the same `spec` as `package.build`, but
+`files` uses `source` (path or null) and `result` (path). Output files must be new;
+existing outputs are not overwritten. Keep originals, edited private results
+and local packages under ignored `tmp/` or `.local/`. Deltas copy unchanged
+regions from the user's original instead of including an original file member.
+The format, compatibility policy and checked limits are recorded in
+[the M5 plan](../../docs/studio-milestone-5-implementation.md).

@@ -154,6 +154,8 @@ docs/studio-milestone-3-implementation.md
 docs/studio-milestone-3.md
 docs/studio-milestone-4-implementation.md
 docs/studio-milestone-4.md
+docs/studio-milestone-5-implementation.md
+docs/studio-milestone-5.md
 docs/verification/phase0-agent.json
 docs/verification/phase0-authoring.json
 docs/verification/phase0-gaps.json
@@ -800,9 +802,15 @@ src/runtime/crates/xem-disc/src/identify.rs
 src/runtime/crates/xem-disc/src/index.rs
 src/runtime/crates/xem-disc/src/install.rs
 src/runtime/crates/xem-disc/src/lib.rs
+src/runtime/crates/xem-disc/src/mods/delta.rs
+src/runtime/crates/xem-disc/src/mods/integrity.rs
+src/runtime/crates/xem-disc/src/mods/mod.rs
+src/runtime/crates/xem-disc/src/mods/overlay.rs
+src/runtime/crates/xem-disc/src/mods/package.rs
 src/runtime/crates/xem-disc/src/read_at.rs
 src/runtime/crates/xem-disc/src/sector.rs
 src/runtime/crates/xem-disc/src/source.rs
+src/runtime/crates/xem-disc/tests/mod_packages.rs
 src/runtime/crates/xem-disc/tests/user_discs.rs
 src/runtime/crates/xem-game/Cargo.toml
 src/runtime/crates/xem-game/build.rs
@@ -918,6 +926,7 @@ src/runtime/crates/xem-studio/Cargo.toml
 src/runtime/crates/xem-studio/data/README.md
 src/runtime/crates/xem-studio/data/field-access.json
 src/runtime/crates/xem-studio/data/field-opcodes.json
+src/runtime/crates/xem-studio/src/bin/xem-package.rs
 src/runtime/crates/xem-studio/src/disc.rs
 src/runtime/crates/xem-studio/src/field/decode.rs
 src/runtime/crates/xem-studio/src/field/graph.rs
@@ -927,6 +936,7 @@ src/runtime/crates/xem-studio/src/field/opcodes.rs
 src/runtime/crates/xem-studio/src/field/structure.rs
 src/runtime/crates/xem-studio/src/lib.rs
 src/runtime/crates/xem-studio/src/names.rs
+src/runtime/crates/xem-studio/src/packages.rs
 src/runtime/crates/xem-studio/src/packed.rs
 src/runtime/crates/xem-studio/tests/command.rs
 src/runtime/crates/xem-studio/tests/disc.rs
@@ -934,6 +944,7 @@ src/runtime/crates/xem-studio/tests/field.rs
 src/runtime/crates/xem-studio/tests/field_sweep.rs
 src/runtime/crates/xem-studio/tests/lanes.rs
 src/runtime/crates/xem-studio/tests/names.rs
+src/runtime/crates/xem-studio/tests/packages.rs
 src/runtime/crates/xem-studio/tests/packed.rs
 src/runtime/crates/xem-studio/tests/structure.rs
 src/runtime/crates/xem-studio/tests/support/synthetic_disc.rs

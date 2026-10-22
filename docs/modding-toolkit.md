@@ -86,8 +86,11 @@ runtime   xem-* crates         the game; mod package loading in shared host code
   There is no assembler or encoder yet
   ([later-phases.md, Script machines](later-phases.md#script-machines)).
 - **Field events** ([scripts/field-events.md](scripts/field-events.md)):
-  - Up to 32 actors per map, each with 32 event entry PCs, run each frame by
-    `field_event.c`.
+  - Actors have 32 event entry PCs each and are scheduled each frame by
+    `field_event.c`. Do not confuse event slots with an actor-count limit:
+    shipped scripts include actor 56 (see scripts/field-events.md). Validate
+    actor counts against the decoded table and demonstrated runtime limits;
+    no unverified global maximum is assumed.
   - 256 primary and 227 extended opcodes, tabled in `tools/analysis/events.py`
     (`_PRIMARY`/`_EXTENDED`: mnemonic, handler, size, flow, operands, effect)
     and tested against the C.
@@ -192,10 +195,30 @@ Each one ends usable and tested. UI mockups come before each editor's UI work.
    validate, package, then play the edit in either host.
    *Accept:* an edited event plays as edited in both hosts, and an untouched map
    in the same package is byte-identical to the original.
-7. **Map editor.** A three.js viewport for the field bundle: collision, trigger
-   zones (palettes, images, triggers and the view block are still undecoded, per
-   later-phases.md's data formats table, so decode those first), actor
-   placement and entrances.
+7. **Map editor.** A three.js viewport for the field bundle: map geometry,
+   actors, collision, trigger zones and entrances. Decode required palettes,
+   images, triggers and the view block first; later-phases.md's data formats
+   table identifies these current gaps. Unsupported/undecoded content must be
+   labelled explicitly, never represented by guessed editable geometry.
+   - Select entities directly in the scene and keep viewport selection,
+     properties and the corresponding actor/event scripts synchronized.
+   - Add, duplicate and delete supported entity kinds directly from the map
+     view, validating actor/event references and dependent triggers/entrances
+     rather than silently leaving dangling bindings.
+   - Move and rotate supported entities using scene controls and precise
+     property fields; expose scale or other transforms only where the original
+     format/runtime supports them. Show relevant coordinate/range constraints.
+   - Distinguish authored placement from a live runtime pose. Script-controlled
+     placement must resolve to supported authored data/script bindings or explain
+     why it cannot be edited; moving a live actor is not a saved map edit.
+   - Apply entity changes transactionally with undo/redo, preserving unrelated
+     content and stable identity/reference mappings. Persist through the validated
+     package/compiler pipeline from milestones 5 and 6.
+   *Accept:* select, add/duplicate, transform and remove supported entities;
+   undo/redo restores their properties and script bindings; save/reload preserves
+   the authored scene; the packaged changes play correctly in both hosts.
+   Unedited content stays byte-identical, invalid references or unsupported edits
+   are rejected before mutation, and failures preserve the user's draft/work.
 8. **Presentation replacements.** Texture packs and 3D models in place of
    sprites (first: Fei's field sprite as a glTF model in Lahan) in the render
    layer, presentation only, so RAM and timing stay unchanged.

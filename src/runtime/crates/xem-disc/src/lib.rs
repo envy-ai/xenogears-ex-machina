@@ -43,6 +43,7 @@ pub mod cue;
 pub mod identify;
 pub mod index;
 pub mod install;
+pub mod mods;
 pub mod read_at;
 pub mod sector;
 pub mod source;

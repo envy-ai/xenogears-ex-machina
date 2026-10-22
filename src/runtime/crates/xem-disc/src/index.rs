@@ -30,8 +30,8 @@ pub const DISC_NUMBER_ENTRY: usize = 0x3C;
 /// 0x80010000 starting with the boot word, the index and the directory table.
 const EXE_HEADER: usize = 0x800;
 const EXE_TEXT_ADDRESS: u32 = 0x8001_0000;
-const EMBEDDED_INDEX: usize = EXE_HEADER + 4;
-const EMBEDDED_DIRECTORIES: usize = EMBEDDED_INDEX + INDEX_BYTES;
+pub const EMBEDDED_INDEX: usize = EXE_HEADER + 4;
+pub const EMBEDDED_DIRECTORIES: usize = EMBEDDED_INDEX + INDEX_BYTES;
 /// The embedded table runs to 0x80018080 (0x7C bytes, one more entry than the
 /// game reads from disc).
 const EMBEDDED_DIRECTORY_BYTES: usize = 0x7C;

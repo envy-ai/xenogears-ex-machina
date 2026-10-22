@@ -7,6 +7,7 @@ pub mod disc;
 pub mod field;
 pub mod names;
 pub mod packed;
+pub mod packages;
 
 use serde::Deserialize;
 use serde_json::{Value, json};
@@ -29,6 +30,9 @@ const OPERATIONS: &[&str] = &[
     "names.validate",
     "field.lanes",
     "disc.cue",
+    "package.build",
+    "package.inspect",
+    "package.bundle",
 ];
 
 #[derive(Deserialize)]
@@ -65,6 +69,12 @@ enum Command {
     FieldLanes(FieldLanesArgs),
     #[serde(rename = "disc.cue")]
     DiscCue(CueArgs),
+    #[serde(rename = "package.build")]
+    PackageBuild(packages::BuildArgs),
+    #[serde(rename = "package.inspect")]
+    PackageInspect(packages::InspectArgs),
+    #[serde(rename = "package.bundle")]
+    PackageBundle(packages::BundleArgs),
 }
 
 #[derive(Deserialize)]
@@ -143,6 +153,9 @@ impl Command {
 
     fn execute(self, studio: &Studio) -> Result<CommandResult, StudioError> {
         Ok(match self {
+            Self::PackageBuild(args) => CommandResult::Json(packages::build(args)?),
+            Self::PackageInspect(args) => CommandResult::Json(packages::inspect(args)?),
+            Self::PackageBundle(args) => CommandResult::Json(packages::bundle(args)?),
             Self::DiscCue(args) => {
                 if args.text.len() > 65536 {
                     return Err(StudioError::new("invalid_args", "cue sheet exceeds 64 KiB"));
