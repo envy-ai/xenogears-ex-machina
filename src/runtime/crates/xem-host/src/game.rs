@@ -105,7 +105,7 @@ impl Game {
     /// tools/native_scenario.py --log writes it): its commands run before
     /// their frames and its pad states replace the player's.
     pub fn schedule(&mut self, log: &serde_json::Value) -> Result<(), String> {
-        let reply = self.session.execute(&serde_json::json!({ "cmd": "schedule", "commands": log["commands"] }));
+        let reply = self.session.execute(&serde_json::json!({ "cmd": "schedule", "commands": log["commands"], "identity": log.get("identity") }));
         if let Some(error) = reply.get("error") {
             return Err(format!("schedule: {error}"));
         }
@@ -152,14 +152,19 @@ impl Game {
     pub fn snapshot_bytes(&mut self) -> Result<Vec<u8>,String> { self.session.snapshot_bytes() }
     pub fn debug_status(&self) -> (bool, &str) { (self.session.debug.busy(), &self.session.debug.message) }
     pub fn restore_bytes(&mut self, bytes: &[u8]) -> Result<(),String> { self.session.restore_bytes(bytes) }
-    pub fn card_image(&mut self, slot: usize) -> Option<Vec<u8>> { self.session.runtime.services().card.image(slot).map(<[u8]>::to_vec) }
+    pub fn card_image(&mut self, slot: usize) -> Result<Option<Vec<u8>>,String> {
+        let binding = xem_core::save::SaveBinding::from(&self.session.runtime.identity);
+        self.session.runtime.services().card.image(slot).map(|raw| xem_core::save::wrap_card(raw, &binding)).transpose()
+    }
     /// Import a card or save file the player picked into card `slot`, by its
     /// contents (`file_name` names a raw single save), between frames;
     /// returns what was found ("Card 1: DexDrive card, 3 saves").
     pub fn import_card(&mut self, slot: usize, bytes: &[u8], file_name: &str) -> Result<String,String> {
+        let binding = xem_core::save::SaveBinding::from(&self.session.runtime.identity);
+        let raw = xem_core::save::unwrap_card_file(bytes, &binding)?;
         let services = self.session.runtime.services();
         let now = services.clock.now;
-        services.card.import_file(slot,bytes,file_name,now)
+        services.card.import_file(slot,&raw,file_name,now)
     }
     pub fn retry_storage(&mut self) -> Result<(),String> { self.session.runtime.services().card.retry_writes() }
     /// Give the running game the Kanji font of a BIOS image the player
@@ -236,8 +241,12 @@ impl Game {
     }
 
     /// Give the drive's changer the game's other disc `number`.
-    pub fn add_disc(&mut self, number: u8, disc: Box<dyn xem_disc::SectorSource>) {
+    pub fn add_disc(&mut self, number: u8, mut disc: Box<dyn xem_disc::SectorSource>) -> Result<(),String> {
+        let identity = xem_disc::identify(disc.as_mut()).map_err(|e| e.to_string())?;
+        if identity.disc.map(|d| d.number()) != Some(number) { return Err("inserted disc identity does not match its slot".into()); }
+        let (_, disc) = xem_game::prepare_source(disc, &self.session.runtime.packages).map_err(|e| e.to_string())?;
         self.session.runtime.services().add_disc(number, disc);
+        Ok(())
     }
 
     /// The disc the game waits for that the drive's changer has not got.

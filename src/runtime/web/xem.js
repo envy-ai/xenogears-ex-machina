@@ -20,13 +20,19 @@ const MAX_STALLS = 1000;
 export function createAutomation(host) {
   const { app } = host;
   const parse = (text) => JSON.parse(text);
-  const command = (cmd) => parse(app.command(JSON.stringify(cmd)));
+  const bootError = () => host.pageStatus().booting ? 'a session boot is in progress' : null;
+  const command = (cmd) => {
+    const error = bootError();
+    return error ? { error } : parse(app.command(JSON.stringify(cmd)));
+  };
 
   // Async disc work must never continue against a replacement session.
   const continuation = (signal) => {
-    const generation = host.pageStatus().sessionGeneration;
+    const { sessionGeneration: generation, operationGeneration: operation } = host.pageStatus();
     return () => {
       signal?.throwIfAborted();
+      if (host.pageStatus().operationGeneration !== operation) throw new Error('the boot operation changed during asynchronous frame work');
+      if (bootError()) throw new Error(bootError());
       if (host.pageStatus().sessionGeneration !== generation) throw new Error('the game session changed during asynchronous frame work');
     };
   };
@@ -70,12 +76,19 @@ export function createAutomation(host) {
      * animation loop advance it. Rewind follows Settings when `run: true`;
      * command-driven boots opt in with `rewind: true`. */
     boot: (options = {}) => host.boot(options),
-    setRunning: (running) => app.set_running(Boolean(running)),
+    /** Stage a .xemmods container for the next fresh boot; active content
+     * remains unchanged. enabled:false validates the set but boots vanilla. */
+    packages: Object.freeze({ stage: (bytes, options = {}) => host.stagePackages(bytes, options) }),
+    setRunning(running) {
+      const error = bootError();
+      if (error) throw new Error(error);
+      app.set_running(Boolean(running));
+    },
     /** Any control command, e.g. {cmd: 'inspect', path: 'mode_next_mode'}; errors come back as {error}. */
     command,
     /** Raw shared command JSON in/out, preserving exact 64-bit integer tokens.
      * Frame work can block on disc fetches: use run/runFrames for that work. */
-    commandJson: (text) => app.command(text),
+    commandJson: (text) => bootError() ? JSON.stringify({ error: bootError() }) : app.command(text),
     /** First-person inspection, as the native hosts' `first_person` command:
      * `{on, yaw, pitch}`, each optional (on absent toggles it as Toggle
      * first-person view does, or turns it on where a look is given; yaw
@@ -116,7 +129,11 @@ export function createAutomation(host) {
     fastForward: (enabled) => command({ cmd: 'fast_forward', ...(enabled === undefined ? {} : { enabled }) }),
     /** Snapshot bytes (Uint8Array) for files and saves, and back. */
     exportSnapshot: () => app.snapshot_bytes(),
-    importSnapshot: (bytes) => app.restore_bytes(bytes),
+    importSnapshot(bytes) {
+      const error = bootError();
+      if (error) throw new Error(error);
+      return app.restore_bytes(bytes);
+    },
     settings: Object.freeze({
       get: () => parse(app.settings()),
       /** A SettingChange, e.g. {MasterVolume: 40} or {Scale: 'Integer'}. */

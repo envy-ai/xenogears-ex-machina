@@ -20,6 +20,8 @@ struct Options {
     /// Memory card images (card1.mcd, card2.mcd) live here; no card is
     /// inserted without it.
     cards: Option<PathBuf>,
+    packages: Option<PathBuf>,
+    packages_disabled: bool,
     /// A BIOS image for the Kanji font.
     bios: Option<PathBuf>,
     /// Write the SPU's output as a 16-bit stereo 44.1 kHz WAV file.
@@ -47,6 +49,8 @@ fn main() -> ExitCode {
         stubs: PathBuf::from("build/game/stubs.txt"),
         control: false,
         cards: None,
+        packages: None,
+        packages_disabled: false,
         bios: None,
         wav: None,
         binaural: None,
@@ -69,6 +73,11 @@ fn main() -> ExitCode {
             "--stubs" => options.stubs = args.next().map(PathBuf::from).unwrap_or(options.stubs),
             "--control" => options.control = true,
             "--cards" => options.cards = args.next().map(PathBuf::from),
+            "--packages" => match args.next() {
+                Some(path) => options.packages = Some(path.into()),
+                None => { eprintln!("--packages needs a set file"); return ExitCode::FAILURE; }
+            },
+            "--packages-disabled" => options.packages_disabled = true,
             "--bios" => options.bios = args.next().map(PathBuf::from),
             "--wav" => options.wav = args.next().map(PathBuf::from),
             "--binaural" => options.binaural = Some(xem_core::binaural::Config { enabled: true, ..Default::default() }),
@@ -121,6 +130,7 @@ fn run(options: &Options) -> Result<(), Box<dyn std::error::Error>> {
     use std::io::BufRead;
 
     let boot = xem_game::BootOptions {
+        packages: xem_game::load_packages(options.packages.as_deref(), options.packages_disabled)?,
         cards: options.cards.clone(),
         bios: options.bios.clone(),
         stored_bios: None,

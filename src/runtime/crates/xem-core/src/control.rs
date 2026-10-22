@@ -18,6 +18,9 @@ use crate::runtime::{RESTART_DISPATCH, Runtime};
 /// Pad states per vertical blank from where a recording started.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct InputLog {
+    /// Ordered content identity; older untagged recordings are vanilla-only.
+    #[serde(default)]
+    pub identity: Option<crate::snapshot::StateIdentity>,
     pub start_vblank: u64,
     /// (vblank, port, buttons) whenever a pad changed.
     pub changes: Vec<(u64, u32, u16)>,
@@ -1481,7 +1484,7 @@ impl<M: GameModule> Session<M> {
                 self.restart_auto_advance();
                 let vblank = self.vblank();
                 let changes = self.runtime.services().pads.0.iter().enumerate().map(|(port,pad)| (vblank,port as u32,pad.buttons)).collect();
-                self.recording = Some(InputLog { start_vblank: vblank, changes, end_vblank: vblank, restores: Vec::new(),
+                self.recording = Some(InputLog { identity: Some(self.runtime.identity.clone()), start_vblank: vblank, changes, end_vblank: vblank, restores: Vec::new(),
                     controls: vec![(vblank,json!({"cmd":"fast_forward_configure","rate":self.fast_forward_rate})),
                         (vblank,json!({"cmd":"fast_forward","enabled":self.fast_forward})),
                         (vblank,json!({"cmd":"fast_forward_pace","pace":self.fast_forward_pace}))] });
@@ -1536,6 +1539,14 @@ impl<M: GameModule> Session<M> {
                 Ok(serde_json::to_value(log).expect("input log"))
             }
             "replay" => {
+                match command.get("identity").filter(|v| !v.is_null()) {
+                    Some(value) => {
+                        let identity: crate::snapshot::StateIdentity = serde_json::from_value(value.clone()).map_err(|e| format!("replay identity: {e}"))?;
+                        if let Some(error) = self.runtime.identity.difference(&identity) { return Err(format!("replay refused: {error}")); }
+                    }
+                    None if !self.runtime.identity.packages.is_empty() => return Err("untagged replay/schedule is vanilla-only; provide the matching content identity".into()),
+                    None => {}
+                }
                 // Schedule a recorded input log (from stop_recording) relative to now.
                 let changes = command.get("changes").and_then(Value::as_array).ok_or("replay needs changes")?;
                 let start = command.get("start_vblank").and_then(Value::as_u64).unwrap_or(0);
@@ -1647,6 +1658,14 @@ impl<M: GameModule> Session<M> {
                 Ok(self.status())
             }
             "schedule" => {
+                match command.get("identity").filter(|v| !v.is_null()) {
+                    Some(value) => {
+                        let identity: crate::snapshot::StateIdentity = serde_json::from_value(value.clone()).map_err(|e| format!("replay identity: {e}"))?;
+                        if let Some(error) = self.runtime.identity.difference(&identity) { return Err(format!("replay refused: {error}")); }
+                    }
+                    None if !self.runtime.identity.packages.is_empty() => return Err("untagged replay/schedule is vanilla-only; provide the matching content identity".into()),
+                    None => {}
+                }
                 // Commands to run before given frames (counted from boot by
                 // `frames` in the status): a recorded session replays on any
                 // host that speaks these commands.

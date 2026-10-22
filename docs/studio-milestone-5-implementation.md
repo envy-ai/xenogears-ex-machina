@@ -12,6 +12,11 @@ Luna/high tests and execution, Astra/medium independent correctness review.
   index at LBA24, directory table at LBA40, and EXE offsets 0x804/0x8804.
   `xem-game::boot_source` and `XemApp::boot` load the identified executable
   directly into RAM; wrapping sectors alone misses that embedded index.
+- The original index copies have identical complete seven-byte records but
+  different opaque final bytes (offset 0x7fff) on both discs. Validate all
+  complete records and directory entries; patch only target records in each
+  copy, preserving its own trailing byte. Never copy that opaque byte between
+  the on-disc and embedded indexes.
 - Keep the verified original identification/digest. Patch a separate loaded EXE
   view plus its raw-sector copy and the LBA24 index. Both boot and subsequently
   inserted sibling discs must use the same immutable package-set overlay.
@@ -125,3 +130,49 @@ If an isolated full-suite harness is necessary to preserve old artifacts, retain
 its exact diff and distinguish that run from unmodified canonical execution.
 The five protected main-checkout hashes are checked at preflight and completion;
 no `src/decomp/`, `prompt.md`, security/trust or original-image changes.
+
+## Host entry points and ordinary-card envelope
+
+Native `xem-headless` and `xem-desktop` accept `--packages SET.xemmods`.
+`--packages-disabled` still validates that container but activates the empty set.
+Without either option, source sectors and original-card exports remain vanilla.
+`status.identity.packages` exposes the ordered `id@sha256` tokens in both hosts.
+The embedded native game module remains the game's logic provider.
+
+In the browser, stage the same bytes before a fresh boot:
+
+```js
+window.xem.packages.stage(new Uint8Array(await file.arrayBuffer()), { enabled: true });
+await window.xem.boot();
+```
+
+Use `{enabled: false}` to validate a set while booting vanilla. Staging never
+changes an active session. The browser prepares through existing missing-range
+pulls before publishing a fresh instance; original chunk/hunk caches contain
+only original bytes. Session replacement waits for originating card operations and invalidates older
+asynchronous frame continuations when boot begins, including a failed attempt.
+A refused set, disc, card identity or module does not replace the active session.
+During asynchronous boot preparation, Run, direct run-state changes and snapshot
+restores refuse explicitly; scheduled window/XR game frames stay paused.
+No package-file script, Node API, privileged origin or new graphical manager is
+involved. This API does not persist the selected package set automatically.
+
+Ordinary modded cards use `XEMSAVE1`, a little-endian u32 strict-JSON metadata
+length, `{disc, packages}` metadata (at most 16 KiB), the exact 128 KiB raw card,
+and SHA-256 of all preceding bytes. The disc value is the existing shared
+supported-disc family identity, allowing compatible progress across disc 1/2.
+Unknown fields, malformed lengths, checksum and identity mismatches are errors.
+The original card structures, payload checksums and game save code are unchanged.
+Storage and export use this whole envelope; import unwraps only under a matching
+active identity before the existing card/save parser. Vanilla import still
+supports the original container formats; modded import refuses untagged saves.
+A missing card creates a fresh formatted card and acquires its immutable binding
+when attached. Native atomic writes and browser IndexedDB keep metadata and
+payload together. Existing malformed vanilla files retain the original empty-slot
+load diagnostic rather than being overwritten. No archive migration is added.
+
+`record` includes `identity`; supply it unchanged with `replay`. Authored
+`schedule` logs for a modded session must also include its exact `identity`.
+Untagged legacy replay/schedule input is accepted only in vanilla sessions.
+Snapshots and rewind retain version 9 and the existing before-mutation identity
+validation; no new snapshot format is introduced.

@@ -9,7 +9,7 @@ impl Game {
     pub fn snapshot_bytes(&mut self) -> Result<Vec<u8>,String> { match *self {} }
     pub fn debug_status(&self) -> (bool, &str) { match *self {} }
     pub fn restore_bytes(&mut self, _: &[u8]) -> Result<(),String> { match *self {} }
-    pub fn card_image(&mut self, _: usize) -> Option<Vec<u8>> { match *self {} }
+    pub fn card_image(&mut self, _: usize) -> Result<Option<Vec<u8>>,String> { match *self {} }
     pub fn import_card(&mut self, _: usize, _: &[u8], _: &str) -> Result<String,String> { match *self {} }
     pub fn retry_storage(&mut self) -> Result<(),String> { match *self {} }
     pub fn install_bios(&mut self, _: &[u8]) -> Result<(),String> { match *self {} }
@@ -22,7 +22,7 @@ impl Game {
     pub fn mouse_camera_active(&mut self, _: &xem_settings::Settings) -> bool { match *self {} }
     pub fn time_status(&mut self) -> (bool,String) { match *self {} }
     pub fn storage_status(&mut self) -> String { match *self {} }
-    pub fn add_disc(&mut self, _: u8, _: Box<dyn xem_disc::SectorSource>) { match *self {} }
+    pub fn add_disc(&mut self, _: u8, _: Box<dyn xem_disc::SectorSource>) -> Result<(),String> { match *self {} }
     pub fn wanted_disc(&mut self) -> Option<u8> { match *self {} }
     pub fn has_audio(&self) -> bool {
         match *self {}

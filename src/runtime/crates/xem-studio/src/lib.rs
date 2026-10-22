@@ -9,11 +9,34 @@ pub mod names;
 pub mod packed;
 pub mod packages;
 
+#[cfg(feature = "test-fixtures")]
+mod package_fixture_overlay;
+
 use serde::Deserialize;
 use serde_json::{Value, json};
 use std::cell::RefCell;
 #[cfg(target_arch = "wasm32")]
 use wasm_bindgen::prelude::*;
+
+/// Exercise the shared package preparation path against a deliberately synthetic disc.
+///
+/// This fixture-only entrypoint is excluded from default builds and refuses every
+/// boot path except the invented SLUS_999.99;1 test image.
+#[cfg(feature = "test-fixtures")]
+pub fn package_fixture_overlay(image: &[u8], packages: &[u8], slot: u32) -> Result<String, String> {
+    package_fixture_overlay::run(image, packages, slot)
+}
+
+/// WASM counterpart used only by the isolated fixture-enabled parity package.
+#[cfg(all(feature = "test-fixtures", target_arch = "wasm32"))]
+#[wasm_bindgen(js_name = package_fixture_overlay)]
+pub fn package_fixture_overlay_wasm(
+    image: &[u8],
+    packages: &[u8],
+    slot: u32,
+) -> Result<String, JsValue> {
+    package_fixture_overlay(image, packages, slot).map_err(|error| JsValue::from_str(&error))
+}
 
 const OPERATIONS: &[&str] = &[
     "version",

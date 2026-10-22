@@ -135,3 +135,12 @@ Milestone four composes these existing licensed widgets. Live-control,
 transport/schema/PC models and feature SCSS are newly authored; no further RPG
 Creator source was extracted. Dock panel registration and v2 layout defaults are
 new Studio adaptations of the existing licensed shell.
+
+Milestone five adds newly authored data-only package, delta and virtual-disc
+code under `xem-disc::mods`, Studio package commands/CLI, and synthetic parity
+fixtures. It extracts no further RPG Creator code and adds no external source
+copy. The authored Form1 integrity implementation cross-references the pinned
+`chd` 0.3.4 sector layout and libchdr's public CD-ROM parity description; its
+lookup tables are generated from the documented polynomials, not copied.
+Packages built from user-owned disc files and all real-disc acceptance inputs
+and outputs remain ignored local artifacts; they are never public source.

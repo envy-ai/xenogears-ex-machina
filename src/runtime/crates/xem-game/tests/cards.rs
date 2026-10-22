@@ -13,6 +13,7 @@ use xem_core::control::Session;
 use xem_core::devices::card::{BLOCK_SIZE, formatted};
 use xem_core::memory::OutOfBounds;
 use xem_core::module::{AsyncState, ImportHandler};
+use xem_core::save::{BoundCardStorage, SaveBinding};
 use xem_core::{GameMemory, GameModule, Runtime, Trap};
 use xem_game::storage::{FileStorage, command};
 
@@ -94,7 +95,13 @@ fn gme(card: &[u8]) -> Vec<u8> {
 
 fn session(cards: &Path) -> Session<Idle> {
     let mut runtime = Runtime::new(Idle(Nothing));
-    runtime.services().card.attach_storage(Box::new(FileStorage { dir: cards.to_path_buf() })).unwrap();
+    let binding = SaveBinding::from(&runtime.identity);
+    let storage = BoundCardStorage::prepare(
+        Box::new(FileStorage { dir: cards.to_path_buf() }),
+        binding,
+    )
+    .expect("bind stored cards to the synthetic session identity");
+    runtime.services().card.attach_storage(Box::new(storage)).unwrap();
     Session::new(runtime, None, std::time::Duration::default)
 }
 

@@ -535,8 +535,10 @@ impl Host {
                 .and_then(|reader| xem_disc::open_reader(reader).map_err(|e| e.to_string()))
             {
                 Ok(disc) => {
-                    game.add_disc(number, disc);
-                    log(&format!("disc {number} for the game's disc changes: {source}"));
+                    match game.add_disc(number, disc) {
+                        Ok(()) => log(&format!("disc {number} for the game's disc changes: {source}")),
+                        Err(error) => log(&format!("disc {number} not inserted: {source}: {error}")),
+                    }
                 }
                 Err(error) => log(&format!("disc {number} not opened: {source}: {error}")),
             }

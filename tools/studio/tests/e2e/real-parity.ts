@@ -1,7 +1,7 @@
 import { spawn, type ChildProcess } from 'node:child_process';
 import { mkdir, readFile, stat } from 'node:fs/promises';
 import { createHash } from 'node:crypto';
-import { join, resolve } from 'node:path';
+import { join, resolve, sep } from 'node:path';
 import { chromium } from '@playwright/test';
 import { expect } from 'vitest';
 import { createServer } from 'vite';
@@ -20,8 +20,10 @@ const chromiumPath = process.env.XEM_CHROMIUM;
 const lavapipe = process.env.XEM_LAVAPIPE_ICD;
 
 export async function runRealGameRealParity(): Promise<void> {
-  expect(testRoot).toContain(join(repoRoot, 'tmp/studio/milestone-4'));
-  expect(runtimeBuildDirectory).toContain(join(repoRoot, 'tmp/studio/milestone-4'));
+  const acceptedRoots = ['milestone-4', 'milestone-5'].map(name => resolve(repoRoot, 'tmp/studio', name));
+  const underAcceptedRoot = (path: string) => acceptedRoots.some(root => path === root || path.startsWith(root + sep));
+  expect(underAcceptedRoot(testRoot)).toBe(true);
+  expect(underAcceptedRoot(runtimeBuildDirectory)).toBe(true);
   expect(discPath).toMatch(/(?:^|\/)disc1\.bin$/);
   expect(nativeExecutable).toContain(resolve(repoRoot, 'src/runtime/target/release/xem-desktop'));
   expect(chromiumPath).toBeTruthy();

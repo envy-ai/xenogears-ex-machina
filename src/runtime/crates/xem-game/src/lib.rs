@@ -13,7 +13,7 @@ pub use native::NativeModule;
 #[cfg(has_game_module)]
 mod boot;
 #[cfg(has_game_module)]
-pub use boot::{BootOptions, boot, boot_source};
+pub use boot::{BootOptions, boot, boot_source, load_packages, prepare_source};
 
 /// Whether this build carries the game module (it needs the user's matched
 /// PS1 builds to produce).

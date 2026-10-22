@@ -413,6 +413,8 @@ enum Fiber {
 /// The game module with its services.
 pub struct Runtime<M: GameModule> {
     pub identity: crate::snapshot::StateIdentity,
+    /// Immutable content set used to prepare newly inserted discs.
+    pub packages: xem_disc::mods::PackageSet,
     module: M,
     services: *mut Services,
     entry: (u32, u32),
@@ -451,6 +453,7 @@ impl<M: GameModule> Runtime<M> {
         let identity = crate::snapshot::StateIdentity { module: module.content_id(), ..Default::default() };
         Runtime {
             identity,
+            packages: Default::default(),
             module,
             services,
             entry: (RESTART_BOOT, 0),

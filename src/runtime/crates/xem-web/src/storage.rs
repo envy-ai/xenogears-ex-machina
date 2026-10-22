@@ -6,7 +6,7 @@ use std::cell::RefCell;
 use std::io;
 use std::rc::Rc;
 
-use xem_core::devices::card::{CardStorage, formatted};
+use xem_core::devices::card::{CardStorage};
 use xem_settings::SettingsStore;
 
 /// Settings as JSON text under one `localStorage` key.
@@ -71,7 +71,7 @@ impl BrowserCards {
 
 impl CardStorage for BrowserCards {
     fn load(&mut self, slot: usize) -> io::Result<Option<Vec<u8>>> {
-        Ok(Some(self.0.borrow().images[slot].clone().unwrap_or_else(formatted)))
+        Ok(self.0.borrow().images[slot].clone())
     }
 
     fn store(&mut self, slot: usize, image: &[u8]) -> io::Result<()> {

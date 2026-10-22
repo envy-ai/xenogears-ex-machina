@@ -9,7 +9,7 @@ import * as storage from './storage.js';
 const files = new Map();
 
 /** Fetch `[[id, start, end], ...]` from the imports' files. */
-async function fetchRanges(app, ranges, check = () => {}) {
+export async function fillRanges(app, ranges, check = () => {}) {
   for (const [id, start, end] of ranges) {
     check();
     const file = files.get(id);
@@ -28,7 +28,12 @@ export async function importDisc(app, file) {
   for (;;) {
     const ranges = JSON.parse(app.disc_poll(id));
     if (ranges.length === 0) break;
-    await fetchRanges(app, ranges.map(([start, end]) => [id, start, end]));
+    await fillRanges(app, ranges.map(([start, end]) => [id, start, end]));
+  }
+  while (!app.attach_discs()) {
+    const ranges = JSON.parse(app.disc_missing());
+    if (!ranges.length) throw new Error('disc attachment stalled without missing ranges');
+    await fillRanges(app, ranges);
   }
   const status = JSON.parse(app.disc_status());
   console.info(
@@ -46,7 +51,7 @@ export async function readSectors(app, lba, count) {
     if (data) return data;
     const ranges = JSON.parse(app.disc_missing());
     if (ranges.length === 0) throw new Error('disc read pending without missing bytes');
-    await fetchRanges(app, ranges);
+    await fillRanges(app, ranges);
   }
 }
 
@@ -58,7 +63,7 @@ export function serveGameReads(app) {
   if (serving || files.size === 0) return;
   const ranges = JSON.parse(app.disc_missing());
   if (ranges.length === 0) return;
-  serving = fetchRanges(app, ranges).finally(() => {
+  serving = fillRanges(app, ranges).finally(() => {
     serving = null;
   });
 }
@@ -73,7 +78,7 @@ export async function fillGameReads(app, check = () => {}) {
     check();
     const ranges = JSON.parse(app.disc_missing());
     if (ranges.length === 0) return;
-    await fetchRanges(app, ranges, check);
+    await fillRanges(app, ranges, check);
   }
 }
 

@@ -80,7 +80,8 @@ struct Link {
 }
 
 thread_local! {
-    /// The module the imports forward to (one game module per page).
+    /// The synchronous export currently making imports. Construction and
+    /// failed boot preflights must never steal an existing session's binding.
     static LINK: RefCell<Option<Rc<Link>>> = const { RefCell::new(None) };
 }
 
@@ -110,6 +111,11 @@ impl Link {
     }
 }
 
+struct ImportBinding(Option<Rc<Link>>);
+impl Drop for ImportBinding {
+    fn drop(&mut self) { LINK.set(self.0.take()); }
+}
+
 /// The game module as [`GameModule`].
 pub struct WebModule {
     content_id: String,
@@ -119,7 +125,7 @@ pub struct WebModule {
 
 impl WebModule {
     /// Bind an instance of game.wasm whose "xem" imports, in `names` order,
-    /// call [`xem_game_import`]. Replaces the module the imports reach.
+    /// call [`xem_game_import`]. Imports bind only during this instance's exports.
     pub fn new(instance: &WebAssembly::Instance, names: Vec<String>, content_id: String) -> Result<Self, String> {
         let exports: JsValue = instance.exports().into();
         let function = |name: &str| export(&exports, name).map(|v| v.unchecked_into::<Function>());
@@ -146,9 +152,10 @@ impl WebModule {
             resume_value: Cell::new(0),
             area: Cell::new(0),
         });
-        LINK.set(Some(link.clone()));
         Ok(WebModule { link, memory, content_id })
     }
+
+    fn bind(&self) -> ImportBinding { ImportBinding(LINK.replace(Some(self.link.clone()))) }
 
     pub fn memory_bytes(&self) -> u64 {
         self.memory.memory.buffer().unchecked_ref::<js_sys::ArrayBuffer>().byte_length() as u64
@@ -161,6 +168,7 @@ impl WebModule {
     /// One of the port's queries: a trap leaves the stack pointer where the
     /// call found it, for the next frame.
     fn query(&mut self, call: &Function, mode: u32) -> Result<u32, Trap> {
+        let _binding = self.bind();
         let stack_pointer = self.stack_pointer();
         call.call1(&JsValue::NULL, &mode.into()).map(number).map_err(|error| {
             self.set_stack_pointer(stack_pointer);
@@ -228,26 +236,32 @@ impl GameModule for WebModule {
     }
 
     fn run(&mut self, kind: u32, arg: u32) -> Result<(), Trap> {
+        let _binding = self.bind();
         self.link.run.call2(&JsValue::NULL, &kind.into(), &arg.into()).map(drop).map_err(Self::trap)
     }
 
     fn run_task(&mut self) -> Result<(), Trap> {
+        let _binding = self.bind();
         self.link.run_task.call0(&JsValue::NULL).map(drop).map_err(Self::trap)
     }
 
     fn call(&mut self, address: u32) -> Result<(), Trap> {
+        let _binding = self.bind();
         self.link.call.call1(&JsValue::NULL, &address.into()).map(drop).map_err(Self::trap)
     }
 
     fn interrupt(&mut self, irq: u32, detail: u32) -> Result<(), Trap> {
+        let _binding = self.bind();
         self.link.interrupt.call2(&JsValue::NULL, &irq.into(), &detail.into()).map(drop).map_err(Self::trap)
     }
 
     fn async_state(&mut self) -> AsyncState {
+        let _binding = self.bind();
         self.link.async_state()
     }
 
     fn stop_unwind(&mut self) {
+        let _binding = self.bind();
         let _ = self.link.stop_unwind.call0(&JsValue::NULL);
     }
 
@@ -256,6 +270,7 @@ impl GameModule for WebModule {
     }
 
     fn start_rewind(&mut self, area: u32) {
+        let _binding = self.bind();
         let _ = self.link.start_rewind.call1(&JsValue::NULL, &area.into());
     }
 

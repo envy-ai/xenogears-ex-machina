@@ -2,9 +2,9 @@
 // An error retains the latest image for explicit retry and export backup.
 import * as storage from './storage.js';
 const key = (slot) => `card${slot + 1}`;
-const check = (slot, image) => {
-  if (![0, 1].includes(slot) || !(image instanceof Uint8Array) || image.length !== 0x20000) {
-    throw new Error('Card slot is 0 or 1; image must be exactly 128 KiB (.mcd).');
+const check = (slot, image, limit) => {
+  if (![0, 1].includes(slot) || !(image instanceof Uint8Array) || (image.length < 0x20000 || image.length > limit)) {
+    throw new Error('Card slot is 0 or 1; image must be a 128 KiB card or bounded package-bound card.');
   }
 };
 
@@ -12,6 +12,7 @@ export class Cards {
   constructor(app) {
     this.app = app;
     this.writing = null;
+    this.operations = Promise.resolve();
     this.images = new Map();
     this.written = 0;
     this.error = null;
@@ -19,12 +20,20 @@ export class Cards {
     this.missing = new Set();
   }
 
+  /** Serialize explicit card replacements with whole-session boot. A failed
+   * operation rejects its caller but releases the queue for the next attempt. */
+  exclusive(operation) {
+    const result = this.operations.then(operation);
+    this.operations = result.then(() => undefined, () => undefined);
+    return result;
+  }
+
   /** Hand both stored images to the runtime (none stored: a fresh formatted card). */
   async load() {
     this.missing.clear();
     for (const slot of [0, 1]) {
       const image = await storage.get('cards', key(slot));
-      if (image) check(slot, image);
+      if (image) check(slot, image, this.app.card_file_limit());
       else this.missing.add(slot);
       this.app.set_card_image(slot, image ?? undefined);
     }
@@ -68,7 +77,7 @@ export class Cards {
 
   /** Persist a raw card and insert it into the live session between frames. */
   async store(slot, image) {
-    check(slot, image);
+    check(slot, image, this.app.card_file_limit());
     await this.replace(slot, () => image);
   }
 
@@ -90,26 +99,30 @@ export class Cards {
   /** With play paused and pending writes landed, IndexedDB takes the card
    * `read` gives, then the runtime (between frames). */
   async replace(slot, read) {
-    const running = JSON.parse(this.app.status()).running;
-    this.app.set_running(false);
-    try {
-      await this.flush({ retry: true });
-      const image = read();
-      await storage.put('cards', key(slot), image);
+    return this.exclusive(async () => {
+      const running = JSON.parse(this.app.status()).running;
+      this.app.set_running(false);
       try {
-        this.app.set_card_image(slot, image);
-      } catch (error) {
-        // Refused only when frames ran meanwhile and the game opened a file
-        // on the card: IndexedDB takes back the card the session keeps.
-        const kept = this.app.card_image(slot);
-        if (kept) await storage.put('cards', key(slot), kept);
-        throw error;
+        await this.flush({ retry: true });
+        const image = read();
+        check(slot, image, this.app.card_file_limit());
+        this.app.check_card_image(slot, image);
+        await storage.put('cards', key(slot), image);
+        try {
+          this.app.set_card_image(slot, image);
+        } catch (error) {
+          // Refused only when frames ran meanwhile and the game opened a file
+          // on the card: IndexedDB takes back the card the session keeps.
+          const kept = this.app.card_image(slot);
+          if (kept) await storage.put('cards', key(slot), kept);
+          throw error;
+        }
+        this.missing.delete(slot);
+        this.updateNotice();
+      } finally {
+        if (running) this.app.set_running(true);
       }
-      this.missing.delete(slot);
-      this.updateNotice();
-    } finally {
-      if (running) this.app.set_running(true);
-    }
+    });
   }
 
   /** The image IndexedDB holds for `slot`, or undefined. */

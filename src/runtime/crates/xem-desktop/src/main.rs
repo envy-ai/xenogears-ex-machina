@@ -21,6 +21,8 @@ struct Options {
     /// the game, the other disc beside it serving its disc changes.
     disc: Option<PathBuf>,
     cards: Option<PathBuf>,
+    packages: Option<PathBuf>,
+    packages_disabled: bool,
     bios: Option<PathBuf>,
     /// A session log to play (pads and setup) instead of the player's input.
     script: Option<PathBuf>,
@@ -64,6 +66,8 @@ fn options() -> Result<Options, String> {
         show_settings: false,
         disc: None,
         cards: None,
+        packages: None,
+        packages_disabled: false,
         bios: None,
         script: None,
         exit_at_frame: None,
@@ -98,6 +102,8 @@ fn options() -> Result<Options, String> {
             "--show-settings" => options.show_settings = true,
             "--disc" => options.disc = Some(args.next().ok_or("--disc needs a path")?.into()),
             "--cards" => options.cards = Some(args.next().ok_or("--cards needs a directory")?.into()),
+            "--packages" => options.packages = Some(args.next().ok_or("--packages needs a set file")?.into()),
+            "--packages-disabled" => options.packages_disabled = true,
             "--bios" => options.bios = Some(args.next().ok_or("--bios needs a path")?.into()),
             "--script" => options.script = Some(args.next().ok_or("--script needs a session log")?.into()),
             "--exit-at-frame" => {
@@ -452,6 +458,7 @@ fn open_game(options: &Options, disc: &std::path::Path) -> Result<Game, String> 
         std::fs::create_dir_all(dir).map_err(|e| format!("{}: {e}", dir.display()))?;
     }
     let boot = xem_game::BootOptions {
+        packages: xem_game::load_packages(options.packages.as_deref(), options.packages_disabled)?,
         cards,
         bios: options.bios.clone(),
         stored_bios: directory.as_deref().and_then(xem_game::storage::stored_bios),
@@ -640,7 +647,7 @@ impl Host {
                 let mut source = xem_disc::open_path(path).map_err(|e| e.to_string())?;
                 let known = xem_disc::identify(source.as_mut()).map_err(|e| e.to_string())?.disc.ok_or("not a known Xenogears disc")?;
                 xem_disc::verify(source.as_mut(), known).map_err(|e| e.to_string())?;
-                game.add_disc(known.number(), source);
+                game.add_disc(known.number(), source)?;
                 Ok(format!("Disc {} is in the changer for the game's disc changes.", known.number()))
             })(),
         };

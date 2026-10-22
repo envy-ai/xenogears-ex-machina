@@ -35,6 +35,8 @@ pub struct BootOptions {
     pub stubs: Option<PathBuf>,
     /// Keep the SPU's samples for the host to play (or record).
     pub audio_output: bool,
+    /// Prevalidated ordered packages; empty means byte-identical vanilla.
+    pub packages: xem_disc::mods::PackageSet,
 }
 
 pub fn boot(disc: &Path, options: &BootOptions) -> Result<(Session<NativeModule>, Identification), Box<dyn Error>> {
@@ -46,6 +48,7 @@ pub fn boot(disc: &Path, options: &BootOptions) -> Result<(Session<NativeModule>
         match source {
             Ok(source) => {
                 eprintln!("disc {} beside it: {}", other.number(), path.display());
+                let (_, source) = prepare_source(source, &options.packages)?;
                 session.runtime.services().add_disc(other.number(), source);
             }
             Err(error) => eprintln!("disc {} beside it not used: {}: {error}", other.number(), path.display()),
@@ -63,16 +66,21 @@ pub fn boot_source(
 ) -> Result<(Session<NativeModule>, Identification), Box<dyn Error>> {
     let identity = xem_disc::identify(source.as_mut())?;
     identity.disc.ok_or("not a known Xenogears disc")?;
-    let header = exe::parse(&identity.executable)?;
+    let (executable, source) = prepare_identified(source, &identity, &options.packages)?;
+    let header = exe::parse(&executable)?;
 
     let mut runtime = Runtime::new(NativeModule::new());
     runtime.identity.disc = xem_disc::state_identity(&identity);
+    runtime.identity.packages = options.packages.identities();
+    runtime.packages = options.packages.clone();
     if let Some(text) = options.stubs.as_ref().and_then(|p| std::fs::read_to_string(p).ok()) {
         runtime.services().stub_names =
             text.lines().filter_map(|l| l.split_once(' ').map(|(_, n)| n.to_string())).collect();
     }
     if let Some(dir) = &options.cards {
-        runtime.services().card.attach_storage(Box::new(FileStorage { dir: dir.clone() }))?;
+        let binding = xem_core::save::SaveBinding::from(&runtime.identity);
+        let storage = xem_core::save::BoundCardStorage::prepare(Box::new(FileStorage { dir: dir.clone() }), binding)?;
+        runtime.services().card.attach_storage(Box::new(storage))?;
         for error in &runtime.services().card.errors { eprintln!("{error}"); }
     }
     let install = |runtime: &mut Runtime<NativeModule>, path: &Path| {
@@ -98,7 +106,7 @@ pub fn boot_source(
     }
     runtime.services().spu.set_output(options.audio_output);
     // The BIOS copies the executable's text to its address and jumps to pc0.
-    runtime.load_executable(header.text_address, exe::text(&identity.executable, &header))?;
+    runtime.load_executable(header.text_address, exe::text(&executable, &header))?;
     runtime.services().insert_disc(identity.disc.map_or(0, |disc| disc.number()), source);
     // The module's schema (build/game/schema.json, embedded by build.rs).
     let schema = Schema::parse(include_str!(concat!(env!("OUT_DIR"), "/schema.json")))?;
@@ -107,4 +115,31 @@ pub fn boot_source(
     }
     let started = std::time::Instant::now();
     Ok((Session::new(runtime,Some(schema),move || started.elapsed()),identity))
+}
+
+/// Prepare only against an identified original source; never identify the
+/// patched executable as if it were an original image.
+fn prepare_identified(mut source: Box<dyn SectorSource>, identity: &Identification, packages: &xem_disc::mods::PackageSet) -> Result<(Vec<u8>, Box<dyn SectorSource>), Box<dyn Error>> {
+    let mut preparation = packages.preparation(identity)?;
+    while !preparation.advance(source.as_mut())? {}
+    let overlay = preparation.overlay().ok_or("package preparation did not finish")?;
+    Ok((overlay.executable().to_vec(), overlay.wrap(source)?))
+}
+
+pub fn prepare_source(mut source: Box<dyn SectorSource>, packages: &xem_disc::mods::PackageSet) -> Result<(Vec<u8>, Box<dyn SectorSource>), Box<dyn Error>> {
+    let identity = xem_disc::identify(source.as_mut())?;
+    identity.disc.ok_or("not a known Xenogears disc")?;
+    prepare_identified(source, &identity, packages)
+}
+
+/// Load the same set container accepted by the browser. Disabled content is
+/// still structurally validated; it never changes a source or state identity.
+pub fn load_packages(path: Option<&Path>, disabled: bool) -> Result<xem_disc::mods::PackageSet, String> {
+    let Some(path) = path else {
+        if disabled { return Err("--packages-disabled requires --packages FILE".into()); }
+        return Ok(Default::default());
+    };
+    let bytes = xem_storage::read(path, xem_disc::mods::MAX_SET_BYTES).map_err(|e| format!("{}: {e}", path.display()))?;
+    let set = xem_disc::mods::PackageSet::from_bytes(&bytes).map_err(|e| e.to_string())?;
+    Ok(if disabled { Default::default() } else { set })
 }

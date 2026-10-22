@@ -23,6 +23,7 @@ const page = {
   stubs: false,
   schema: false,
   sessionGeneration: 0,
+  operationGeneration: 0,
   rendererError: null,
   frameError: null,
   hidden: document.hidden,
@@ -175,6 +176,7 @@ if (!(await startRenderer(prefer)) && prefer !== 'webgl2') await startRenderer('
 new ResizeObserver(sizeCanvas).observe(document.querySelector('main'));
 
 // --- Host operations (the controls and window.xem call these) ---------------
+let booting = false;
 const host = {
   app,
   cards,
@@ -183,13 +185,46 @@ const host = {
   fillDisc: (check) => disc.fillGameReads(app, check),
   async boot({ executable = true, run = false, rewind = run } = {}) {
     if (!page.game.available) throw new Error(`no game module: ${page.game.error}`);
-    const instance = await instantiate(page.game);
-    const status = JSON.parse(app.boot(instance, page.game.names, executable, page.game.moduleId, rewind));
-    page.sessionGeneration += 1;
-    audio.reset();
-    app.set_running(run);
-    if (cards.notice) operationStatus(cards.notice);
-    return status;
+    if (booting) throw new Error('a boot is already in progress');
+    booting = true;
+    page.operationGeneration += 1;
+    try {
+      return await cards.exclusive(async () => {
+        const running = JSON.parse(app.status()).running;
+        app.set_running(false);
+        let published = false;
+        try {
+          // Settle writes under their original immutable save binding first.
+          await cards.flush();
+          if (executable) {
+            while (!app.prepare_packages()) {
+              const ranges = JSON.parse(app.disc_missing());
+              if (!ranges.length) throw new Error('package preparation stalled without missing ranges');
+              // disc_missing consumes ranges; hand this batch to the same file reader.
+              await disc.fillRanges(app, ranges);
+            }
+          }
+          const instance = await instantiate(page.game);
+          const status = JSON.parse(app.boot(instance, page.game.names, executable, page.game.moduleId, rewind));
+          page.sessionGeneration += 1;
+          published = true;
+          audio.reset();
+          app.set_running(run);
+          if (cards.notice) operationStatus(cards.notice);
+          return status;
+        } finally {
+          if (!published) app.set_running(running);
+        }
+      });
+    } finally {
+      booting = false;
+    }
+  },
+  stagePackages(bytes, { enabled = true } = {}) {
+    if (booting) throw new Error('cannot stage packages while a boot is in progress');
+    if (!(bytes instanceof Uint8Array) || typeof enabled !== 'boolean') throw new Error('packages need Uint8Array bytes and boolean enabled');
+    if (bytes.byteLength > app.package_set_limit()) throw new Error('package set exceeds the shared transport size limit');
+    return JSON.parse(app.set_packages(bytes, enabled));
   },
   /** Import BIOS: the runtime checks the image, IndexedDB takes it beside
    * the cards, then every boot takes its Kanji font and a running game has
@@ -245,6 +280,8 @@ const host = {
         : { available: false, url: page.game.url, error: page.game.error },
       rendererError: page.rendererError,
       sessionGeneration: page.sessionGeneration,
+      operationGeneration: page.operationGeneration,
+      booting,
       frameError: page.frameError,
       deviceLosses: page.deviceLosses,
       audio: audio.status(),
@@ -467,6 +504,7 @@ function xrFrame(time, xrframe) {
   const xr = page.xr;
   if (!xr) return;
   xr.session.requestAnimationFrame(xrFrame);
+  if (booting) return;
   const pose = xrframe.getViewerPose(xr.space);
   try {
     if (pose) {
@@ -516,6 +554,7 @@ let recovering = false;
 function frame(time) {
   // An immersive session schedules its own frames.
   if (page.xr) return;
+  if (booting) { requestAnimationFrame(frame); return; }
   try {
     pollGamepad();
     app.frame(time);
@@ -610,10 +649,11 @@ $('boot').addEventListener('click', guarded(async () => {
   await host.boot({ run: true });
   show('Booted; the game runs a frame of its clock per 1/60 s, in bounded batches.');
 }));
-$('run').addEventListener('click', () => {
+$('run').addEventListener('click', guarded(() => {
+  if (booting) throw new Error('a session boot is in progress');
   const status = JSON.parse(app.status());
   app.set_running(!status.running);
-});
+}));
 $('step').addEventListener('click', guarded(() => window.xem.runFrames(1)));
 $('settings').addEventListener('click', () => app.set_panel_visible(!app.panel_visible()));
 $('audio').addEventListener('click', guarded(async () => {
@@ -628,8 +668,8 @@ function download(name, bytes, type = 'application/octet-stream') {
   setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 let importCardSlot = 0;
-/** The largest file a memory card or save container is (a DexDrive card). */
-const MAX_CARD_FILE = 0xf40 + 0x20000;
+/** Shared archive bound; Rust retains the tighter limit for raw legacy files. */
+const MAX_CARD_FILE = app.card_file_limit();
 /** An operation's outcome (status().page.operationStatus): what it did, the
  * panel's error bar cleared, or what failed, in the error bar. */
 function operationStatus(message) { page.operationStatus = message; app.set_operation_error(''); }
@@ -642,7 +682,7 @@ $('import-state').addEventListener('change', operationGuard(async (event) => {
   const file = event.target.files[0]; if (!file) return;
   try {
     if (file.size > 64 * 1024 * 1024) throw new Error('State file exceeds 64 MiB.');
-    app.restore_bytes(new Uint8Array(await file.arrayBuffer()));
+    window.xem.importSnapshot(new Uint8Array(await file.arrayBuffer()));
     app.state_notice(false, undefined);
     event.target.value = ''; operationStatus('State restored.');
   } catch (error) {
@@ -705,6 +745,7 @@ async function appOperation(request) {
   }
 }
 async function executeAppOperation(request) {
+  if (booting) throw new Error('a session boot is in progress');
   if ('Debug' in request) return control({ cmd: 'debug', request: request.Debug });
   if ('Rewind' in request || 'UiRewind' in request) {
     const panel = 'UiRewind' in request;
@@ -729,7 +770,7 @@ async function executeAppOperation(request) {
     case 'LoadState': {
       const loaded = await host.load('slot0');
       if (!loaded) throw new Error(page.storageError);
-      app.restore_bytes(loaded.data);
+      window.xem.importSnapshot(loaded.data);
       app.state_notice(false, undefined);
       operationStatus('Stored state verified and restored.'); return { ok: true };
     }
@@ -792,7 +833,9 @@ async function executeAppOperation(request) {
       const slot = action === 'ExportCard1' ? 0 : 1;
       const image = app.card_image(slot) ?? await cards.stored(slot);
       if (!image) throw new Error('No card image to export.');
-      download(`card${slot + 1}.mcd`, image); operationStatus('Original raw memory card exported.'); break;
+      const bound = image.length !== 0x20000;
+      download(`card${slot + 1}.${bound ? 'xemcard' : 'mcd'}`, image);
+      operationStatus(bound ? 'Package-bound memory card exported.' : 'Original raw memory card exported.'); break;
     }
     case 'ImportCard1': case 'ImportCard2':
       importCardSlot = action === 'ImportCard1' ? 0 : 1;

@@ -11,7 +11,8 @@ use xem_core::devices::Device;
 use xem_core::devices::card::{CardStorage, formatted};
 use xem_core::memory::OutOfBounds;
 use xem_core::module::{AsyncState, ImportHandler};
-use xem_core::snapshot::{REGIONS, checked, seal};
+use xem_core::snapshot::{REGIONS, StateIdentity, checked, seal};
+use xem_core::save::{BoundCardStorage, SaveBinding, validate_card_image, unwrap_card, unwrap_card_file, wrap_card};
 use xem_core::{Action, GameMemory, GameModule, Import, Runtime, Trap};
 
 /// The stand-in's save, as the game's (menu_framework.c's save command):
@@ -72,6 +73,18 @@ struct Storage(Rc<RefCell<[Vec<u8>; 2]>>);
 impl CardStorage for Storage {
     fn load(&mut self, slot: usize) -> std::io::Result<Option<Vec<u8>>> { Ok(Some(self.0.borrow()[slot].clone())) }
     fn store(&mut self, slot: usize, image: &[u8]) -> std::io::Result<()> { self.0.borrow_mut()[slot] = image.to_vec(); Ok(()) }
+}
+
+/// New card slots stay absent until CardStorage.prepare supplies a formatted
+/// image; failed writes can then be retried through the same bound adapter.
+struct EmptyRetryStorage(Rc<RefCell<[Option<Vec<u8>>; 2]>>, Rc<Cell<bool>>);
+impl CardStorage for EmptyRetryStorage {
+    fn load(&mut self, slot: usize) -> std::io::Result<Option<Vec<u8>>> { Ok(self.0.borrow()[slot].clone()) }
+    fn store(&mut self, slot: usize, image: &[u8]) -> std::io::Result<()> {
+        if self.1.get() { return Err(std::io::Error::other("temporary synthetic write failure")); }
+        self.0.borrow_mut()[slot] = Some(image.to_vec());
+        Ok(())
+    }
 }
 
 /// A small deterministic generator for damaged states.
@@ -1984,4 +1997,190 @@ fn the_sound_mode_is_recorded_and_a_replay_keeps_it() {
     other.set_sound_mode(1).unwrap();
     assert_eq!(other.execute(&json!({"cmd":"status"}))["sound_mode"], json!(2), "a replay keeps the recorded mode, not the host's");
     assert!(s.set_sound_mode(3).is_err(), "no menu reaches the driver's mode 3");
+}
+
+#[test]
+fn card_binding_preserves_raw_vanilla_and_round_trips_the_exact_modded_payload() {
+    let raw = formatted();
+    let vanilla = SaveBinding::default();
+    assert_eq!(wrap_card(&raw, &vanilla).unwrap(), raw, "vanilla storage remains a raw card image");
+    assert_eq!(unwrap_card(&raw, &vanilla).unwrap(), raw);
+    validate_card_image(&raw).unwrap();
+
+    let binding = SaveBinding { disc: "synthetic-disc-family".into(), packages: vec!["first@sha256-a".into(), "second@sha256-b".into()] };
+    let wrapped = wrap_card(&raw, &binding).unwrap();
+    assert_ne!(wrapped, raw);
+    validate_card_image(&wrapped).unwrap();
+    assert_eq!(unwrap_card(&wrapped, &binding).unwrap(), raw, "wrapper preserves every original card byte");
+}
+
+#[test]
+fn card_file_import_keeps_the_legacy_raw_limit_but_allows_a_valid_envelope() {
+    let raw = formatted();
+    let binding = SaveBinding {
+        disc: "synthetic-disc-".to_owned() + &"d".repeat(12_000),
+        packages: vec!["synthetic-package@hash".into()],
+    };
+    let wrapped = wrap_card(&raw, &binding).unwrap();
+    assert!(wrapped.len() > xem_core::devices::card_file::MAX_FILE);
+    assert_eq!(unwrap_card_file(&wrapped, &binding).unwrap(), raw);
+
+    let oversized_legacy = vec![0x5a; xem_core::devices::card_file::MAX_FILE + 1];
+    assert!(unwrap_card_file(&oversized_legacy, &SaveBinding::default())
+        .unwrap_err()
+        .contains("original card/save file exceeds size limit"));
+}
+
+#[test]
+fn card_binding_rejects_absent_or_wrong_ordered_identity_and_invalid_archives() {
+    let raw = formatted();
+    let stored = SaveBinding { disc: "synthetic-disc".into(), packages: vec!["one@hash-a".into(), "two@hash-b".into()] };
+    let wrapped = wrap_card(&raw, &stored).unwrap();
+    let mismatches = [
+        SaveBinding { disc: "other-disc".into(), ..stored.clone() },
+        SaveBinding { packages: vec!["two@hash-b".into(), "one@hash-a".into()], ..stored.clone() },
+        SaveBinding { packages: vec!["one@hash-c".into(), "two@hash-b".into()], ..stored.clone() },
+    ];
+    for expected in mismatches {
+        let error = unwrap_card(&wrapped, &expected).unwrap_err();
+        assert!(error.contains("identity mismatch"), "{error}");
+        let untouched = Rc::new(RefCell::new([wrapped.clone(), raw.clone()]));
+        let preflight = BoundCardStorage::prepare(Box::new(Storage(untouched.clone())), expected).err().expect("preflight refuses incompatible identity");
+        assert!(preflight.contains("identity mismatch"), "{preflight}");
+        assert_eq!(untouched.borrow()[0], wrapped, "rejection precedes storage mutation");
+    }
+    let absent = unwrap_card(&raw, &stored).unwrap_err();
+    assert!(absent.contains("untagged original card/save"), "{absent}");
+    let untouched = Rc::new(RefCell::new([raw.clone(), raw.clone()]));
+    let preflight = BoundCardStorage::prepare(Box::new(Storage(untouched.clone())), stored.clone()).err().expect("raw vanilla card is refused for a modded session");
+    assert!(preflight.contains("untagged original card/save"), "{preflight}");
+    assert_eq!(untouched.borrow()[0], raw, "absent package identity leaves the raw card untouched");
+
+    let mut bad_checksum = wrapped.clone();
+    *bad_checksum.last_mut().unwrap() ^= 1;
+    assert!(validate_card_image(&bad_checksum).unwrap_err().contains("checksum mismatch"));
+    assert!(validate_card_image(&wrapped[..wrapped.len() - 1]).unwrap_err().contains("length"));
+    assert!(validate_card_image(&raw[..raw.len() - 1]).unwrap_err().contains("exactly 128 KiB"));
+
+    let metadata = br#"{"disc":"synthetic-disc","packages":["one@hash-a"],"unexpected":true}"#;
+    let mut unknown = b"XEMSAVE1".to_vec();
+    unknown.extend_from_slice(&(metadata.len() as u32).to_le_bytes());
+    unknown.extend_from_slice(metadata);
+    unknown.extend_from_slice(&raw);
+    unknown.extend_from_slice(&xem_core::snapshot::digest(&unknown));
+    assert!(validate_card_image(&unknown).unwrap_err().contains("unknown field `unexpected`"));
+}
+
+#[test]
+fn card_preflight_allows_a_fresh_missing_card_but_rejects_incompatible_storage_before_mutation() {
+    let raw = formatted();
+    let active = SaveBinding { disc: "synthetic-disc".into(), packages: vec!["mod@digest".into()] };
+    let empty = Rc::new(RefCell::new([None, None]));
+    let mut prepared = BoundCardStorage::prepare(Box::new(EmptyRetryStorage(empty.clone(), Rc::new(Cell::new(false)))), active.clone()).unwrap();
+    let fresh = prepared.load(0).unwrap().unwrap();
+    assert_eq!(fresh, formatted(), "a missing card is initialized for the active binding");
+    prepared.store(0, &raw).unwrap();
+    let persisted = empty.borrow()[0].clone().unwrap();
+    assert_eq!(unwrap_card(&persisted, &active).unwrap(), raw);
+
+    let prior = wrap_card(&raw, &SaveBinding { disc: "different-disc".into(), packages: vec!["mod@digest".into()] }).unwrap();
+    let shared = Rc::new(RefCell::new([prior.clone(), raw.clone()]));
+    let error = BoundCardStorage::prepare(Box::new(Storage(shared.clone())), active).err().expect("incompatible card binding is refused");
+    assert!(error.contains("card 1") && error.contains("identity mismatch"), "{error}");
+    assert_eq!(shared.borrow()[0], prior, "preflight refuses before touching stored bytes");
+}
+
+#[test]
+fn queued_card_write_keeps_the_binding_captured_when_storage_was_prepared() {
+    let backing = Rc::new(RefCell::new([None, None]));
+    let failing = Rc::new(Cell::new(true));
+    let binding = SaveBinding { disc: "original-disc".into(), packages: vec!["ordered@original-hash".into()] };
+    let mut s = session();
+    s.runtime.identity = StateIdentity { module: "test-module".into(), disc: binding.disc.clone(), packages: binding.packages.clone() };
+    let storage = BoundCardStorage::prepare(Box::new(EmptyRetryStorage(backing.clone(), failing.clone())), binding.clone()).unwrap();
+    s.runtime.services().card.attach_storage(Box::new(storage)).unwrap();
+
+    begin_save(&mut s, 0x6d);
+    finish_save(&mut s);
+    assert_eq!(s.execute(&json!({"cmd":"status"}))["storage"]["pending_writes"], 1);
+    assert!(backing.borrow()[0].is_none(), "failed persistence did not leak an unbound write");
+
+    s.runtime.identity.disc = "later-disc".into();
+    s.runtime.identity.packages = vec!["later@different-hash".into()];
+    failing.set(false);
+    s.runtime.services().card.retry_writes().unwrap();
+    let saved = backing.borrow()[0].clone().expect("retry reaches the underlying storage");
+    assert_eq!(unwrap_card(&saved, &binding).unwrap(), card_image(&mut s));
+    assert!(unwrap_card(&saved, &SaveBinding::from(&s.runtime.identity)).is_err(), "retry retained the preparation-time identity");
+}
+
+#[test]
+fn malformed_legacy_raw_vanilla_card_still_reports_the_card_attach_load_error() {
+    let malformed = vec![1, 2, 3];
+    let stored = Rc::new(RefCell::new([malformed.clone(), formatted()]));
+    let storage = BoundCardStorage::prepare(Box::new(Storage(stored.clone())), SaveBinding::default()).unwrap();
+    let mut s = session();
+    s.runtime.services().card.attach_storage(Box::new(storage)).unwrap();
+    assert!(s.runtime.services().card.image(0).is_none());
+    assert_eq!(s.runtime.services().card.errors.as_slice(), &["memory card 1: expected a raw 128 KiB image; slot left empty, file unchanged".to_owned()]);
+    assert_eq!(stored.borrow()[0], malformed, "legacy malformed bytes remain for the original attach error path");
+}
+
+#[test]
+fn input_recording_captures_ordered_identity_and_replay_schedule_reject_before_mutation() {
+    let identity = StateIdentity { module: "module-hash".into(), disc: "disc-family".into(), packages: vec!["first@hash-a".into(), "second@hash-b".into()] };
+    let mut recorder = session();
+    recorder.runtime.identity = identity.clone();
+    recorder.execute(&json!({"cmd":"record"}));
+    let log = recorder.execute(&json!({"cmd":"stop_recording"}));
+    assert_eq!(log["identity"], serde_json::to_value(&identity).unwrap());
+
+    let mismatch_identities = [
+        StateIdentity { disc: "different-disc".into(), ..identity.clone() },
+        StateIdentity { packages: vec!["second@hash-b".into(), "first@hash-a".into()], ..identity.clone() },
+        StateIdentity { packages: vec!["first@hash-c".into(), "second@hash-b".into()], ..identity.clone() },
+    ];
+    for mismatch in mismatch_identities {
+        for operation in ["replay", "schedule"] {
+            let mut s = session();
+            s.runtime.identity = identity.clone();
+            s.set_actor_view(300).unwrap();
+            let before = s.snapshot_bytes().unwrap();
+            let mismatch_value = serde_json::to_value(&mismatch).unwrap();
+            let command = if operation == "replay" {
+                json!({"cmd":"replay","identity":mismatch_value,"changes":[[0,0,4]],"controls":[[0,{"cmd":"actor_view","view":3}]]})
+            } else {
+                json!({"cmd":"schedule","identity":mismatch_value,"commands":[[0,{"cmd":"actor_view","view":3}]]})
+            };
+            let refused = s.execute(&command);
+            assert!(refused["error"].as_str().is_some_and(|e| e.contains("replay refused")), "{refused}");
+            assert_eq!(s.snapshot_bytes().unwrap(), before, "{operation} identity refusal leaves runtime state unchanged");
+            assert_eq!(s.execute(&json!({"cmd":"status"}))["actor_view"], 300, "{operation} identity refusal does not apply/reset controls");
+            s.frame().unwrap();
+            assert_eq!(s.execute(&json!({"cmd":"status"}))["actor_view"], 300, "rejected {operation} did not leave queued work");
+        }
+    }
+
+    for operation in ["replay", "schedule"] {
+        let mut s = session();
+        s.runtime.identity = identity.clone();
+        s.set_actor_view(300).unwrap();
+        let before = s.snapshot_bytes().unwrap();
+        let command = if operation == "replay" {
+            json!({"cmd":"replay","changes":[[0,0,4]],"controls":[[0,{"cmd":"actor_view","view":3}]]})
+        } else {
+            json!({"cmd":"schedule","commands":[[0,{"cmd":"actor_view","view":3}]]})
+        };
+        let refused = s.execute(&command);
+        assert!(refused["error"].as_str().is_some_and(|e| e.contains("untagged replay/schedule is vanilla-only")), "{refused}");
+        assert_eq!(s.snapshot_bytes().unwrap(), before, "untagged {operation} leaves runtime state unchanged");
+        assert_eq!(s.execute(&json!({"cmd":"status"}))["actor_view"], 300);
+        s.frame().unwrap();
+        assert_eq!(s.execute(&json!({"cmd":"status"}))["actor_view"], 300, "rejected {operation} did not leave queued work");
+    }
+
+    let legacy: xem_core::control::InputLog = serde_json::from_value(json!({
+        "start_vblank":0,"changes":[],"controls":[],"end_vblank":0,"restores":[]
+    })).unwrap();
+    assert!(legacy.identity.is_none(), "pre-identity input logs deserialize as untagged legacy logs");
 }

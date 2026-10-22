@@ -4,6 +4,7 @@
 // IndexedDB and snapshot saves. Needs no private inputs.
 
 import assert from 'node:assert/strict';
+import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { after, before, describe, test } from 'node:test';
 import { runInNewContext } from 'node:vm';
@@ -21,18 +22,26 @@ function blockedAutomation() {
   const fill = deferred();
   const started = deferred();
   let generation = 1;
+  let operationGeneration = 0;
+  let booting = false;
   const xem = createAutomation({
     app: {
+      status() { return JSON.stringify({ session: {} }); },
       command(text) {
         commands.push(JSON.parse(text));
         return JSON.stringify({ blocked: true, frames: 0 });
       },
     },
-    pageStatus: () => ({ sessionGeneration: generation }),
+    pageStatus: () => ({ sessionGeneration: generation, operationGeneration, booting }),
     async fillDisc(check) { started.resolve(); await fill.promise; check(); },
     async flushCards() {},
   });
-  return { xem, commands, fill, started, replaceSession() { generation += 1; } };
+  return {
+    xem, commands, fill, started,
+    replaceSession() { generation += 1; },
+    beginBoot() { operationGeneration += 1; booting = true; },
+    endBoot() { booting = false; },
+  };
 }
 
 test('a replacement session stops async frame continuation after a deferred disc fill', async () => {
@@ -43,6 +52,27 @@ test('a replacement session stops async frame continuation after a deferred disc
   probe.fill.resolve();
   await assert.rejects(running, /session changed during asynchronous frame work/);
   assert.deepEqual(probe.commands, [{ cmd: 'frames', count: 3 }], 'no later frame command reaches the replacement session');
+});
+
+test('a failed boot operation invalidates deferred frame continuation without publishing a session', async () => {
+  const probe = blockedAutomation();
+  const generation = probe.xem.status().page.sessionGeneration;
+  const running = probe.xem.run({ cmd: 'frames', count: 3 });
+  await probe.started.promise;
+  probe.beginBoot();
+  assert.deepEqual(probe.xem.command({ cmd: 'status' }), { error: 'a session boot is in progress' });
+  probe.endBoot();
+  probe.fill.resolve();
+  await assert.rejects(running, /boot operation changed during asynchronous frame work/);
+  assert.equal(probe.xem.status().page.sessionGeneration, generation, 'failed boot leaves the publication generation unchanged');
+  assert.deepEqual(probe.commands, [{ cmd: 'frames', count: 3 }], 'no later frame command reaches the retained session');
+});
+
+test('setRunning refuses to call the app during a boot operation', () => {
+  const probe = blockedAutomation();
+  probe.beginBoot();
+  assert.throws(() => probe.xem.setRunning(true), /a session boot is in progress/);
+  assert.deepEqual(probe.commands, [], 'the blocked request never reaches the app');
 });
 
 test('cancellation stops async frame continuation after a deferred disc fill', async () => {
@@ -304,6 +334,335 @@ describe('automation over a game module fixture', () => {
     assert.deepEqual(result.end2, result.end);
     assert.match(result.tooFar.error, /at most 10000 frames/);
     assert.match(result.unbounded.error, /needs max_frames/);
+  });
+
+  test('Run and automation stay blocked while a candidate boot is held, then the retained session resumes after failure', async () => {
+    const previous = await page.evaluate(async () => {
+      const x = window.xem;
+      await x.boot({ executable: false });
+      x.setRunning(true);
+      await new Promise((resolve, reject) => {
+        const deadline = performance.now() + 5000;
+        const poll = () => {
+          const s = x.status();
+          if (s.session.frames >= 2) return resolve();
+          if (performance.now() > deadline) return reject(new Error('fixture did not advance before the boot-race test'));
+          setTimeout(poll, 10);
+        };
+        poll();
+      });
+      x.setRunning(false);
+      return { generation: x.status().page.sessionGeneration, status: x.status().session, hash: x.memoryHash() };
+    });
+
+    await page.evaluate(() => {
+      const original = WebAssembly.instantiate.bind(WebAssembly);
+      let release;
+      const gate = new Promise((resolve) => { release = resolve; });
+      const race = {
+        entered: false,
+        pending: null,
+        release(fail) { this.fail = fail; release(); },
+        restore() { WebAssembly.instantiate = original; },
+        fail: false,
+      };
+      WebAssembly.instantiate = async (...args) => {
+        race.entered = true;
+        await gate;
+        if (race.fail) throw new Error('synthetic instantiate rejection');
+        return original(...args);
+      };
+      race.pending = window.xem.boot({ executable: false }).then(
+        () => ({ ok: true }),
+        (error) => ({ error: String(error.message ?? error) }),
+      );
+      window.__bootRace = race;
+    });
+    try {
+      await page.waitForFunction(() => window.__bootRace?.entered === true);
+      const held = await page.evaluate(async () => {
+        const x = window.xem;
+        const waitFrames = () => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+        const before = { status: x.status(), hash: x.memoryHash() };
+        await waitFrames();
+        const afterFrames = { status: x.status(), hash: x.memoryHash() };
+        let apiError;
+        try { x.setRunning(true); }
+        catch (error) { apiError = String(error.message ?? error); }
+        let snapshotError;
+        try { x.importSnapshot(new Uint8Array()); }
+        catch (error) { snapshotError = String(error.message ?? error); }
+        let operationError;
+        try { await x.appOperation({ Action: 'Reset' }); }
+        catch (error) { operationError = String(error.message ?? error); }
+        return { before, afterFrames, apiError, snapshotError, operationError };
+      });
+      assert.equal(held.before.status.page.booting, true);
+      assert.equal(held.before.status.running, false);
+      assert.deepEqual(held.afterFrames.status.session.frames, held.before.status.session.frames,
+        'the retained session takes no game frames while replacement boot is pending');
+      assert.deepEqual(held.before.hash, { error: 'a session boot is in progress' }, 'memory commands are guarded during boot');
+      assert.deepEqual(held.afterFrames.hash, held.before.hash);
+      assert.equal(held.apiError, 'a session boot is in progress');
+      assert.equal(held.snapshotError, 'a session boot is in progress');
+      assert.equal(held.operationError, 'a session boot is in progress');
+
+      await page.click('#run');
+      assert.match(await page.locator('#message').textContent(), /session boot is in progress/);
+      const afterRunClick = await page.evaluate(() => ({ status: window.xem.status(), hash: window.xem.memoryHash() }));
+      assert.equal(afterRunClick.status.running, false, 'the Run button cannot restart the old session during candidate boot');
+      assert.deepEqual(afterRunClick.status.session.frames, held.before.status.session.frames);
+      assert.deepEqual(afterRunClick.hash, { error: 'a session boot is in progress' });
+
+      await page.evaluate(() => window.__bootRace.release(true));
+      const bootResult = await page.evaluate(() => window.__bootRace.pending);
+      assert.equal(bootResult.error, 'synthetic instantiate rejection');
+      const retained = await page.evaluate(() => ({ status: window.xem.status(), hash: window.xem.memoryHash() }));
+      assert.equal(retained.status.page.booting, false);
+      assert.equal(retained.status.page.sessionGeneration, previous.generation);
+      assert.deepEqual(retained.status.session.frames, previous.status.frames);
+      assert.deepEqual(retained.hash, previous.hash);
+
+      await page.click('#run');
+      await page.waitForFunction((frames) => window.xem.status().session.frames > frames, previous.status.frames);
+      const resumed = await page.evaluate(() => window.xem.status());
+      assert.equal(resumed.page.sessionGeneration, previous.generation, 'failed candidate boot keeps the published session');
+      assert.ok(resumed.session.frames > previous.status.frames, 'Run advances the retained session after boot failure');
+    } finally {
+      await page.evaluate(async () => {
+        if (window.__bootRace) {
+          window.__bootRace.release(true);
+          const pending = window.__bootRace.pending;
+          window.__bootRace.restore();
+          delete window.__bootRace;
+          await pending;
+        }
+      });
+    }
+  });
+
+  test('package sets stage through the browser API, reject truncation, and take effect only on a fresh boot', async () => {
+    const result = await page.evaluate(async () => {
+      const x = window.xem;
+      const empty = Uint8Array.of(88, 69, 77, 83, 69, 84, 49, 0, 0, 0, 0, 0); // XEMSET1\0 + u32 package count 0
+      const encoder = new TextEncoder();
+      const u32 = (value) => Uint8Array.of(value & 255, (value >>> 8) & 255, (value >>> 16) & 255, (value >>> 24) & 255);
+      const concat = (...parts) => {
+        const out = new Uint8Array(parts.reduce((size, part) => size + part.length, 0));
+        let at = 0;
+        for (const part of parts) { out.set(part, at); at += part.length; }
+        return out;
+      };
+      const digest = async (bytes) => new Uint8Array(await crypto.subtle.digest('SHA-256', bytes));
+      const hex = (bytes) => Array.from(bytes, (byte) => byte.toString(16).padStart(2, '0')).join('');
+      const payload = encoder.encode('synthetic browser authored test payload');
+      const manifest = encoder.encode(JSON.stringify({
+        id: 'browser-synthetic', discs: [{ serial: 'SYNTH-1', sha256: 'a'.repeat(64) }], requires: [], overrides: [],
+        files: [{ disc: 'SYNTH-1', slot: 1, kind: 'authored', source_sha256: null,
+          result_sha256: hex(await digest(payload)), result_size: payload.length, offset: 0, length: payload.length }],
+      }));
+      const packagePrefix = concat(encoder.encode('XEMMOD1\0'), u32(manifest.length), manifest, payload);
+      const packageBytes = concat(packagePrefix, await digest(packagePrefix));
+      const nonempty = concat(encoder.encode('XEMSET1\0'), u32(1), u32(packageBytes.length), packageBytes);
+      await x.boot({ executable: false });
+      const initialHash = x.memoryHash();
+      x.step(1);
+      const before = { identity: x.status().session.identity, generation: x.status().page.sessionGeneration,
+        frames: x.status().session.frames, hash: x.memoryHash() };
+      const enabled = x.packages.stage(empty, { enabled: true });
+      const afterEnabled = { identity: x.status().session.identity, generation: x.status().page.sessionGeneration,
+        frames: x.status().session.frames, hash: x.memoryHash() };
+      let malformed, truncated;
+      try { x.packages.stage(Uint8Array.of(0, 1, 2), { enabled: true }); }
+      catch (error) { malformed = String(error.message ?? error); }
+      try { x.packages.stage(Uint8Array.of(88, 69, 77, 83, 69, 84, 49, 0), { enabled: true }); }
+      catch (error) { truncated = String(error.message ?? error); }
+      const afterInvalid = { identity: x.status().session.identity, generation: x.status().page.sessionGeneration,
+        frames: x.status().session.frames, hash: x.memoryHash() };
+      const enabledNonempty = x.packages.stage(nonempty, { enabled: true });
+      let invalidPackageBoot;
+      try { await x.boot({ executable: false }); }
+      catch (error) { invalidPackageBoot = String(error.message ?? error); }
+      const afterRejectedPackageBoot = { identity: x.status().session.identity,
+        generation: x.status().page.sessionGeneration, frames: x.status().session.frames,
+        hash: x.memoryHash() };
+      const retainedStep = x.step(1);
+      const afterRetainedStep = { identity: x.status().session.identity,
+        generation: x.status().page.sessionGeneration, frames: x.status().session.frames,
+        hash: x.memoryHash() };
+      const disabledNonempty = x.packages.stage(nonempty, { enabled: false });
+      const disabledEmpty = x.packages.stage(empty, { enabled: false });
+      const afterDisabled = { identity: x.status().session.identity, generation: x.status().page.sessionGeneration,
+        frames: x.status().session.frames, hash: x.memoryHash() };
+      await x.boot({ executable: false });
+      return { before, enabled, afterEnabled, malformed, truncated, enabledNonempty, invalidPackageBoot,
+        afterRejectedPackageBoot, retainedStep, afterRetainedStep, disabledNonempty, disabledEmpty, afterInvalid, afterDisabled,
+        initialHash, fresh: { identity: x.status().session.identity, generation: x.status().page.sessionGeneration,
+          frames: x.status().session.frames, hash: x.memoryHash() } };
+    });
+    assert.deepEqual(result.enabled.identities, []);
+    assert.equal(result.enabled.pending_boot, true);
+    assert.deepEqual(result.afterEnabled, result.before, 'staging does not alter the active session');
+    assert.match(result.malformed, /mod package-set|truncated/i);
+    assert.match(result.truncated, /truncated/i);
+    assert.equal(result.enabledNonempty.identities.length, 1, 'synthetic package bytes pass structural validation while only staged');
+    assert.match(result.invalidPackageBoot, /packages require an identified original disc/i);
+    assert.deepEqual(result.afterRejectedPackageBoot, result.before, 'an invalid nonempty package set does not publish a new fixture session');
+    assert.equal(result.retainedStep.frames, result.before.frames + 1, 'the retained old fixture still accepts a normal frame');
+    assert.equal(result.retainedStep.stopped, null);
+    assert.equal(result.afterRetainedStep.generation, result.before.generation);
+    assert.equal(result.afterRetainedStep.frames, result.before.frames + 1);
+    assert.deepEqual(result.disabledNonempty.identities, [], 'disabled sets are validated, then staged as vanilla');
+    assert.deepEqual(result.disabledEmpty.identities, []);
+    assert.deepEqual(result.afterInvalid, result.before, 'invalid input leaves the active fixture session intact');
+    assert.deepEqual(result.afterDisabled, result.afterRetainedStep, 'disabled staging also waits for a fresh boot');
+    assert.equal(result.fresh.generation, result.afterRetainedStep.generation + 1);
+    assert.equal(result.fresh.frames, 0);
+    assert.deepEqual(result.fresh.identity.packages, []);
+    assert.equal(result.fresh.hash, result.initialHash, 'fresh deterministic boot restores the initial memory hash');
+  });
+
+  test('browser card validation refuses malformed wrappers before IndexedDB or the active card changes', async () => {
+    const result = await page.evaluate(async () => {
+      const x = window.xem;
+      await x.boot({ executable: false });
+      const image = Array.from(x.cards.image(0));
+      const stored = await x.cards.stored(0);
+      const hash = x.memoryHash();
+      let error;
+      try { await x.cards.store(0, new Uint8Array(0x20001)); }
+      catch (caught) { error = String(caught.message ?? caught); }
+      return { image, stored: stored ? Array.from(stored) : null, current: Array.from(x.cards.image(0)),
+        afterStored: await x.cards.stored(0), hash, afterHash: x.memoryHash(), error };
+    });
+    assert.match(result.error, /128 KiB|package-bound card/i);
+    assert.deepEqual(result.current, result.image, 'the rejected image never reaches the live card');
+    assert.deepEqual(result.afterStored ? Array.from(result.afterStored) : null, result.stored, 'validation runs before IndexedDB put');
+    assert.deepEqual(result.afterHash, result.hash);
+  });
+
+  test('browser card storage rejects a foreign package identity before changing memory or IndexedDB', async () => {
+    const result = await page.evaluate(async () => {
+      const x = window.xem;
+      await x.packages.stage(Uint8Array.of(88, 69, 77, 83, 69, 84, 49, 0, 0, 0, 0, 0), { enabled: true });
+      await x.boot({ executable: false });
+      const before = { generation: x.status().page.sessionGeneration, identity: x.status().session.identity,
+        hash: x.memoryHash(), frames: x.status().session.frames, image: Array.from(x.cards.image(0)) };
+      const storedBefore = await x.cards.stored(0);
+
+      // Synthetic save wrapper bound to a different package set. The public card
+      // API must reject it before updating either its in-memory image or IndexedDB.
+      const encoder = new TextEncoder();
+      const raw = new Uint8Array(x.cards.image(0));
+      const metadata = encoder.encode(JSON.stringify({ disc: '', packages: ['foreign-synthetic@hash'] }));
+      const prefix = new Uint8Array(12 + metadata.length + raw.length);
+      prefix.set(encoder.encode('XEMSAVE1'), 0);
+      new DataView(prefix.buffer).setUint32(8, metadata.length, true);
+      prefix.set(metadata, 12);
+      prefix.set(raw, 12 + metadata.length);
+      const checksum = new Uint8Array(await crypto.subtle.digest('SHA-256', prefix));
+      const archive = new Uint8Array(prefix.length + checksum.length);
+      archive.set(prefix);
+      archive.set(checksum, prefix.length);
+      let error;
+      try { await x.cards.store(0, archive); }
+      catch (caught) { error = String(caught.message ?? caught); }
+      const storedAfter = await x.cards.stored(0);
+      const after = { generation: x.status().page.sessionGeneration, identity: x.status().session.identity,
+        hash: x.memoryHash(), frames: x.status().session.frames, image: Array.from(x.cards.image(0)) };
+      const retainedStep = x.step(1);
+      const afterStep = { generation: x.status().page.sessionGeneration,
+        frames: x.status().session.frames, hash: x.memoryHash() };
+      await x.boot({ executable: false });
+      const fresh = { generation: x.status().page.sessionGeneration,
+        identity: x.status().session.identity, frames: x.status().session.frames };
+      return { error, before, after, storedBefore: storedBefore ? Array.from(storedBefore) : null,
+        storedAfter: storedAfter ? Array.from(storedAfter) : null, retainedStep, afterStep, fresh };
+    });
+    assert.match(result.error, /card package identity mismatch/i);
+    assert.deepEqual(result.after, result.before, 'foreign binding leaves the active fixture session and image untouched');
+    assert.deepEqual(result.storedAfter, result.storedBefore, 'foreign binding is refused before the IndexedDB write');
+    assert.equal(result.retainedStep.frames, 1);
+    assert.equal(result.retainedStep.stopped, null);
+    assert.equal(result.afterStep.generation, result.before.generation);
+    assert.equal(result.afterStep.frames, result.before.frames + 1);
+    assert.equal(result.fresh.generation, result.before.generation + 1);
+    assert.deepEqual(result.fresh.identity.packages, []);
+    assert.equal(result.fresh.frames, 0);
+
+    const metadata = Buffer.from(JSON.stringify({
+      disc: '',
+      packages: Array.from({ length: 32 }, (_, index) => `foreign-${index}-`.padEnd(128, 'x')),
+    }));
+    const raw = Buffer.from(result.before.image);
+    const prefix = Buffer.alloc(12 + metadata.length + raw.length);
+    prefix.write('XEMSAVE1', 0, 'ascii');
+    prefix.writeUInt32LE(metadata.length, 8);
+    metadata.copy(prefix, 12);
+    raw.copy(prefix, 12 + metadata.length);
+    const archive = Buffer.concat([prefix, createHash('sha256').update(prefix).digest()]);
+    assert.ok(archive.length > 0xf40 + 0x20000, 'fixture archive exceeds the old raw card-file limit');
+    assert.ok(archive.length < 0x20000 + (16 << 10) + 44, 'fixture archive remains within the shared package-card limit');
+    await page.setInputFiles('#import-card', {
+      name: 'foreign-large.xemcard', mimeType: 'application/octet-stream', buffer: archive,
+    });
+    await page.waitForFunction(() => /card package identity mismatch/i.test(window.xem.status().page.operationStatus ?? ''));
+    const imported = await page.evaluate(async () => ({
+      status: window.xem.status(), hash: window.xem.memoryHash(), image: Array.from(window.xem.cards.image(0)),
+      stored: await window.xem.cards.stored(0),
+    }));
+    assert.match(imported.status.page.operationStatus, /card package identity mismatch/i,
+      'a large valid wrapper reaches binding validation instead of the legacy raw-file size guard');
+    assert.deepEqual(imported.image, result.before.image, 'foreign import leaves the live card unchanged');
+    assert.deepEqual(imported.stored ? Array.from(imported.stored) : null, result.storedBefore,
+      'foreign import is rejected before its IndexedDB write');
+    assert.deepEqual(imported.hash, result.before.hash, 'foreign import leaves session memory unchanged');
+  });
+
+  test('a card replacement waits for its IndexedDB write before a fresh boot can replace the session', async () => {
+    const result = await page.evaluate(async () => {
+      const x = window.xem;
+      await x.boot({ executable: false });
+      const generation = x.status().page.sessionGeneration;
+      const storage = await import('/storage.js');
+      const priorStored = await storage.get('cards', 'card1');
+      const db = await new Promise((resolve, reject) => {
+        const request = indexedDB.open('xem', 2);
+        request.onsuccess = () => resolve(request.result);
+        request.onerror = () => reject(request.error);
+      });
+      const blocker = db.transaction('cards', 'readwrite');
+      const objectStore = blocker.objectStore('cards');
+      let holding = true;
+      const keepAlive = () => {
+        if (!holding) return;
+        const request = objectStore.get('__synthetic-lock__');
+        request.onsuccess = keepAlive;
+        request.onerror = keepAlive;
+      };
+      keepAlive();
+      const replacement = new Uint8Array(x.cards.image(0));
+      replacement[0x2000] ^= 0x5a;
+      let replacementDone = false, bootDone = false;
+      const replacing = x.cards.store(0, replacement).then(() => { replacementDone = true; });
+      await new Promise((resolve) => setTimeout(resolve, 25));
+      const booting = x.boot({ executable: false }).then(() => { bootDone = true; });
+      await new Promise((resolve) => setTimeout(resolve, 50));
+      const waited = !bootDone && !replacementDone && x.status().page.sessionGeneration === generation;
+      holding = false;
+      blocker.abort();
+      try {
+        await Promise.all([replacing, booting]);
+        const result = { waited, generation, nextGeneration: x.status().page.sessionGeneration,
+          image: Array.from(x.cards.image(0)), stored: Array.from(await x.cards.stored(0)) };
+        if (priorStored === undefined) await storage.remove('cards', 'card1');
+        else await storage.put('cards', 'card1', priorStored);
+        return result;
+      } finally { db.close(); }
+    });
+    assert.equal(result.waited, true, 'boot remains queued behind the in-flight card replacement');
+    assert.equal(result.nextGeneration, result.generation + 1);
+    assert.deepEqual(result.image, result.stored, 'the completed replacement is what the new session loads');
   });
 
   test('the animation loop runs due frames in bounded batches and drops missed time', async () => {

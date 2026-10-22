@@ -2,8 +2,10 @@
 use std::path::{Path, PathBuf};
 use serde_json::{Value, json};
 use xem_core::{control::Session, module::GameModule};
-use xem_core::devices::card::{CardStorage, formatted, CARD_SIZE};
-use xem_core::devices::card_file::MAX_FILE;
+use xem_core::devices::card::CardStorage;
+#[cfg(test)]
+use xem_core::devices::card::formatted;
+use xem_core::save::{MAX_CARD_ARCHIVE, SaveBinding, unwrap_card_file, wrap_card};
 
 /// The BIOS image the player imported (Import BIOS, `xem_core::bios`), kept
 /// in the app's directory beside its settings and its `cards` directory:
@@ -16,8 +18,8 @@ pub fn stored_bios(directory: &Path) -> Option<PathBuf> {
     Some(directory.join(BIOS_FILE)).filter(|path| path.is_file())
 }
 
-/// Images as files `card1.mcd` and `card2.mcd` in a directory; a missing
-/// file is a fresh formatted card.
+/// Raw or package-bound card files in a directory. Missing files return None;
+/// boot composes BoundCardStorage to create a fresh, correctly bound card.
 pub struct FileStorage {
     pub dir: PathBuf,
 }
@@ -30,9 +32,9 @@ impl FileStorage {
 
 impl CardStorage for FileStorage {
     fn load(&mut self, slot: usize) -> std::io::Result<Option<Vec<u8>>> {
-        match xem_storage::read(&self.path(slot),CARD_SIZE) {
+        match xem_storage::read(&self.path(slot),MAX_CARD_ARCHIVE) {
             Ok(image) => Ok(Some(image)),
-            Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(Some(formatted())),
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(None),
             Err(error) => Err(error),
         }
     }
@@ -71,19 +73,21 @@ pub fn command<M: GameModule>(session: &mut Session<M>, command: &Value) -> Valu
                 let slot = command.get("slot").and_then(Value::as_u64).unwrap_or(0);
                 if slot > 1 { return Err("card slot is 0 or 1".into()); }
                 let slot = slot as usize;
+                let binding = SaveBinding::from(&session.runtime.identity);
                 let services = session.runtime.services();
                 let now = services.clock.now;
                 let card = &mut services.card;
                 if cmd == "card_import" {
                     // Any card or save file, by its contents (a raw single
                     // save by its file name), as Import original card 1/2.
-                    let bytes = xem_storage::read(path,MAX_FILE).map_err(|e| format!("{}: {e}",path.display()))?;
+                    let bytes = xem_storage::read(path,MAX_CARD_ARCHIVE).map_err(|e| format!("{}: {e}",path.display()))?;
                     let file_name = path.file_name().map(|name| name.to_string_lossy().into_owned()).unwrap_or_default();
-                    let message = card.import_file(slot,&bytes,&file_name,now)?;
+                    let raw = unwrap_card_file(&bytes, &binding)?;
+                    let message = card.import_file(slot,&raw,&file_name,now)?;
                     Ok(json!({"ok":true,"slot":slot,"message":message,"card":card.status(slot,now)}))
                 } else {
                     let image = card.image(slot).ok_or("no card in slot")?;
-                    xem_storage::replace(path,image).map_err(|e| e.to_string())?;
+                    xem_storage::replace(path,&wrap_card(image, &binding)?).map_err(|e| e.to_string())?;
                     Ok(json!({"ok":true,"slot":slot}))
                 }
             }

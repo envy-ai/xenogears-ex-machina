@@ -106,6 +106,9 @@ pub struct XemApp {
     /// the page shows; the verified Xenogears discs among them are the game's.
     discs: Vec<(u32, disc::DiscImport)>,
     next_disc: u32,
+    staged_packages: xem_disc::mods::PackageSet,
+    package_generation: u64,
+    session_package_generation: u64,
     /// The disc the game waits for that the drive's changer has not got.
     wanted_disc: Option<u8>,
     renderer: Option<WebRenderer>,
@@ -264,6 +267,9 @@ impl XemApp {
             memory_bytes: 0,
             discs: Vec::new(),
             next_disc: 1,
+            staged_packages: Default::default(),
+            package_generation: 0,
+            session_package_generation: 0,
             wanted_disc: None,
             renderer: None,
             panel_closed: Rc::new(Cell::new(false)),
@@ -1452,17 +1458,25 @@ impl XemApp {
             panel.set_disc_status(&disc_summary(&self.discs[index].1));
         }
         let Some(known) = self.discs[index].1.verified_disc() else { return };
-        let Some(session) = self.session.as_mut() else {
+        if self.session.is_none() {
             self.discs.retain(|(n, disc)| *n == id || disc.verified_disc() != Some(known));
-            return;
-        };
-        let services = session.runtime.services();
-        if !services.cd.holds(known.number()) {
-            match self.discs[index].1.game_source() {
-                Ok(source) => services.add_disc(known.number(), source),
-                Err(e) => web_sys::console::error_1(&format!("xem: disc {}: {e}", known.number()).into()),
+        }
+    }
+
+    /// A newly imported disc joins a running changer only after the active
+    /// (not staged) content set is fully validated, with demand reads pumped.
+    pub fn attach_discs(&mut self) -> Result<bool, JsValue> {
+        let Some(session) = self.session.as_mut() else { return Ok(true); };
+        let mut sources = Vec::new();
+        for number in [1,2] {
+            if session.runtime.services().cd.holds(number) { continue; }
+            if let Some((_,disc)) = self.discs.iter_mut().rev().find(|(_,d)| d.verified_disc().is_some_and(|d| d.number()==number)) {
+                if !disc.prepare_packages(&session.runtime.packages, self.session_package_generation).map_err(error)? { return Ok(false); }
+                sources.push((number,disc.prepared_source(self.session_package_generation).map_err(error)?));
             }
         }
+        for (number,source) in sources { session.runtime.services().add_disc(number,source); }
+        Ok(true)
     }
 
     pub fn disc_fill(&mut self, id: u32, offset: f64, data: &[u8]) -> Result<(), JsValue> {
@@ -1507,6 +1521,32 @@ impl XemApp {
         self.schema = Some(text);
     }
 
+    /// Shared transport bound, available before copying a caller's buffer
+    /// into WASM memory. It is defined only by the package parser.
+    pub fn package_set_limit(&self) -> usize { xem_disc::mods::MAX_SET_BYTES }
+
+    /// Stage exactly the set container accepted by native --packages. No
+    /// active session is changed; even disabled input is structurally checked.
+    pub fn set_packages(&mut self, bytes: &[u8], enabled: bool) -> Result<String, JsValue> {
+        let set = xem_disc::mods::PackageSet::from_bytes(bytes).map_err(|e| error(e.to_string()))?;
+        let next = self.package_generation.checked_add(1).ok_or_else(|| error("package generation exhausted"))?;
+        self.staged_packages = if enabled { set } else { Default::default() };
+        self.package_generation = next;
+        Ok(serde_json::json!({"generation":next,"identities":self.staged_packages.identities(),"pending_boot":true}).to_string())
+    }
+
+    /// Advance the verified boot disc and changer overlays using the existing
+    /// disc_missing/disc_fill binary range protocol.
+    pub fn prepare_packages(&mut self) -> Result<bool, JsValue> {
+        let mut ready = true;
+        for number in [1,2] {
+            if let Some((_,disc)) = self.discs.iter_mut().rev().find(|(_,d)| d.verified_disc().is_some_and(|d| d.number()==number)) {
+                ready &= disc.prepare_packages(&self.staged_packages, self.package_generation).map_err(error)?;
+            }
+        }
+        Ok(ready)
+    }
+
     /// Start a session on a fresh instance of game.wasm whose "xem" imports,
     /// in `import_names` order, forward to [`xem_game_import`]. Loads the
     /// identified known disc's executable as the BIOS does (as xem-headless
@@ -1539,12 +1579,12 @@ impl XemApp {
             };
             let identification = disc.identification().expect("a verified disc is identified");
             let other = match other {
-                Some(other) => Some((2, other.game_source().map_err(error)?)),
+                Some(other) => Some((2, other.prepared_source(self.package_generation).map_err(error)?)),
                 None => None,
             };
             (
-                Some(identification.executable.clone()),
-                Some((disc.verified_disc().expect("verified").number(), disc.game_source().map_err(error)?)),
+                Some(disc.prepared_executable(self.package_generation).map_err(error)?),
+                Some((disc.verified_disc().expect("verified").number(), disc.prepared_source(self.package_generation).map_err(error)?)),
                 Some(xem_disc::state_identity(identification)),
                 other,
             )
@@ -1555,21 +1595,23 @@ impl XemApp {
         if schema.as_ref().and_then(|schema| schema.module_sha256.as_deref()).is_some_and(|id| id != module_id) {
             return Err(error("schema module_sha256 does not match the loaded game module"));
         }
-        self.session = None;
-        self.audio = Default::default();
-        self.running = false;
         if module_id.len() != 64 || !module_id.bytes().all(|b| b.is_ascii_hexdigit()) {
             return Err(error("module identity must be its SHA-256"));
         }
         let module = WebModule::new(&instance, import_names, module_id).map_err(error)?;
-        self.memory_bytes = module.memory_bytes();
+        let memory_bytes = module.memory_bytes();
         // As xem_game::boot does natively.
         let mut runtime = Runtime::new(module);
         if let Some(identity) = identity {
             runtime.identity.disc = identity;
         }
+        if !load_executable && !self.staged_packages.is_empty() { return Err(error("packages require an identified original disc")); }
+        runtime.identity.packages = self.staged_packages.identities();
+        runtime.packages = self.staged_packages.clone();
         runtime.services().stub_names = self.stub_names.clone();
-        runtime.services().card.attach_storage(Box::new(self.cards.clone())).map_err(error)?;
+        let binding = xem_core::save::SaveBinding::from(&runtime.identity);
+        let cards = xem_core::save::BoundCardStorage::prepare(Box::new(self.cards.clone()), binding).map_err(error)?;
+        runtime.services().card.attach_storage(Box::new(cards)).map_err(error)?;
         runtime.services().spu.set_output(true);
         if let Some(executable) = executable {
             // The player's BIOS image's Kanji font, else the substitute glyphs.
@@ -1584,12 +1626,23 @@ impl XemApp {
         if let Some((number, source)) = other {
             runtime.services().add_disc(number, source);
         }
+        let mut session = Session::new(runtime,schema,|| std::time::Duration::from_secs_f64(now_ms()/1000.0));
+        let next = {
+            let settings = self.settings.borrow();
+            let settings = settings.settings();
+            (settings.fast_forward_rate, settings.rewind_enabled, settings.rewind_interval_seconds, settings.rewind_history_seconds)
+        };
+        session.configure_fast_forward(next.0).map_err(error)?;
+        session.configure_rewind(if rewind && next.1 { xem_core::rewind::MAX_REWIND_BYTES } else { 0 },next.2,next.3).map_err(error)?;
+        self.memory_bytes = memory_bytes;
+        self.session_package_generation = self.package_generation;
+        self.audio = Default::default();
+        self.running = false;
         self.wanted_disc = None;
-        self.session = Some(Session::new(runtime,schema,|| std::time::Duration::from_secs_f64(now_ms()/1000.0)));
-        self.applied_time_settings = None;
+        self.session = Some(session);
+        self.applied_time_settings = Some(next);
         self.rewind_held = [false;2];
         self.rewind_next = 0.0;
-        self.apply_time_settings(rewind)?;
         self.host_buttons = 0;
         self.display_dirty = true;
         Ok(self.status())
@@ -1698,18 +1751,32 @@ impl XemApp {
         if slot > 1 {
             return Err(error("cards are 0 and 1"));
         }
-        if image.as_ref().is_some_and(|i| i.len() != xem_core::devices::card::CARD_SIZE) {
-            return Err(error("memory card image must be exactly 128 KiB (.mcd)"));
-        }
+        if let Some(bytes) = &image { self.check_card_image(slot, bytes)?; }
         if let Some(session) = self.session.as_mut() {
             // The live device too: its next in-game save must use the
             // imported image rather than replace it with the old session card.
+            let binding = xem_core::save::SaveBinding::from(&session.runtime.identity);
+            let card = image.as_deref().map(|b| xem_core::save::unwrap_card(b,&binding)).transpose().map_err(error)?.unwrap_or_else(xem_core::devices::card::formatted);
             let services = session.runtime.services();
-            let card = image.clone().unwrap_or_else(xem_core::devices::card::formatted);
             services.card.change(slot, card, services.clock.now).map_err(error)?;
         }
         // IndexedDB holds it: not a write to make.
         self.cards.set_image(slot, image);
+        Ok(())
+    }
+
+    /// Shared upper bound for original card imports and package envelopes.
+    pub fn card_file_limit(&self) -> usize { xem_core::save::MAX_CARD_ARCHIVE }
+
+    /// Validate before IndexedDB changes, including the live session binding.
+    pub fn check_card_image(&self, slot: usize, bytes: &[u8]) -> Result<(), JsValue> {
+        if slot > 1 { return Err(error("cards are 0 and 1")); }
+        {
+            xem_core::save::validate_card_image(bytes).map_err(error)?;
+            if let Some(session) = &self.session {
+                xem_core::save::unwrap_card(bytes, &xem_core::save::SaveBinding::from(&session.runtime.identity)).map_err(error)?;
+            }
+        }
         Ok(())
     }
 
@@ -1721,14 +1788,17 @@ impl XemApp {
     /// open on that card or is busy with it. Nothing changes: the page writes
     /// the image to IndexedDB, then sets it ([`set_card_image`](Self::set_card_image)).
     pub fn read_card_file(&mut self, slot: usize, bytes: &[u8], file_name: &str) -> Result<js_sys::Object, JsValue> {
+        let binding = self.session.as_ref().map(|s| xem_core::save::SaveBinding::from(&s.runtime.identity)).unwrap_or_default();
+        let raw = xem_core::save::unwrap_card_file(bytes, &binding).map_err(error)?;
         let (image, message) = match self.session.as_mut() {
             Some(session) => {
                 let services = session.runtime.services();
-                services.card.read_file(slot, bytes, file_name, services.clock.now)
+                services.card.read_file(slot, &raw, file_name, services.clock.now)
             }
-            None => xem_core::devices::card::Card::default().read_file(slot, bytes, file_name, 0),
+            None => xem_core::devices::card::Card::default().read_file(slot, &raw, file_name, 0),
         }
         .map_err(error)?;
+        let image = xem_core::save::wrap_card(&image, &binding).map_err(error)?;
         let found = js_sys::Object::new();
         js_sys::Reflect::set(&found, &"image".into(), &js_sys::Uint8Array::from(&image[..]))?;
         js_sys::Reflect::set(&found, &"message".into(), &message.into())?;
@@ -1742,9 +1812,11 @@ impl XemApp {
     }
 
     /// The image the card device holds in `slot` (none without a session).
-    pub fn card_image(&mut self, slot: usize) -> Option<Vec<u8>> {
-        let session = self.session.as_mut()?;
-        (slot < 2).then(|| session.runtime.services().card.image(slot).map(<[u8]>::to_vec)).flatten()
+    pub fn card_image(&mut self, slot: usize) -> Result<Option<Vec<u8>>, JsValue> {
+        if slot > 1 { return Err(error("cards are 0 and 1")); }
+        let Some(session) = self.session.as_mut() else { return Ok(None); };
+        let binding = xem_core::save::SaveBinding::from(&session.runtime.identity);
+        session.runtime.services().card.image(slot).map(|raw| xem_core::save::wrap_card(raw, &binding)).transpose().map_err(error)
     }
 
     // --- BIOS ---------------------------------------------------------------

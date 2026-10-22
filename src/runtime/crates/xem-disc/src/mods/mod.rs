@@ -5,6 +5,6 @@ mod overlay;
 mod package;
 pub use overlay::{Preparation, PreparedOverlay};
 pub use package::{
-    BuildFile, BuildSpec, DiscTarget, FileEntry, MAX_PACKAGE_BYTES, MAX_SET_BYTES, Manifest, Package, PackageSet,
-    PayloadKind,
+    BuildFile, BuildSpec, DiscTarget, FileEntry, MAX_PACKAGE_BYTES, MAX_SET_BYTES, Manifest,
+    Package, PackageSet, PayloadKind,
 };

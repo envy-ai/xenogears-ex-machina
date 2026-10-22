@@ -5,13 +5,19 @@ use serde_json::Value;
 #[cfg(feature = "test-fixtures")]
 use serde_json::json;
 #[cfg(feature = "test-fixtures")]
+use std::fs::OpenOptions;
+#[cfg(feature = "test-fixtures")]
 use std::io::Write;
 #[cfg(feature = "test-fixtures")]
 use std::time::{SystemTime, UNIX_EPOCH};
 #[cfg(feature = "test-fixtures")]
+use sha2::Digest;
+#[cfg(feature = "test-fixtures")]
 use xem_studio::Studio;
 use xem_studio::disc::extract_events;
 use xem_studio::disc::{DiscSessions, OpenArgs};
+#[cfg(feature = "test-fixtures")]
+use xem_disc::mods::{BuildFile, BuildSpec, DiscTarget, Package, PackageSet};
 
 fn pull_fixture(sessions: &mut DiscSessions, image: &[u8]) -> (u32, Value) {
     let opened = sessions
@@ -279,4 +285,139 @@ fn studio_protocol_opens_binary_pull_ranges_and_returns_map_components() {
         file.sync_all()
             .expect("finish synthetic native parity result");
     }
+}
+
+#[cfg(feature = "test-fixtures")]
+#[test]
+fn synthetic_package_overlay_reports_prepared_executable_mirror_and_raw_reads() {
+    let fixture = synthetic_disc::build();
+    let mut source = xem_disc::BinSource::whole(fixture.image.clone())
+        .expect("synthetic image is a complete raw track");
+    let identification = xem_disc::identify(&mut source).expect("synthetic image identifies");
+    assert_eq!(identification.boot_path, synthetic_disc::BOOT_PATH);
+    let target = DiscTarget::from_identification(&identification);
+    let mut result = fixture.bundle.clone();
+    result.extend((0..3_000).map(|index| (index as u8).wrapping_mul(13).wrapping_add(7)));
+    let package = Package::build(
+        BuildSpec {
+            id: "synthetic-overlay-parity".into(),
+            discs: vec![target.clone()],
+            requires: vec![],
+            overrides: vec![],
+        },
+        vec![BuildFile {
+            disc: target.serial,
+            slot: 0xB8,
+            source: Some(fixture.bundle.clone()),
+            result: result.clone(),
+        }],
+    )
+    .expect("build authored synthetic delta package");
+    let set = PackageSet::from_bytes(
+        &PackageSet::new(vec![Package::decode(&package).expect("package decodes")])
+            .expect("single synthetic package set")
+            .to_bytes(),
+    )
+    .expect("versioned package set round-trips");
+    let set_bytes = set.to_bytes();
+    let summary: Value = serde_json::from_str(
+        &xem_studio::package_fixture_overlay(&fixture.image, &set_bytes, 0xB8)
+            .expect("shared package preparation accepts the synthetic fixture"),
+    )
+    .expect("helper returns JSON");
+
+    assert_eq!(summary["boot_path"], synthetic_disc::BOOT_PATH);
+    assert_eq!(summary["slot"], 0xB8);
+    assert_eq!(summary["replacement_bytes"], json!(result));
+    assert_eq!(summary["embedded_record"]["lba"], 80);
+    assert_eq!(summary["mirror_record"], summary["embedded_record"]);
+    assert_eq!(summary["mirror_record"]["size"], result.len());
+    assert_eq!(
+        summary["source_sha256"],
+        xem_disc::identify::hex(&sha2::Sha256::digest(&fixture.bundle))
+    );
+    assert_eq!(
+        summary["replacement_sha256"],
+        xem_disc::identify::hex(&sha2::Sha256::digest(&result))
+    );
+    assert_eq!(
+        summary["untouched_source_sha256"],
+        xem_disc::identify::hex(&sha2::Sha256::digest([0u8; 4]))
+    );
+    assert_eq!(summary["untouched_source_sha256"], summary["untouched_overlay_sha256"]);
+    assert_ne!(summary["source_sha256"], summary["replacement_sha256"]);
+    assert_ne!(summary["executable"], json!(fixture.executable));
+    assert_eq!(summary["boot_mirror"], summary["executable"]);
+    assert_eq!(summary["boot_mirror_sha256"], summary["executable_sha256"]);
+    assert_eq!(summary["executable_sha256"].as_str().unwrap().len(), 64);
+    assert_eq!(summary["mirror_index"].as_array().unwrap().len(), 0x8000);
+    assert_eq!(summary["embedded_index_sha256"], summary["mirror_index_sha256"]);
+    let progress = &summary["missing_read_progress"];
+    let preparation = &progress["preparation"];
+    let inspection = &progress["inspection"];
+    assert!(preparation["attempts"].as_u64().unwrap() > 1);
+    assert!(preparation["ranges"].as_u64().unwrap() > 0);
+    assert!(preparation["bytes"].as_u64().unwrap() > 0);
+    assert!(preparation["resident_source_bytes"].as_u64().unwrap() <= preparation["cache_budget_bytes"].as_u64().unwrap());
+    assert!(inspection["ranges"].as_u64().is_some());
+    assert!(inspection["bytes"].as_u64().is_some());
+
+    if let Ok(output_path) = std::env::var("XEM_STUDIO_MOD_PARITY_OUTPUT") {
+        write_overlay_parity_fixture(
+            &std::path::PathBuf::from(output_path),
+            &fixture.image,
+            &set_bytes,
+            &summary,
+        );
+    }
+}
+
+#[cfg(feature = "test-fixtures")]
+fn write_overlay_parity_fixture(
+    output_path: &std::path::Path,
+    image: &[u8],
+    package_set: &[u8],
+    expected: &Value,
+) {
+    let repository = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .ancestors()
+        .nth(4)
+        .expect("crate is inside the repository")
+        .to_path_buf();
+    let fixture_root = repository.join("tmp/studio");
+    assert!(
+        output_path.starts_with(&fixture_root),
+        "synthetic parity output must remain under ignored tmp/studio"
+    );
+    let parent = output_path.parent().expect("parity fixture path has parent");
+    std::fs::create_dir_all(parent).expect("create ignored parity output parent");
+    let stem = output_path
+        .file_stem()
+        .and_then(|value| value.to_str())
+        .unwrap_or("package-overlay-parity");
+    let input_dir = parent.join(format!("{stem}-inputs"));
+    std::fs::create_dir(&input_dir).expect("create a fresh ignored synthetic fixture directory");
+    let image_path = input_dir.join("invented-disc.bin");
+    let set_path = input_dir.join("synthetic-set.xemset");
+    write_new(&image_path, image);
+    write_new(&set_path, package_set);
+    let output = json!({
+        "image_path": image_path,
+        "set_path": set_path,
+        "slot": 0xB8,
+        "expected": expected,
+    });
+    let bytes = serde_json::to_vec_pretty(&output).expect("serialize parity fixture");
+    write_new(output_path, &bytes);
+}
+
+#[cfg(feature = "test-fixtures")]
+fn write_new(path: &std::path::Path, bytes: &[u8]) {
+    let mut file = OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(path)
+        .expect("create a new synthetic parity fixture file");
+    file.write_all(bytes).expect("write synthetic parity fixture");
+    file.sync_all().expect("finish synthetic parity fixture");
 }

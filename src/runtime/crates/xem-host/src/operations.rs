@@ -4,7 +4,7 @@ use sdl3_sys::everything::*;
 use std::ffi::{CStr, CString, c_char, c_void};
 use std::path::PathBuf;
 use std::sync::mpsc::{self, Receiver, Sender};
-use xem_core::devices::card_file::MAX_FILE;
+use xem_core::save::MAX_CARD_ARCHIVE;
 use xem_settings::{AppAction, AppRequest, FileStore, SettingChange, SettingsService};
 
 struct Dialog {
@@ -79,7 +79,7 @@ impl Operations {
                     // says what was found.
                     let slot = usize::from(dialog.action == AppAction::ImportCard2);
                     let game = game.as_deref_mut().ok_or("Boot a game before importing a card.")?;
-                    return game.import_card(slot,&read(&path,MAX_FILE)?,&file_name(&path));
+                    return game.import_card(slot,&read(&path,MAX_CARD_ARCHIVE)?,&file_name(&path));
                 }
                 AppAction::ImportBios => return self.import_bios_file(game.as_deref_mut(),&path),
                 _ => return Err("Unexpected file operation.".into()),
@@ -194,7 +194,7 @@ impl Operations {
                     AppAction::ExportState => Some(game.as_deref_mut().ok_or("No game session.")?.snapshot_bytes()?),
                     AppAction::ExportCard1 | AppAction::ExportCard2 => {
                         let slot = usize::from(action == AppAction::ExportCard2);
-                        Some(game.as_deref_mut().ok_or("No game session.")?.card_image(slot).ok_or("No card in slot.")?)
+                        Some(game.as_deref_mut().ok_or("No game session.")?.card_image(slot)?.ok_or("No card in slot.")?)
                     }
                     _ => None,
                 };

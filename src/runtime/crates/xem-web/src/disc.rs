@@ -87,6 +87,7 @@ pub struct DiscImport {
     fetched: u64,
     fetches: u64,
     polls: u64,
+    packages: Option<(u64, xem_disc::mods::Preparation)>,
 }
 
 impl DiscImport {
@@ -101,6 +102,7 @@ impl DiscImport {
             fetched: 0,
             fetches: 0,
             polls: 0,
+            packages: None,
         }
     }
 
@@ -204,6 +206,41 @@ impl DiscImport {
             _ => return Err("the disc is not identified".into()),
         }
         .map_err(|e| e.to_string())
+    }
+
+    /// Prepare an immutable overlay outside the original PrefetchedFile cache.
+    /// The generation belongs to the staged set, not to physical file chunks.
+    pub fn prepare_packages(&mut self, set: &xem_disc::mods::PackageSet, generation: u64) -> Result<bool, String> {
+        if self.packages.as_ref().is_none_or(|(g, _)| *g != generation) {
+            let identity = self.identification.as_ref().ok_or("disc not identified")?;
+            self.packages = Some((generation, set.preparation(identity).map_err(|e| e.to_string())?));
+        }
+        let Stage::Ready(source) = &mut self.stage else { return Err("disc not verified".into()); };
+        let (_, preparation) = self.packages.as_mut().expect("prepared above");
+        match preparation.advance(source.as_mut()) {
+            Ok(false) | Err(Error::NotReady) => return Ok(false),
+            Err(e) => return Err(e.to_string()),
+            Ok(true) => {}
+        }
+        // wrap also validates the original boot digest. Complete those reads
+        // now, before boot publishes a new session.
+        let overlay = preparation.overlay().ok_or("package preparation incomplete")?;
+        match overlay.wrap(self.game_source()?) {
+            Ok(_) => Ok(true),
+            Err(Error::NotReady) => Ok(false),
+            Err(e) => Err(e.to_string()),
+        }
+    }
+
+    pub fn prepared_source(&self, generation: u64) -> Result<Box<dyn SectorSource>, String> {
+        let overlay = self.packages.as_ref().filter(|(g,_)| *g == generation)
+            .and_then(|(_,p)| p.overlay()).ok_or("packages must be prepared before boot")?;
+        overlay.wrap(self.game_source()?).map_err(|e| e.to_string())
+    }
+
+    pub fn prepared_executable(&self, generation: u64) -> Result<Vec<u8>, String> {
+        self.packages.as_ref().filter(|(g,_)| *g == generation).and_then(|(_,p)| p.overlay())
+            .map(|p| p.executable().to_vec()).ok_or_else(|| "packages must be prepared before boot".into())
     }
 
     /// The byte ranges reads are waiting for.

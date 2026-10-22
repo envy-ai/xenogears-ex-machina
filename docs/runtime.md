@@ -7980,6 +7980,18 @@ From `src/runtime/` in `nix develop path:./nix/runtime`:
   (Slint compiles its FemtoVG module out on Android, so `xem-ui` takes the
   renderer from `i-slint-renderer-femtovg` there)
 
+## Runtime mod packages
+
+Studio milestone five adds shared data-only mod packages. See the
+[format, limits, CLI, browser staging and save compatibility contract](studio-milestone-5-implementation.md).
+Native hosts accept `--packages FILE.xemmods` (plus `--packages-disabled` to
+validate without activating). Browser hosts accept the same bytes through
+`window.xem.packages.stage(bytes, {enabled: true})`, followed by a fresh boot.
+The common `status.identity.packages` names the actual ordered content set.
+Changes never replace content underneath a running timeline. Ordinary modded
+cards carry a separate sealed identity wrapper; snapshots and replay validate
+matching package identities before restoration or playback.
+
 ## Browser host
 
 `xem-web` (wasm32-unknown-unknown, wasm-bindgen) and the thin ES-module page in
