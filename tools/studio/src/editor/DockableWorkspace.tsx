@@ -35,14 +35,14 @@ import {
   type ToolStripEdge,
   type WorkspaceDockEdge,
   type WorkspaceFloat,
-  type WorkspaceLayoutV1,
+  type WorkspaceLayoutV2,
   type WorkspacePanelId
 } from './workspaceLayout';
 import { usePersistedPreferences } from './usePersistedPreferences';
 import { useEditorPreferenceStore } from './EditorPreferenceStore';
 
 const PANEL_LABELS: Record<WorkspacePanelId, string> = {
-  project: 'Project', backend: 'Backend', log: 'Log'
+  project: 'Project', backend: 'Backend', log: 'Log', live: 'Live game', inspector: 'Schema inspector'
 };
 
 export interface WorkspacePanelProps {
@@ -66,12 +66,12 @@ function viewport() {
 }
 
 export function useWorkspaceLayout(): [
-  WorkspaceLayoutV1,
-  Dispatch<SetStateAction<WorkspaceLayoutV1>>,
+  WorkspaceLayoutV2,
+  Dispatch<SetStateAction<WorkspaceLayoutV2>>,
   () => void
 ] {
   const { hostStorage } = useEditorPreferenceStore();
-  const [layout, setLayout] = useState<WorkspaceLayoutV1>(() =>
+  const [layout, setLayout] = useState<WorkspaceLayoutV2>(() =>
     readWorkspaceLayout(hostStorage, viewport())
   );
   usePersistedPreferences(WORKSPACE_LAYOUT_STORAGE_KEY, layout, setLayout, (current) =>
@@ -85,8 +85,8 @@ export function useWorkspaceLayout(): [
 }
 
 interface DockableWorkspaceProps {
-  layout: WorkspaceLayoutV1;
-  setLayout: Dispatch<SetStateAction<WorkspaceLayoutV1>>;
+  layout: WorkspaceLayoutV2;
+  setLayout: Dispatch<SetStateAction<WorkspaceLayoutV2>>;
   resetLayout: () => void;
   controlsTarget?: HTMLElement | null;
   /** Let dock zones fill the workspace when there is no fixed center canvas. */
@@ -117,7 +117,7 @@ type ResizeState =
       edge: WorkspaceDockEdge;
       startX: number;
       startY: number;
-      initial: WorkspaceLayoutV1;
+      initial: WorkspaceLayoutV2;
     }
   | {
       type: 'stack';
@@ -126,14 +126,14 @@ type ResizeState =
       nextIndex: number;
       startX: number;
       startY: number;
-      initial: WorkspaceLayoutV1;
+      initial: WorkspaceLayoutV2;
     }
   | {
       type: 'float';
       panelId: WorkspacePanelId;
       startX: number;
       startY: number;
-      initial: WorkspaceLayoutV1;
+      initial: WorkspaceLayoutV2;
     };
 
 export function DockableWorkspace({
@@ -939,8 +939,8 @@ export function DockableToolStrip({
   setLayout,
   children
 }: {
-  layout: WorkspaceLayoutV1;
-  setLayout: Dispatch<SetStateAction<WorkspaceLayoutV1>>;
+  layout: WorkspaceLayoutV2;
+  setLayout: Dispatch<SetStateAction<WorkspaceLayoutV2>>;
   children: ReactNode;
 }) {
   const [menu, setMenu] = useState<EditorContextMenuRequest | null>(null);

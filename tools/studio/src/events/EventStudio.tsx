@@ -47,6 +47,7 @@ function useStudio(backend: Backend | null, folder: FilesAdapter | null, report:
   const [activeDisc, setActiveDisc] = useState<number | null>(null);
   const [map, setMap] = useState<number | null>(null);
   const [graph, setGraph] = useState<FieldGraph | null>(null);
+  const [componentBytes, setComponentBytes] = useState<number[] | null>(null);
   const [selection, setSelection] = useState<Selection>({ actor: 0, event: 0, pc: null });
   const [structure, setStructure] = useState<EventStructure | null>(null);
   const [lanes, setLanes] = useState<MapLanes | null>(null);
@@ -132,7 +133,7 @@ function useStudio(backend: Backend | null, folder: FilesAdapter | null, report:
     const decoded = call<FieldGraph>('field.decode', { bytes, declared_size });
     const first = decoded.entries[0];
     structures.current.clear(); navigation.current = { items: [], at: -1 };
-    setMap(number); setGraph(decoded); setLanes(null); setStructure(null);
+    setMap(number); setGraph(decoded); setComponentBytes(bytes.slice()); setLanes(null); setStructure(null);
     setSelection(first ? { actor: first.actor, event: first.event, pc: first.pc } : { actor: 0, event: 0, pc: null });
     await paintedView('list');
     renderTimes.current.push({ view: 'list', ms: performance.now() - started, actor: first?.actor ?? 0, event: first?.event ?? 0, map: number, instructions: decoded.instructions.length });
@@ -254,7 +255,7 @@ function useStudio(backend: Backend | null, folder: FilesAdapter | null, report:
     };
     window.addEventListener('keydown', key); return () => window.removeEventListener('keydown', key);
   }, [graph, selection, setView, follow]);
-  const state = { backend, discs, activeDisc, setActiveDisc: selectDisc, map, graph, selection, select, structure, lanes, view, setView, busy, filter, setFilter, find, setFind, rename, setRename, history, sidecarReady, sidecarError, filterRef, findRef, openFiles, openNativePath, openServerDisc, loadMap, closeDisc, follow, navigate, install, report, renderTimes };
+  const state = { backend, componentBytes, discs, activeDisc, setActiveDisc: selectDisc, map, graph, selection, select, structure, lanes, view, setView, busy, filter, setFilter, find, setFind, rename, setRename, history, sidecarReady, sidecarError, filterRef, findRef, openFiles, openNativePath, openServerDisc, loadMap, closeDisc, follow, navigate, install, report, renderTimes };
   const latest = useRef(state); latest.current = state;
   useEffect(() => {
     if (import.meta.env.VITE_XEM_STUDIO_TEST !== '1' || !backend) return;
@@ -275,6 +276,23 @@ function useStudio(backend: Backend | null, folder: FilesAdapter | null, report:
 export function EventStudioProvider({ backend, folder, report, log, children }: { backend: Backend | null; folder: FilesAdapter | null; report(error: unknown): void; log(kind: string, text: string): void; children: ReactNode }) {
   const value = useStudio(backend, folder, report, log);
   return <Context.Provider value={value}>{children}</Context.Provider>;
+}
+
+/** Explicit live navigation preserves the actor/event owner and existing name drafts. */
+export function useEventNavigation() {
+  const state = useEvents();
+  const latest = useRef(state); latest.current = state;
+  const disc = state.discs.find(item => item.session.id === state.activeDisc)?.session.status.identity?.disc ?? null;
+  return {
+    disc, map: state.map, graph: state.graph, bytes: state.graph ? state.componentBytes : null,
+    reveal(selection: Selection) {
+      const current = latest.current;
+      if (current.graph !== state.graph || current.activeDisc !== state.activeDisc || current.map !== state.map) throw new Error('The loaded map changed during live PC resolution');
+      const entry = current.graph?.entries.find(entry => entry.actor === selection.actor && entry.event === selection.event);
+      if (!state.graph || !entry || selection.pc === null || !state.graph.instructions.some(item => item.pc === selection.pc) || !reachableInstructionPcs(state.graph, entry.pc).has(selection.pc)) throw new Error('Live selection is not an exact instruction owned by this actor/event');
+      current.select(selection, true);
+    },
+  };
 }
 
 export function DiscBrowser() {

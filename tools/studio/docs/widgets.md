@@ -339,25 +339,22 @@ viewport geometry constraints on resize. Mount a stable
 `new EditorPreferenceStore({storage})` through
 `<EditorPreferenceProvider store={store}>`; omitted storage means
 `window.localStorage`. This layout-only store accepts
-`xem-studio.workspace-layout.v1`. There are no RPG preference keys or migrations.
+`xem-studio.workspace-layout.v2`. There are no RPG preference keys or migrations.
 Read/write/parse failures propagate to the application's persistent global
 error UI or render error boundary; storage denial never fabricates success.
 
 `DockableWorkspace` takes layout/setLayout/resetLayout, optional controlsTarget,
-optional `centerless` (default false), and descriptor children. The studio
-passes `centerless`, which gives the right dock the remaining width and omits
-the redundant right zone separator. The left split and inter-stack split
-remain resizable with pointer drag or arrow keys. With only one side zone
-visible, that zone fills the workspace. Existing centered consumers preserve
-the original behavior by default.
+optional `centerless` (default false), and descriptor children. Studio uses the
+center for event views. Default v2 placement is Project left at 300px, Live game
+and Schema inspector right at 420px, and Backend/Log in bottom stacks at 220px.
+The copied centerless option remains available for consumers without a center.
 
-Each actual `WorkspacePanel` has an id (`project`, `backend`, `log`), optional
-title/className and content. All panels can be moved, stacked, floated, hidden
-and restored. Use the panel action menu or titlebar Workspace menu from
-controlsTarget; reset restores Project left at 300px and Backend above Log in
-the right dock at weights 3:1.5. Drag the grip/tab for pointer movement;
-keyboard users choose docking/hiding in the panel menu. Workspace layout
-survives reload. Never create an independent movable panel.
+Each `WorkspacePanel` has an id (`project`, `backend`, `log`, `live`, `inspector`),
+optional title/className and content. All panels can be moved, stacked, floated,
+hidden and restored through the shared action menu or titlebar Workspace menu.
+Drag the grip/tab or use the panel menu for keyboard docking/hiding. Reset
+restores the defaults above. Layout survives reload under the v2 key. Never
+create an independent movable panel.
 
 `DockableToolStrip` remains available for consumers needing docked tools; it
 accepts layout/setLayout/children and owns edge placement and its action menu.
@@ -484,3 +481,32 @@ loads the configured server catalogue; native arrows/type-ahead select an image
 and Enter activates a focused button. Loading disables competing server actions.
 Errors use the existing persistent Studio error surface. This composes the
 registered field/button pattern without a separate skin or copied interaction.
+
+
+## Live controls and schema inspector
+
+The inspector composes a body-only DockerList using its `className` slot. Its
+feature layout supplies one bounded 180px body row; DockerListBody owns scrolling,
+so selecting details preserves the tree viewport and keyboard navigation. Schema
+rows use the existing `intrinsicHeight` option to fit their name/type lines.
+
+`src/game/LiveGame.tsx` composes DockerList, NumberField, RecordSelect and
+EditorDialogShell in the Live game and Schema inspector docks. New layout
+preferences use `xem-studio.workspace-layout.v2` with both right-hand panels;
+previous layout storage is left intact. F6 cycles panels, F7 steps, Shift+F6
+runs/pauses, and focused Enter activates a button or confirms a scalar form.
+Shortcuts yield to text entry and modal dialogs. Restore requires an explicit
+confirmation. Run state is acknowledged by the runtime.
+
+The schema tree expands lazily, pages roots and large arrays, and follows typed
+pointer paths. Native tree buttons retain Tab/Enter and Up/Down/Home/End focus
+navigation. Type/path and original errors remain visible. Scalar entry uses a
+text control to preserve exact 64-bit decimal integers; NumberField is reserved
+for bounded frame counts without clamping. Unsupported/bit-field/untyped nodes
+are explicit and cannot be written. The tree invalidates reads on session,
+selection and timeline changes. Feature Sass owns layout only.
+
+NumberField renders nonfinite draft state as an empty input while preserving the
+nonfinite model value for explicit validation. The live frame field exercises
+this existing passthrough/emptyAs behavior: clearing it cannot silently step a
+frame or introduce a React NaN-value warning.

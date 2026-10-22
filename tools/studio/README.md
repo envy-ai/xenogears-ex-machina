@@ -482,3 +482,47 @@ under `tmp/studio/milestone-3-ui-20261020/`; the final acceptance batch is
 `acceptance-20261021/`. UI acceptance uses synthetic data in committed fixtures;
 real disc inputs remain local and gated. Development TLS, file adapters and
 runtime evidence are reused where unchanged, with their recorded limitations.
+
+
+## Live game attachment (milestone four)
+
+The Live game and Schema inspector docks use the runtime command channel,
+separately from the Rust Studio backend. Build the game module/schema together
+with the normal pinned `tools/game_module.py --stubs --release` workflow, then
+build the native desktop and browser host against that same module directory.
+The generated schema must carry its matching `module_sha256`.
+
+For browser development, explicitly set `XEM_STUDIO_GAME_DIR` to the built
+runtime page directory (containing `index.html`, `pkg/` and `game/`) alongside
+`XEM_STUDIO_TLS_DIR` and the optional existing `XEM_STUDIO_DISC_DIR`. Vite serves
+only its fixed runtime build file set under `/runtime/` on the same Studio
+origin. The listener remains HTTPS `0.0.0.0:5176`, without HSTS. This mount adds
+no control endpoint or cross-origin policy. Production static hosting can place
+that same runtime build under `/runtime/` beside Studio's static files.
+
+Open game & attach opens the same-origin game window. Import your original disc
+and boot there, then retry attach if no session was ready. Reattachment reuses
+the window without navigating it. Studio pauses and verifies the host before
+stepping, inspecting, writing or snapshots. F7 steps the entered 1–10000 frames;
+Shift+F6 runs/pauses; F6 retains panel focus cycling. Run state is acknowledged.
+
+NW.js launches only the executable named in the Live game form, with an explicit
+disc path and separate settings/cards directories. It passes an argument array,
+not shell text; disconnect closes only that owned child. Use new directories
+under ignored `tmp/studio/` for acceptance, preserving normal gameplay data.
+The native executable embeds its module; no independent module picker exists.
+Development retains exactly the approved `https://localhost:5176/*` Node scope
+and selected public TLS certificate trust anchor. Packaged manifests have neither.
+
+Select/expand a schema node to inspect, enter an exact decimal integer or enum
+name and choose Write & read back. Unsupported/opaque/untyped/bit-field nodes
+are explicit. Values outside the declared integer range are refused without a
+write. Snapshots are named within the current connection; Restore requires
+confirmation. Reboot/reconnect invalidates the previous inspector and snapshots.
+
+Jump to node requires the same disc and map already loaded in the event studio,
+a byte-identical declared component and an exact decoded PC owner. Empty actor
+selection means the runtime's current actor. Ambiguous aliases, gaps, other modes
+or mismatches show an unavailable reason. Name drafts and read-only game bytes
+remain intact. Implementation/provenance and numeric limits are documented in
+[src/game/README.md](src/game/README.md).

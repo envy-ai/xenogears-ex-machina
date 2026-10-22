@@ -25,9 +25,9 @@ import {
 
 export type { ToolStripEdge } from './dockLayout';
 
-export const WORKSPACE_LAYOUT_STORAGE_KEY = 'xem-studio.workspace-layout.v1';
+export const WORKSPACE_LAYOUT_STORAGE_KEY = 'xem-studio.workspace-layout.v2';
 
-export const WORKSPACE_PANEL_IDS = ['project', 'backend', 'log'] as const;
+export const WORKSPACE_PANEL_IDS = ['project', 'backend', 'log', 'live', 'inspector'] as const;
 
 export type WorkspacePanelId = (typeof WORKSPACE_PANEL_IDS)[number];
 export type WorkspaceDockEdge = DockEdge;
@@ -35,16 +35,16 @@ export type WorkspaceDockEdge = DockEdge;
 export type WorkspaceStack = DockStack<WorkspacePanelId>;
 export type WorkspaceDockZone = DockZone<WorkspacePanelId>;
 export type WorkspaceFloat = DockFloat<WorkspacePanelId>;
-export type WorkspaceLayoutV1 = DockLayout<WorkspacePanelId, 1>;
+export type WorkspaceLayoutV2 = DockLayout<WorkspacePanelId, 2>;
 export type WorkspaceViewport = DockViewport;
 
-export const DEFAULT_WORKSPACE_LAYOUT: WorkspaceLayoutV1 = {
-  version: 1,
+export const DEFAULT_WORKSPACE_LAYOUT: WorkspaceLayoutV2 = {
+  version: 2,
   zones: {
     left: { size: 300, stacks: [
       { id: 'project', panels: ['project'], activePanel: 'project', weight: 1 }
     ] },
-    right: { size: 326, stacks: [] },
+    right: { size: 420, stacks: [{ id: 'live', panels: ['live'], activePanel: 'live', weight: 1 }, { id: 'inspector', panels: ['inspector'], activePanel: 'inspector', weight: 1.3 }] },
     bottom: { size: 220, stacks: [
       { id: 'backend', panels: ['backend'], activePanel: 'backend', weight: 2 },
       { id: 'log', panels: ['log'], activePanel: 'log', weight: 1 }
@@ -52,11 +52,11 @@ export const DEFAULT_WORKSPACE_LAYOUT: WorkspaceLayoutV1 = {
   },
   floating: [],
   hidden: [],
-  lastDock: { project: 'left', backend: 'bottom', log: 'bottom' },
+  lastDock: { project: 'left', backend: 'bottom', log: 'bottom', live: 'right', inspector: 'right' },
   toolStripEdge: 'top'
 };
 
-function cloneDefault(): WorkspaceLayoutV1 {
+function cloneDefault(): WorkspaceLayoutV2 {
   return structuredClone(DEFAULT_WORKSPACE_LAYOUT);
 }
 
@@ -65,31 +65,31 @@ function isPanelId(value: unknown): value is WorkspacePanelId {
     WORKSPACE_PANEL_IDS.includes(value as WorkspacePanelId);
 }
 
-const WORKSPACE_LAYOUT_PERSISTENCE: DockLayoutPersistenceOptions<WorkspacePanelId, 1> = {
-  version: 1,
+const WORKSPACE_LAYOUT_PERSISTENCE: DockLayoutPersistenceOptions<WorkspacePanelId, 2> = {
+  version: 2,
   panelIds: WORKSPACE_PANEL_IDS,
   isPanelId,
   makeDefault: cloneDefault
 };
 
 export function clampWorkspaceLayout(
-  layout: WorkspaceLayoutV1,
+  layout: WorkspaceLayoutV2,
   viewport: WorkspaceViewport
-): WorkspaceLayoutV1 {
+): WorkspaceLayoutV2 {
   return clampDockLayout(layout, viewport);
 }
 
 export function parseWorkspaceLayout(
   value: unknown,
   viewport: WorkspaceViewport
-): WorkspaceLayoutV1 {
+): WorkspaceLayoutV2 {
   return parseDockLayout(value, viewport, WORKSPACE_LAYOUT_PERSISTENCE);
 }
 
 export function readWorkspaceLayout(
   storage: Pick<Storage, 'getItem'>,
   viewport: WorkspaceViewport
-): WorkspaceLayoutV1 {
+): WorkspaceLayoutV2 {
   return readDockLayout(storage, viewport, {
     ...WORKSPACE_LAYOUT_PERSISTENCE,
     storageKey: WORKSPACE_LAYOUT_STORAGE_KEY
@@ -97,80 +97,80 @@ export function readWorkspaceLayout(
 }
 
 export function dockWorkspacePanel(
-  layout: WorkspaceLayoutV1,
+  layout: WorkspaceLayoutV2,
   panelId: WorkspacePanelId,
   edge: WorkspaceDockEdge
-): WorkspaceLayoutV1 {
+): WorkspaceLayoutV2 {
   return dockPanel(layout, panelId, edge);
 }
 
 export function insertWorkspacePanelBeforeStack(
-  layout: WorkspaceLayoutV1,
+  layout: WorkspaceLayoutV2,
   panelId: WorkspacePanelId,
   edge: WorkspaceDockEdge,
   beforeStackId: string
-): WorkspaceLayoutV1 {
+): WorkspaceLayoutV2 {
   return insertPanelBeforeStack(layout, panelId, edge, beforeStackId);
 }
 
 export function insertWorkspacePanelAtEnd(
-  layout: WorkspaceLayoutV1,
+  layout: WorkspaceLayoutV2,
   panelId: WorkspacePanelId,
   edge: WorkspaceDockEdge
-): WorkspaceLayoutV1 {
+): WorkspaceLayoutV2 {
   return insertPanelAtEnd(layout, panelId, edge);
 }
 
 export function joinWorkspaceStack(
-  layout: WorkspaceLayoutV1,
+  layout: WorkspaceLayoutV2,
   panelId: WorkspacePanelId,
   edge: WorkspaceDockEdge,
   stackId: string
-): WorkspaceLayoutV1 {
+): WorkspaceLayoutV2 {
   return joinStack(layout, panelId, edge, stackId);
 }
 
 export function activateWorkspacePanel(
-  layout: WorkspaceLayoutV1,
+  layout: WorkspaceLayoutV2,
   edge: WorkspaceDockEdge,
   stackId: string,
   panelId: WorkspacePanelId
-): WorkspaceLayoutV1 {
+): WorkspaceLayoutV2 {
   return activatePanel(layout, edge, stackId, panelId);
 }
 
 export function floatWorkspacePanel(
-  layout: WorkspaceLayoutV1,
+  layout: WorkspaceLayoutV2,
   panelId: WorkspacePanelId,
   rect?: Partial<Omit<WorkspaceFloat, 'panelId' | 'z'>>
-): WorkspaceLayoutV1 {
+): WorkspaceLayoutV2 {
   return floatPanel(layout, panelId, rect, () => 420);
 }
 
 export function hideWorkspacePanel(
-  layout: WorkspaceLayoutV1,
+  layout: WorkspaceLayoutV2,
   panelId: WorkspacePanelId
-): WorkspaceLayoutV1 {
+): WorkspaceLayoutV2 {
   return hidePanel(layout, panelId);
 }
 
 export function restoreWorkspacePanel(
-  layout: WorkspaceLayoutV1,
+  layout: WorkspaceLayoutV2,
   panelId: WorkspacePanelId
-): WorkspaceLayoutV1 {
+): WorkspaceLayoutV2 {
   return restorePanel(layout, panelId);
 }
 
 export function restoreDefaultPanelPlacement(
-  layout: WorkspaceLayoutV1,
+  layout: WorkspaceLayoutV2,
   panelId: WorkspacePanelId
-): WorkspaceLayoutV1 {
+): WorkspaceLayoutV2 {
   return restoreDefaultDockPanelPlacement(layout, panelId, DEFAULT_WORKSPACE_LAYOUT);
 }
 
 export function setToolStripEdge(
-  layout: WorkspaceLayoutV1,
+  layout: WorkspaceLayoutV2,
   edge: ToolStripEdge
-): WorkspaceLayoutV1 {
+): WorkspaceLayoutV2 {
   return setDockToolStripEdge(layout, edge);
 }

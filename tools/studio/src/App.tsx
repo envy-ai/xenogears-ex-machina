@@ -11,6 +11,7 @@ import { loadBackend, readCommandResult, type Backend } from './backend/service'
 import type { FilesAdapter, FileEntry } from './platform/files';
 import { selectFolder, nativeHost } from './platform/host';
 import { runNativeSmoke } from './smoke';
+import { LiveGameProvider, LiveControls, SchemaInspector } from './game/LiveGame';
 import { EventStudioProvider, DiscBrowser, EventViews } from './events/EventStudio';
 
 interface LogEntry { id: number; time: string; kind: string; text: string }
@@ -116,7 +117,7 @@ export function App() {
       if (event.key === 'F10' && !event.shiftKey) { event.preventDefault(); document.querySelector<HTMLButtonElement>('[data-studio-menu="File"]')?.focus(); }
       if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'o') { event.preventDefault(); open(); }
       if ((event.ctrlKey || event.metaKey) && event.key === 'Enter') { event.preventDefault(); send(); }
-      if (event.key === 'F6') {
+      if (event.key === 'F6' && !event.shiftKey && !event.ctrlKey && !event.altKey && !event.defaultPrevented) {
         event.preventDefault();
         const panels = [...document.querySelectorAll<HTMLElement>('[data-studio-panel]')];
         const current = panels.findIndex(panel => panel.contains(document.activeElement));
@@ -128,13 +129,13 @@ export function App() {
   const menus: Record<string, EditorCommand[]> = {
     File: [{ id: 'open', label: 'Open folder…', execute: open }],
     View: [
-      ...(['project', 'backend', 'log'] as const).map(id => ({ id: `show-${id}`, label: `Show ${id[0].toUpperCase() + id.slice(1)}`, execute: () => setLayout(current => restoreWorkspacePanel(current, id)) })),
+      ...(['project', 'backend', 'log', 'live', 'inspector'] as const).map(id => ({ id: `show-${id}`, label: `Show ${id[0].toUpperCase() + id.slice(1)}`, execute: () => setLayout(current => restoreWorkspacePanel(current, id)) })),
       { id: 'reset', label: 'Reset workspace layout', execute: resetLayout },
     ],
     Help: [{ id: 'about', label: 'About XEM Studio', execute: openAbout }],
   };
 
-  return <EventStudioProvider backend={backend} folder={folder} report={report} log={append}><main className="editor-shell studio-shell" data-editor-theme="graphite-teal" data-editor-density="compact" aria-label="XEM Studio">
+  return <EventStudioProvider backend={backend} folder={folder} report={report} log={append}><LiveGameProvider report={report} log={append}><main className="editor-shell studio-shell" data-editor-theme="graphite-teal" data-editor-density="compact" aria-label="XEM Studio">
     <header className="studio-titlebar">
       <strong className="editor-text">XEM Studio</strong><span className="editor-text editor-text--secondary">Field event studio</span>
       <div className="studio-titlebar-actions" ref={setControlsTarget} />
@@ -157,6 +158,8 @@ export function App() {
         </section>
       </WorkspacePanel>
       <WorkspaceCenter><EventViews /></WorkspaceCenter>
+      <WorkspacePanel id="live" title="Live game"><LiveControls report={report} /></WorkspacePanel>
+      <WorkspacePanel id="inspector" title="Schema inspector"><SchemaInspector report={report} /></WorkspacePanel>
       <WorkspacePanel id="backend" title="Backend"><section className="studio-backend" data-studio-panel="backend" aria-label="Backend commands" tabIndex={-1}>
         <p className="editor-text"><span className="studio-ready" aria-hidden="true" />{version ? `xem-studio ${version.version} · Operations: ${version.operations.join(', ')}` : 'Loading backend…'}</p>
         <label className="editor-field-label"><span>Command (JSON)</span><textarea className="editor-control editor-control--textarea editor-control--code studio-command" spellCheck={false} value={command} onChange={event => setCommand(event.target.value)} /></label>
@@ -166,6 +169,6 @@ export function App() {
       <WorkspacePanel id="log" title="Log"><section className="studio-log" data-studio-panel="log" aria-label="Command log" tabIndex={-1}><div className="studio-toolbar"><span className="editor-text editor-text--secondary">{log.length} entries</span><button className="editor-button" onClick={() => navigator.clipboard.writeText(log.map(entry => `${entry.time} ${entry.kind} ${entry.text}`).join('\n')).catch(report)}>Copy log</button></div><div className="studio-log-entries">{log.map(entry => <div className="studio-log-entry" key={entry.id}><time className="editor-text editor-text--secondary">{entry.time}</time><span className="editor-text">{entry.kind}</span><pre className="editor-text editor-text--code">{entry.text}</pre></div>)}</div></section></WorkspacePanel>
     </DockableWorkspace>
     <footer className="studio-status"><span className="editor-text">{backend ? 'Backend ready' : 'Backend loading'} · {nativeHost ? 'Desktop' : 'Browser'}</span><span className="editor-text editor-text--secondary">Drag tabs to dock · F6 panels · F10 menus</span></footer>
-    {about && <EditorDialogShell backdropClassName="editor-dialog-backdrop" onClose={closeAbout}><section className="editor-small-dialog studio-about" role="dialog" aria-modal="true" aria-label="About XEM Studio" ref={aboutSurface}><h2 className="editor-heading editor-heading--page">XEM Studio</h2><p className="editor-text">Milestone 3 · Backend {version?.version ?? 'loading'}</p><p className="editor-text">A local modding workspace for Xenogears Ex Machina.</p><p className="editor-text editor-text--secondary">UI widgets adapted from Saga Foundry RPG Creator with permission under MIT. Inter and Inconsolata: OFL 1.1.</p><button className="editor-button" autoFocus onClick={closeAbout}>Close</button></section></EditorDialogShell>}
-  </main></EventStudioProvider>;
+    {about && <EditorDialogShell backdropClassName="editor-dialog-backdrop" onClose={closeAbout}><section className="editor-small-dialog studio-about" role="dialog" aria-modal="true" aria-label="About XEM Studio" ref={aboutSurface}><h2 className="editor-heading editor-heading--page">XEM Studio</h2><p className="editor-text">Milestone 4 · Backend {version?.version ?? 'loading'}</p><p className="editor-text">A local modding workspace for Xenogears Ex Machina.</p><p className="editor-text editor-text--secondary">UI widgets adapted from Saga Foundry RPG Creator with permission under MIT. Inter and Inconsolata: OFL 1.1.</p><button className="editor-button" autoFocus onClick={closeAbout}>Close</button></section></EditorDialogShell>}
+  </main></LiveGameProvider></EventStudioProvider>;
 }

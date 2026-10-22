@@ -16,7 +16,7 @@ export default defineConfig({
     browserName: 'chromium',
     headless: true,
     viewport: { width: 1440, height: 900 },
-    launchOptions: { executablePath: chromium },
+    launchOptions: { executablePath: chromium, chromiumSandbox: true },
     trace: 'retain-on-failure',
   },
   webServer: {

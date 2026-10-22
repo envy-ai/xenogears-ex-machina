@@ -1,0 +1,10 @@
+// Live-control layout. Registered controls and typography own their appearance.
+.live-game, .schema-inspector { display: grid; align-content: start; gap: 10px; padding: 10px; min-width: 0; overflow: auto; }
+.live-toolbar { display: flex; flex-wrap: wrap; align-items: end; gap: 8px; > label { flex: 1 1 120px; min-width: 0; } }
+.live-path { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: end; gap: 6px; }
+.live-status { max-height: 90px; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; }
+.live-pc-status, .live-game > pre, .schema-inspector pre { white-space: pre-wrap; overflow-wrap: anywhere; }
+// A body-only DockerList keeps a scrollable viewport when details add grid rows.
+.schema-inspector .schema-list { grid-template-rows: minmax(0, 1fr); height: 180px; min-height: 180px; }
+.schema-node { display: grid; justify-items: start; min-width: 0; text-align: start; > span { max-width: 100%; overflow: hidden; text-overflow: ellipsis; } }
+.schema-inspector > p { overflow-wrap: anywhere; }

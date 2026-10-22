@@ -46,7 +46,7 @@ Source revision: rpg_creator `1f690d0263af8881a2d33ee374a2e5006355748b`.
 | `src/editor/EditorPreferenceStore.tsx` | `src/editor/EditorPreferenceStore.tsx` | Replaced project/domain preference aggregation with synchronous studio layout-only Storage scope; failures propagate. |
 | `src/editor/EditorRenderErrorBoundary.tsx` | `src/editor/EditorRenderErrorBoundary.tsx` | Unchanged apart from source/revision header. |
 | `src/editor/NativeWindowControls.tsx` | `src/editor/NativeWindowControls.tsx` | Geometry import extracted; native bridge exceptions now propagate. |
-| `src/editor/NumberField.tsx` | `src/editor/NumberField.tsx` | Unchanged apart from source/revision header. |
+| `src/editor/NumberField.tsx` | `src/editor/NumberField.tsx` | Source/revision header; nonfinite draft state renders an empty native numeric input without changing or clamping its value. |
 | `src/editor/RecordSelect.tsx` | `src/editor/RecordSelect.tsx` | Unchanged apart from source/revision header. |
 | `src/editor/dockLayout.ts` | `src/editor/dockLayout.ts` | Unchanged apart from source/revision header. |
 | `src/editor/editorCommands.ts` | `src/editor/editorCommands.ts` | Unchanged apart from source/revision header. |
@@ -54,7 +54,7 @@ Source revision: rpg_creator `1f690d0263af8881a2d33ee374a2e5006355748b`.
 | `src/editor/itemReorder.tsx` | `src/editor/itemReorder.tsx` | Unchanged apart from source/revision header. |
 | `src/editor/storedJson.ts` | `src/editor/storedJson.ts` | Unchanged apart from source/revision header. |
 | `src/editor/usePersistedPreferences.ts` | `src/editor/usePersistedPreferences.ts` | Unchanged apart from source/revision header. |
-| `src/editor/workspaceLayout.ts` | `src/editor/workspaceLayout.ts` | Studio project/backend/log IDs, v1 schema/key and approved central event view with bottom Backend/Log default; removed RPG v3 migration and game-specific float width. |
+| `src/editor/workspaceLayout.ts` | `src/editor/workspaceLayout.ts` | Studio project/backend/log/live/inspector IDs, v2 schema/key and approved central event view with bottom Backend/Log default; removed RPG v3 migration and game-specific float width. |
 | `src/runtime/nativeWindowGeometry.ts` | `src/runtime/nativeGameWindow.ts` | Extracted x/y/width/height shape only; omitted game-window controller. |
 | `src/runtime/nativeWindowState.ts` | `src/runtime/nativeWindowState.ts` | Unchanged apart from source/revision header. |
 | `src/styles/_editor-button-theme.scss` | `src/_editor-button-theme.scss` | Unchanged apart from source/revision header. |
@@ -130,3 +130,8 @@ Whole-file SHA-256: `3d57fc6c2dc8ae144a012d21b65e722f79cf1bafdf7253558f24d0dfa4d
 | 3561–3564 | `2be8e5cc56e4500e25bdc2d8b9a014c6d4f4e5a1dde7f77aa38b807a41bd9bcc` | Form-control identification; caller surface scopes listeners. |
 | 3567–3582 | `fa43a01987d1fe65d7d076d9018ea6d23d7c1dc8b7215d564b72327b021acd70` | Editable text-control inclusion/exclusion, with readonly/disabled guards; contentEditable omitted. |
 | 3616–3634 | `d83154a83f19deb55b60ee8a8684f681b84a7f86ead8efe89cc55ad81a8e218e` | Focus/blur field transaction grouping adapted to local React capture props; no project reducer/global listeners. |
+
+Milestone four composes these existing licensed widgets. Live-control,
+transport/schema/PC models and feature SCSS are newly authored; no further RPG
+Creator source was extracted. Dock panel registration and v2 layout defaults are
+new Studio adaptations of the existing licensed shell.

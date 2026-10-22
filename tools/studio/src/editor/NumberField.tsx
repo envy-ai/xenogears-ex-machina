@@ -114,7 +114,7 @@ export function NumberField({
         min={min}
         max={max}
         step={step}
-        value={value}
+        value={Number.isFinite(value) ? value : ''}
         disabled={disabled}
         onChange={handleChange}
       />

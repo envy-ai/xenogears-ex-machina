@@ -82,7 +82,7 @@ test('shows all workspace panels and the loaded wasm backend version', async ({ 
   await page.screenshot({ path: resolve(artifactsDirectory, 'shell-1440x900.png') });
 });
 
-test('keeps all three panels readable at 1180x720', async ({ page }) => {
+test('keeps all five workspace panels readable at 1180x720', async ({ page }) => {
   await page.setViewportSize({ width: 1180, height: 720 });
   const panelBounds = await page.locator('[data-panel-id]').evaluateAll((panels) =>
     panels.map((panel) => {
@@ -101,7 +101,7 @@ test('keeps all three panels readable at 1180x720', async ({ page }) => {
     }),
   );
 
-  expect(panelBounds).toHaveLength(3);
+  expect(panelBounds.map(panel => panel.id).sort()).toEqual(['backend', 'inspector', 'live', 'log', 'project']);
   for (const panel of panelBounds) {
     expect(panel.x, `${panel.id} left edge`).toBeGreaterThanOrEqual(0);
     expect(panel.y, `${panel.id} top edge`).toBeGreaterThanOrEqual(0);
@@ -114,6 +114,8 @@ test('keeps all three panels readable at 1180x720', async ({ page }) => {
   await expect(page.locator('[data-panel-id="backend"] .studio-command')).toBeVisible();
   await expect(page.locator('[data-panel-id="project"] .studio-project')).toBeVisible();
   await expect(page.locator('[data-panel-id="log"] .studio-log')).toBeVisible();
+  await expect(page.locator('[data-panel-id="live"]')).toContainText('Live game');
+  await expect(page.locator('[data-panel-id="inspector"]')).toContainText('Schema inspector');
   await expectResponseToFillBackend(page);
   await page.screenshot({ path: resolve(artifactsDirectory, 'shell-1180x720.png') });
 });
