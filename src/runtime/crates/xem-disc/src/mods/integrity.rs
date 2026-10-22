@@ -23,20 +23,47 @@ pub(super) fn regenerate(raw: &mut [u8; SECTOR_SIZE]) {
         forward[i] = next;
         inverse[i ^ next as usize] = i as u8;
     }
-    parity(raw, 86, 24, 2, 86, 2076, &forward, &inverse);
-    parity(raw, 52, 43, 86, 88, 2248, &forward, &inverse);
+    parity(
+        raw,
+        Plane {
+            major: 86,
+            minor: 24,
+            major_step: 2,
+            minor_step: 86,
+            out: 2076,
+        },
+        &forward,
+        &inverse,
+    );
+    parity(
+        raw,
+        Plane {
+            major: 52,
+            minor: 43,
+            major_step: 86,
+            minor_step: 88,
+            out: 2248,
+        },
+        &forward,
+        &inverse,
+    );
     raw[12..16].copy_from_slice(&header);
 }
-fn parity(
-    raw: &mut [u8; SECTOR_SIZE],
+struct Plane {
     major: usize,
     minor: usize,
     major_step: usize,
     minor_step: usize,
     out: usize,
-    forward: &[u8; 256],
-    inverse: &[u8; 256],
-) {
+}
+fn parity(raw: &mut [u8; SECTOR_SIZE], plane: Plane, forward: &[u8; 256], inverse: &[u8; 256]) {
+    let Plane {
+        major,
+        minor,
+        major_step,
+        minor_step,
+        out,
+    } = plane;
     let size = major * minor;
     for n in 0..major {
         let mut index = (n / 2) * major_step + (n & 1);

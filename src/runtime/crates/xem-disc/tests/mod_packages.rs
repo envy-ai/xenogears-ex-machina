@@ -6,14 +6,19 @@
 
 use sha2::{Digest, Sha256};
 use std::cell::RefCell;
+use std::fs;
+use std::path::Path;
 use std::rc::Rc;
-use xem_disc::identify::{Identification, identify};
-use xem_disc::index::{DIRECTORY_BYTES, DIRECTORY_LBA, INDEX_BYTES, INDEX_LBA, Index, game_index};
+use xem_disc::identify::{Identification, KnownDisc, identify, verify};
+use xem_disc::index::{
+    DIRECTORY_BYTES, DIRECTORY_LBA, EMBEDDED_INDEX, INDEX_BYTES, INDEX_LBA, Index, game_index,
+};
 use xem_disc::mods::{BuildFile, BuildSpec, DiscTarget, Package, PackageSet};
 use xem_disc::read_at::PrefetchedFile;
 use xem_disc::sector::{FORM1_DATA_SIZE, SECTOR_SIZE, Subheader, build_mode2_sector, submode};
 use xem_disc::source::BinSource;
 use xem_disc::{Error, MemorySource, SectorSource, read_data};
+use xem_disc::{file_sha256, open_path};
 
 const EXE_LBA: u32 = 50;
 const TARGET_LBA: u32 = 70;
@@ -209,6 +214,25 @@ fn install_data_sector(raw_track: &mut [u8], lba: u32, bytes: &[u8]) {
     raw_track[start..start + SECTOR_SIZE].copy_from_slice(&sector);
 }
 
+struct AdvertisedExtent {
+    inner: MemorySource,
+    sectors: u32,
+}
+
+impl SectorSource for AdvertisedExtent {
+    fn sector_count(&self) -> u32 {
+        self.sectors
+    }
+
+    fn read_sector(
+        &mut self,
+        lba: u32,
+        out: &mut [u8; SECTOR_SIZE],
+    ) -> std::result::Result<(), Error> {
+        self.inner.read_sector(lba, out)
+    }
+}
+
 fn index_mirrors(executable: &[u8], raw_track: &mut [u8]) {
     for (n, bytes) in executable[0x804..0x804 + INDEX_BYTES]
         .chunks_exact(FORM1_DATA_SIZE)
@@ -297,6 +321,247 @@ fn package_bytes(id: &str, source: Option<Vec<u8>>, result: &[u8], target: &Disc
         }],
     )
     .expect("build a package from the source and result bytes")
+}
+
+fn synthetic_disc_with_target_record(
+    lba: u32,
+    size: i32,
+) -> (MemorySource, Identification, Vec<u8>) {
+    let (mut original, _, _, _) = synthetic_disc();
+    let mut identification = identified(&mut original);
+    let mut executable = identification.executable.clone();
+    write_record_to_exe(&mut executable, TARGET_SLOT as usize, lba, size);
+    identification.executable = executable.clone();
+    identification.sha256 = Sha256::digest(&executable).into();
+    let mut raw_track = original.into_inner();
+    index_mirrors(&executable, &mut raw_track);
+    let source = MemorySource::whole(raw_track.clone())
+        .expect("mutated synthetic source stays whole sectors");
+    (source, identification, raw_track)
+}
+
+fn empty_package(id: &str, target: &DiscTarget, requires: &[&str]) -> Package {
+    let bytes = Package::build(
+        BuildSpec {
+            id: id.into(),
+            discs: vec![target.clone()],
+            requires: requires.iter().map(|value| (*value).into()).collect(),
+            overrides: vec![],
+        },
+        vec![],
+    )
+    .expect("build tiny metadata-only package");
+    Package::decode(&bytes).expect("decode tiny metadata-only package")
+}
+
+fn rebuild_with_manifest(bytes: &[u8], mutate: impl FnOnce(&mut serde_json::Value)) -> Vec<u8> {
+    let manifest_len = u32::from_le_bytes(bytes[8..12].try_into().unwrap()) as usize;
+    let payload_at = 12 + manifest_len;
+    let mut manifest: serde_json::Value = serde_json::from_slice(&bytes[12..payload_at]).unwrap();
+    mutate(&mut manifest);
+    let json = serde_json::to_vec(&manifest).unwrap();
+    let mut rebuilt = bytes[..8].to_vec();
+    rebuilt.extend_from_slice(&(json.len() as u32).to_le_bytes());
+    rebuilt.extend_from_slice(&json);
+    rebuilt.extend_from_slice(&bytes[payload_at..bytes.len() - 32]);
+    let seal = Sha256::digest(&rebuilt);
+    rebuilt.extend_from_slice(&seal);
+    rebuilt
+}
+
+fn delta_fixture(source_size: u32, result_size: u32, operations: &[u8]) -> Vec<u8> {
+    let mut bytes = b"XEMDLT1\0".to_vec();
+    bytes.extend_from_slice(&source_size.to_le_bytes());
+    bytes.extend_from_slice(&result_size.to_le_bytes());
+    bytes.extend_from_slice(operations);
+    bytes
+}
+
+fn hex_digest(bytes: &[u8]) -> String {
+    Sha256::digest(bytes)
+        .iter()
+        .map(|byte| format!("{byte:02x}"))
+        .collect()
+}
+
+fn assert_raw_file_samples_match(
+    original: &mut dyn SectorSource,
+    wrapped: &mut dyn SectorSource,
+    record: xem_disc::Record,
+    label: &str,
+) {
+    assert!(record.size > 0, "{label} is a nonempty indexed file");
+    let sectors = record.sectors();
+    for sector_offset in [0, sectors / 2, sectors - 1] {
+        let lba = record.lba + sector_offset;
+        let mut original_sector = [0; SECTOR_SIZE];
+        let mut wrapped_sector = [0; SECTOR_SIZE];
+        original.read_sector(lba, &mut original_sector).unwrap();
+        wrapped.read_sector(lba, &mut wrapped_sector).unwrap();
+        assert!(
+            wrapped_sector == original_sector,
+            "{label} raw source sector {lba} is unchanged"
+        );
+    }
+    assert!(
+        file_sha256(original, record).unwrap() == file_sha256(wrapped, record).unwrap(),
+        "{label} complete indexed file bytes are unchanged"
+    );
+}
+
+/// This private-input acceptance check stays ignored in ordinary suites. The
+/// executor must supply both original raw tracks and a package set generated
+/// from those exact originals; it emits no original bytes.
+#[test]
+#[ignore = "requires explicit private M5 package set and original disc 1/disc 2 raw tracks"]
+fn real_m5_package_changes_only_disc1_map23_and_preserves_disc2_and_neighbor_files() {
+    use xem_disc::identify::identify;
+
+    let package_set_path = std::env::var_os("XEM_STUDIO_M5_SET")
+        .expect("set XEM_STUDIO_M5_SET to the locally built real M5 .xemmods file");
+    let disc1_path = std::env::var_os("XEM_STUDIO_M5_DISC1_RAW")
+        .expect("set XEM_STUDIO_M5_DISC1_RAW to the original disc 1 MODE2/2352 track");
+    let disc2_path = std::env::var_os("XEM_STUDIO_M5_DISC2_RAW")
+        .expect("set XEM_STUDIO_M5_DISC2_RAW to the original disc 2 MODE2/2352 track");
+    let set_bytes = fs::read(package_set_path).expect("read explicit M5 package set");
+    let set = PackageSet::from_bytes(&set_bytes).expect("strictly decode M5 package set");
+    assert_eq!(
+        set.identities().len(),
+        1,
+        "acceptance fixture is one ordered package"
+    );
+
+    // Read the sole package member through the public versioned framing so
+    // the source/result digests are checked against its authenticated manifest.
+    assert_eq!(&set_bytes[..8], b"XEMSET1\0");
+    assert_eq!(u32::from_le_bytes(set_bytes[8..12].try_into().unwrap()), 1);
+    let member_len = u32::from_le_bytes(set_bytes[12..16].try_into().unwrap()) as usize;
+    assert_eq!(set_bytes.len(), 16 + member_len);
+    let package = Package::decode(&set_bytes[16..]).unwrap();
+    let manifest = package.manifest();
+    assert_eq!(manifest.id, "field23-message-active");
+    assert_eq!(
+        manifest.files.len(),
+        1,
+        "package owns exactly one file on disc 1"
+    );
+    assert_eq!(
+        manifest.discs.len(),
+        2,
+        "package binds to both original disc identities"
+    );
+    let target = manifest
+        .files
+        .iter()
+        .find(|file| file.disc == "SLUS-00664" && file.slot == 652)
+        .expect("package targets only map 23 slot 652 on disc 1");
+    assert_eq!(target.kind, xem_disc::mods::PayloadKind::Delta);
+
+    let mut disc1_original = open_path(Path::new(&disc1_path)).expect("open original disc 1 track");
+    let disc1_id = identify(disc1_original.as_mut()).expect("identify original disc 1");
+    assert_eq!(
+        DiscTarget::from_identification(&disc1_id).serial,
+        "SLUS-00664"
+    );
+    verify(disc1_original.as_mut(), KnownDisc::Disc1)
+        .expect("verify full original disc 1 raw track identity");
+    let disc1_index = game_index(&disc1_id.executable).unwrap();
+    let original_target_record = disc1_index.record(652).unwrap();
+    let original_target_hash = hex_digest(
+        &read_data(
+            disc1_original.as_mut(),
+            original_target_record.lba,
+            original_target_record.size as usize,
+        )
+        .unwrap(),
+    );
+    assert_eq!(Some(original_target_hash), target.source_sha256.clone());
+
+    let mut disc1_for_overlay = open_path(Path::new(&disc1_path)).unwrap();
+    let mut preparation = set
+        .preparation(&disc1_id)
+        .expect("package binds to original disc 1");
+    while !preparation.advance(disc1_for_overlay.as_mut()).unwrap() {}
+    let overlay = preparation.overlay().expect("disc 1 overlay prepared");
+    let mut disc1_virtual = overlay
+        .wrap(disc1_for_overlay)
+        .expect("prepared overlay binds to the original disc 1 source");
+    let changed_index = game_index(overlay.executable()).expect("patched disc 1 index");
+    let changed_record = changed_index.record(652).unwrap();
+    let changed_target = read_data(
+        disc1_virtual.as_mut(),
+        changed_record.lba,
+        changed_record.size as usize,
+    )
+    .unwrap();
+    assert_eq!(changed_record.size as u32, target.result_size);
+    assert_eq!(hex_digest(&changed_target), target.result_sha256);
+    assert!(
+        changed_target
+            != read_data(
+                disc1_original.as_mut(),
+                original_target_record.lba,
+                original_target_record.size as usize,
+            )
+            .unwrap(),
+        "the modified target's file bytes differ from the original"
+    );
+
+    // Slot 650 is a neighboring field bundle (map 22). Its full indexed bytes
+    // and representative raw sectors remain exactly as found on disc 1.
+    let neighbor = disc1_index.record(650).unwrap();
+    let mut disc1_original_neighbor = open_path(Path::new(&disc1_path)).unwrap();
+    assert_raw_file_samples_match(
+        disc1_original_neighbor.as_mut(),
+        disc1_virtual.as_mut(),
+        neighbor,
+        "disc 1 neighboring map 22 slot 650",
+    );
+
+    // The same package declares both disc identities but owns no disc 2 files.
+    // Preparation must leave its boot executable/index, map 23, map 22, and
+    // representative raw source sectors byte-identical.
+    let mut disc2_original = open_path(Path::new(&disc2_path)).expect("open original disc 2 track");
+    let disc2_id = identify(disc2_original.as_mut()).expect("identify original disc 2");
+    assert_eq!(
+        DiscTarget::from_identification(&disc2_id).serial,
+        "SLUS-00669"
+    );
+    verify(disc2_original.as_mut(), KnownDisc::Disc2)
+        .expect("verify full original disc 2 raw track identity");
+    let disc2_index = game_index(&disc2_id.executable).unwrap();
+    let mut disc2_for_overlay = open_path(Path::new(&disc2_path)).unwrap();
+    let mut disc2_preparation = set
+        .preparation(&disc2_id)
+        .expect("package declares original disc 2");
+    while !disc2_preparation
+        .advance(disc2_for_overlay.as_mut())
+        .unwrap()
+    {}
+    let disc2_overlay = disc2_preparation.overlay().unwrap();
+    assert!(
+        disc2_overlay.executable() == disc2_id.executable,
+        "disc 2's executable is byte-identical"
+    );
+    let mut disc2_virtual = disc2_overlay.wrap(disc2_for_overlay).unwrap();
+    let disc2_virtual_index = Index::from_disc(disc2_virtual.as_mut()).unwrap();
+    let disc2_original_index = Index::from_disc(disc2_original.as_mut()).unwrap();
+    assert!(
+        disc2_virtual_index.records() == disc2_original_index.records(),
+        "disc 2 index records are unchanged"
+    );
+    assert!(
+        disc2_virtual_index.directory_table() == disc2_original_index.directory_table(),
+        "disc 2 directory table is unchanged"
+    );
+    for slot in [650, 652] {
+        assert_raw_file_samples_match(
+            disc2_original.as_mut(),
+            disc2_virtual.as_mut(),
+            disc2_index.record(slot).unwrap(),
+            &format!("disc 2 indexed slot {slot}"),
+        );
+    }
 }
 
 #[test]
@@ -390,6 +655,103 @@ fn size_changing_package_updates_disc_and_boot_executable_index_views() {
 }
 
 #[test]
+fn overlay_preserves_independent_opaque_index_tails_and_rejects_record_mismatches() {
+    let (base, _, original, _) = synthetic_disc();
+    let mut identification_source = base;
+    let identification = identified(&mut identification_source);
+    let target = DiscTarget::from_identification(&identification);
+    let result = b"opaque index tail test result";
+    let package = Package::decode(&package_bytes(
+        "opaque-index-tail",
+        Some(original.clone()),
+        result,
+        &target,
+    ))
+    .unwrap();
+    let set = PackageSet::new(vec![package]).unwrap();
+
+    // The last byte of INDEX_BYTES is not part of a complete seven-byte
+    // record. The game executable and fixed-sector index may each retain it.
+    let mut raw_track = identification_source.into_inner();
+    let embedded_tail = identification.executable[EMBEDDED_INDEX + INDEX_BYTES - 1];
+    let disk_tail = embedded_tail ^ 0x5a;
+    let mut disk_source = MemorySource::whole(raw_track.clone()).unwrap();
+    let mut disk_index = read_data(&mut disk_source, INDEX_LBA, INDEX_BYTES).unwrap();
+    *disk_index.last_mut().unwrap() = disk_tail;
+    let final_index_sector = INDEX_BYTES / FORM1_DATA_SIZE - 1;
+    install_data_sector(
+        &mut raw_track,
+        INDEX_LBA + final_index_sector as u32,
+        &disk_index[final_index_sector * FORM1_DATA_SIZE..],
+    );
+    let mut source = MemorySource::whole(raw_track.clone()).unwrap();
+    let mut tail_sector_before = [0; SECTOR_SIZE];
+    source
+        .read_sector(
+            INDEX_LBA + final_index_sector as u32,
+            &mut tail_sector_before,
+        )
+        .unwrap();
+    let mut preparation = set.preparation(&identification).unwrap();
+    while !preparation.advance(&mut source).unwrap() {}
+    let overlay = preparation.overlay().expect("complete records agree");
+    assert_eq!(
+        overlay.executable()[EMBEDDED_INDEX + INDEX_BYTES - 1],
+        embedded_tail
+    );
+    let mut virtual_disc = overlay.wrap(Box::new(source)).unwrap();
+    let virtual_index = read_data(virtual_disc.as_mut(), INDEX_LBA, INDEX_BYTES).unwrap();
+    assert_eq!(*virtual_index.last().unwrap(), disk_tail);
+    let mut tail_sector_after = [0; SECTOR_SIZE];
+    virtual_disc
+        .read_sector(
+            INDEX_LBA + final_index_sector as u32,
+            &mut tail_sector_after,
+        )
+        .unwrap();
+    assert!(
+        tail_sector_after == tail_sector_before,
+        "the unchanged opaque-tail sector remains raw passthrough"
+    );
+    assert_ne!(
+        embedded_tail, disk_tail,
+        "both opaque tail bytes remain independently observable"
+    );
+
+    // A mismatch inside another complete record still fails before any sector
+    // can be changed or a prepared overlay can be published.
+    let mut mismatched_track = raw_track;
+    let mut mismatched_index = disk_index;
+    let mismatch_at = UNTOUCHED_SLOT as usize * 7;
+    mismatched_index[mismatch_at] ^= 1;
+    let mismatch_sector = mismatch_at / FORM1_DATA_SIZE;
+    install_data_sector(
+        &mut mismatched_track,
+        INDEX_LBA + mismatch_sector as u32,
+        &mismatched_index[mismatch_sector * FORM1_DATA_SIZE..][..FORM1_DATA_SIZE],
+    );
+    let raw_before_mismatch = mismatched_track.clone();
+    let mut mismatched_source = MemorySource::whole(mismatched_track).unwrap();
+    let mut rejected = set.preparation(&identification).unwrap();
+    let error = rejected
+        .advance(&mut mismatched_source)
+        .unwrap_err()
+        .to_string();
+    assert!(
+        error.contains("index records/directories differ"),
+        "{error}"
+    );
+    assert!(
+        rejected.overlay().is_none(),
+        "mismatch publishes no overlay"
+    );
+    assert!(
+        mismatched_source.into_inner() == raw_before_mismatch,
+        "record mismatch leaves the input image unchanged"
+    );
+}
+
+#[test]
 fn empty_package_set_preserves_vanilla_index_and_file_bytes() {
     let (mut source, original_exe, original, untouched) = synthetic_disc();
     let identification = identified(&mut source);
@@ -422,6 +784,81 @@ fn empty_package_set_preserves_vanilla_index_and_file_bytes() {
 }
 
 #[test]
+fn package_target_cannot_be_an_empty_indexed_record() {
+    let (mut source, _, original, _) = synthetic_disc();
+    let mut identification = identified(&mut source);
+    let mut executable = identification.executable.clone();
+    write_record_to_exe(&mut executable, TARGET_SLOT as usize, TARGET_LBA, 0);
+    identification.executable = executable.clone();
+    identification.sha256 = Sha256::digest(&executable).into();
+    let mut raw_track = source.into_inner();
+    index_mirrors(&executable, &mut raw_track);
+    let mut source = MemorySource::whole(raw_track).expect("updated synthetic track");
+    let target = DiscTarget::from_identification(&identification);
+    let bytes = Package::build(
+        BuildSpec {
+            id: "empty-target".into(),
+            discs: vec![target.clone()],
+            requires: vec![],
+            overrides: vec![],
+        },
+        vec![BuildFile {
+            disc: target.serial,
+            slot: TARGET_SLOT,
+            source: None,
+            result: pattern(ORIGINAL_SIZE, 0x45),
+        }],
+    )
+    .expect("package format permits a target to be checked by preparation");
+    let set = PackageSet::new(vec![Package::decode(&bytes).unwrap()]).unwrap();
+    let error = match set.preparation(&identification) {
+        Ok(_) => panic!("empty indexed source record must be rejected before preparation"),
+        Err(error) => error.to_string(),
+    };
+    assert!(error.contains("empty"), "{error}");
+
+    // The independently readable payload is still present at the former LBA;
+    // it cannot make a zero-size index record a valid patch target.
+    assert_eq!(
+        read_data(&mut source, TARGET_LBA, original.len()).unwrap(),
+        original
+    );
+}
+
+#[test]
+fn package_preparation_rejects_a_form2_directory_mirror() {
+    let (mut source, _, original, _) = synthetic_disc();
+    let identification = identified(&mut source);
+    let target = DiscTarget::from_identification(&identification);
+    let bytes = package_bytes(
+        "form2-directory",
+        Some(original.clone()),
+        &pattern(RESULT_SIZE, 0x73),
+        &target,
+    );
+    let set = PackageSet::new(vec![Package::decode(&bytes).unwrap()]).unwrap();
+
+    let mut raw_track = source.into_inner();
+    let directory_at = DIRECTORY_LBA as usize * SECTOR_SIZE;
+    // MODE2 subheader copies each carry a Form2 flag at offsets 18 and 22.
+    raw_track[directory_at + 18] |= submode::FORM2;
+    raw_track[directory_at + 22] |= submode::FORM2;
+    let mut malformed = MemorySource::whole(raw_track).expect("modified synthetic track");
+    let mut preparation = set
+        .preparation(&identification)
+        .expect("the unchanged synthetic executable identity matches");
+    let error = preparation
+        .advance(&mut malformed)
+        .expect_err("the LBA40 directory mirror must be Form1")
+        .to_string();
+    assert!(
+        error.contains("ordinary MODE2 Form1 data sector"),
+        "{error}"
+    );
+    assert!(preparation.overlay().is_none());
+}
+
+#[test]
 fn delta_encoding_is_deterministic_and_checks_both_content_hashes() {
     use xem_disc::mods::delta;
 
@@ -447,6 +884,280 @@ fn delta_encoding_is_deterministic_and_checks_both_content_hashes() {
         delta::apply(&source, &corrupt).is_err(),
         "corrupt result is refused"
     );
+}
+
+#[test]
+fn delta_parser_rejects_truncation_ranges_zero_ops_declared_bounds_and_output_overflow() {
+    use xem_disc::mods::delta::{self, MAX_FILE_BYTES};
+
+    let mut valid_copy = vec![0];
+    valid_copy.extend_from_slice(&0u32.to_le_bytes());
+    valid_copy.extend_from_slice(&4u32.to_le_bytes());
+    valid_copy.push(2);
+    let mut trailing = valid_copy.clone();
+    trailing.push(0);
+    let mut zero_copy = vec![0];
+    zero_copy.extend_from_slice(&0u32.to_le_bytes());
+    zero_copy.extend_from_slice(&0u32.to_le_bytes());
+    zero_copy.push(2);
+    let mut zero_literal = vec![1];
+    zero_literal.extend_from_slice(&0u32.to_le_bytes());
+    zero_literal.push(2);
+    let mut source_range_overflow = vec![0];
+    source_range_overflow.extend_from_slice(&u32::MAX.to_le_bytes());
+    source_range_overflow.extend_from_slice(&u32::MAX.to_le_bytes());
+    source_range_overflow.push(2);
+    let mut truncated_literal = vec![1];
+    truncated_literal.extend_from_slice(&3u32.to_le_bytes());
+    truncated_literal.push(0x41);
+    let mut output_crossing = vec![1];
+    output_crossing.extend_from_slice(&3u32.to_le_bytes());
+    output_crossing.extend_from_slice(b"abc");
+    output_crossing.push(2);
+
+    let cases = [
+        ("short header", b"XEMDLT1\0".to_vec()),
+        ("truncated copy", delta_fixture(4, 4, &[0, 0, 0, 0])),
+        ("truncated literal", delta_fixture(4, 3, &truncated_literal)),
+        ("trailing bytes", delta_fixture(4, 4, &trailing)),
+        ("zero copy", delta_fixture(4, 0, &zero_copy)),
+        ("zero literal", delta_fixture(4, 0, &zero_literal)),
+        (
+            "source range overflow",
+            delta_fixture(4, 0, &source_range_overflow),
+        ),
+        (
+            "declared source exceeds 32 MiB",
+            delta_fixture((MAX_FILE_BYTES as u32) + 1, 0, &[2]),
+        ),
+        (
+            "declared result exceeds 32 MiB",
+            delta_fixture(4, (MAX_FILE_BYTES as u32) + 1, &[2]),
+        ),
+        (
+            "operation crosses result boundary",
+            delta_fixture(4, 2, &output_crossing),
+        ),
+        ("unknown operation", delta_fixture(4, 0, &[3, 2])),
+    ];
+    for (name, bytes) in cases {
+        assert!(delta::validate(&bytes).is_err(), "validate accepted {name}");
+        assert!(
+            delta::apply(&[0; 4], &bytes).is_err(),
+            "apply accepted {name}"
+        );
+    }
+    assert_eq!(
+        delta::apply(&[1, 2, 3, 4], &delta_fixture(4, 4, &valid_copy))
+            .unwrap()
+            .as_slice(),
+        &[1, 2, 3, 4],
+    );
+}
+
+#[test]
+fn package_contracts_reject_unknown_fields_bounds_duplicate_and_cyclic_dependencies() {
+    use xem_disc::mods::delta::MAX_FILE_BYTES;
+
+    let (mut source, _, _, _) = synthetic_disc();
+    let identification = identified(&mut source);
+    let target = DiscTarget::from_identification(&identification);
+    let base = empty_package("base", &target, &[]);
+    let base_bytes = base.bytes().to_vec();
+
+    let unknown = rebuild_with_manifest(&base_bytes, |manifest| {
+        manifest
+            .as_object_mut()
+            .unwrap()
+            .insert("unexpected".into(), serde_json::json!(true));
+    });
+    assert!(
+        Package::decode(&unknown).is_err(),
+        "manifest denies unknown fields"
+    );
+
+    let authored = Package::build(
+        BuildSpec {
+            id: "bounded-result".into(),
+            discs: vec![target.clone()],
+            requires: vec![],
+            overrides: vec![],
+        },
+        vec![BuildFile {
+            disc: target.serial.clone(),
+            slot: TARGET_SLOT,
+            source: None,
+            result: b"tiny".to_vec(),
+        }],
+    )
+    .unwrap();
+    let over_bound = rebuild_with_manifest(&authored, |manifest| {
+        manifest["files"][0]["result_size"] = serde_json::json!((MAX_FILE_BYTES as u32) + 1);
+    });
+    assert!(
+        Package::decode(&over_bound).is_err(),
+        "manifest rejects a declared result over 32 MiB without allocating it"
+    );
+
+    let cycle_a = empty_package("cycle-a", &target, &["cycle-b"]);
+    let cycle_b = empty_package("cycle-b", &target, &["cycle-a"]);
+    for packages in [
+        [cycle_a.clone(), cycle_b.clone()],
+        [cycle_b.clone(), cycle_a.clone()],
+    ] {
+        let error = PackageSet::new(packages.into()).unwrap_err().to_string();
+        assert!(
+            error.contains("before"),
+            "cycle rejected in either load order: {error}"
+        );
+    }
+    assert!(
+        PackageSet::new(vec![base.clone(), base.clone()]).is_err(),
+        "duplicate package ID rejected"
+    );
+    assert!(
+        PackageSet::new(vec![empty_package("missing-owner", &target, &["absent"])]).is_err(),
+        "missing dependency rejected"
+    );
+
+    let self_dependency = rebuild_with_manifest(
+        empty_package("self-dependency", &target, &[]).bytes(),
+        |manifest| manifest["requires"] = serde_json::json!(["self-dependency"]),
+    );
+    assert!(
+        Package::decode(&self_dependency).is_err(),
+        "self dependency rejected during decode"
+    );
+    let duplicate_requirement = rebuild_with_manifest(
+        empty_package("duplicate-requirement", &target, &[]).bytes(),
+        |manifest| manifest["requires"] = serde_json::json!(["base", "base"]),
+    );
+    assert!(
+        Package::decode(&duplicate_requirement).is_err(),
+        "duplicate dependency declaration rejected"
+    );
+
+    let mut excessive_count = b"XEMSET1\0".to_vec();
+    excessive_count.extend_from_slice(&33u32.to_le_bytes());
+    assert!(
+        PackageSet::from_bytes(&excessive_count).is_err(),
+        "set package-count bound checked before member allocation"
+    );
+    assert!(
+        Package::decode(b"XEMMOD2\0").is_err(),
+        "unknown package version rejected"
+    );
+    assert!(
+        PackageSet::from_bytes(b"XEMSET2\0\0\0\0\0").is_err(),
+        "unknown package-set version rejected"
+    );
+}
+
+#[test]
+fn overlay_rejects_invalid_source_and_virtual_extents_without_mutating_synthetic_input() {
+    let (source, identification, raw_before) =
+        synthetic_disc_with_target_record(TARGET_LBA, i32::MAX);
+    let target = DiscTarget::from_identification(&identification);
+    let package = Package::decode(&package_bytes(
+        "oversized-record",
+        None,
+        b"tiny result",
+        &target,
+    ))
+    .unwrap();
+    let set = PackageSet::new(vec![package]).unwrap();
+    let error = set
+        .preparation(&identification)
+        .err()
+        .expect("oversized record is rejected during preparation")
+        .to_string();
+    assert!(
+        error.contains("exceeds the file limit"),
+        "oversized record is rejected before preparation: {error}"
+    );
+    assert!(
+        source.into_inner() == raw_before,
+        "oversized record rejection leaves the image unchanged"
+    );
+
+    let record_cases = [
+        ("out-of-image record", 79, 2_049, "outside image"),
+        (
+            "index metadata overlap",
+            INDEX_LBA,
+            ORIGINAL_SIZE as i32,
+            "overlapping index/boot metadata",
+        ),
+        (
+            "other indexed file overlap",
+            UNTOUCHED_LBA,
+            ORIGINAL_SIZE as i32,
+            "overlaps another indexed extent",
+        ),
+    ];
+    for (case_index, (name, lba, size, expected_message)) in record_cases.into_iter().enumerate() {
+        let (mut source, identification, raw_before) = synthetic_disc_with_target_record(lba, size);
+        let target = DiscTarget::from_identification(&identification);
+        let package = Package::decode(&package_bytes(
+            &format!("invalid-record-{case_index}"),
+            None,
+            b"tiny result",
+            &target,
+        ))
+        .unwrap();
+        let set = PackageSet::new(vec![package]).unwrap();
+        let mut preparation = set.preparation(&identification).unwrap();
+        let error = preparation.advance(&mut source).unwrap_err().to_string();
+        assert!(error.contains(expected_message), "{name}: {error}");
+        assert!(
+            preparation.overlay().is_none(),
+            "{name}: failed validation publishes no overlay"
+        );
+        assert_eq!(
+            source.into_inner(),
+            raw_before,
+            "{name}: preparation leaves original synthetic image unchanged"
+        );
+    }
+
+    let (mut base, _, original, _) = synthetic_disc();
+    let identification = identified(&mut base);
+    let target = DiscTarget::from_identification(&identification);
+    let package = Package::decode(&package_bytes(
+        "virtual-extent-boundary",
+        Some(original.clone()),
+        b"small replacement",
+        &target,
+    ))
+    .unwrap();
+    let set = PackageSet::new(vec![package]).unwrap();
+    let raw_before = base.into_inner();
+    const MAX_MSF_LBA: u32 = 100 * 60 * 75 - 151;
+    for (name, advertised_sectors, expected_message) in [
+        ("u32 overflow", u32::MAX, "virtual sector overflow"),
+        (
+            "MSF overflow",
+            MAX_MSF_LBA + 1,
+            "virtual extent exceeds 24-bit LBA, BCD position",
+        ),
+    ] {
+        let mut source = AdvertisedExtent {
+            inner: MemorySource::whole(raw_before.clone()).unwrap(),
+            sectors: advertised_sectors,
+        };
+        let mut preparation = set.preparation(&identification).unwrap();
+        let error = preparation.advance(&mut source).unwrap_err().to_string();
+        assert!(error.contains(expected_message), "{name}: {error}");
+        assert!(
+            preparation.overlay().is_none(),
+            "{name}: failed preparation publishes no overlay"
+        );
+        assert_eq!(
+            source.inner.into_inner(),
+            raw_before,
+            "{name}: source image remains unchanged"
+        );
+    }
 }
 
 #[test]

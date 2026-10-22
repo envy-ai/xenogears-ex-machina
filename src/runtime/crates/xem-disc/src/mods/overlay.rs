@@ -116,6 +116,7 @@ pub struct Preparation {
     boot_lba: u32,
     boot_sha256: String,
     index: Vec<u8>,
+    disc_index: Vec<u8>,
     directories: Vec<u8>,
     pending: Vec<Pending>,
     at: usize,
@@ -172,11 +173,11 @@ impl Preparation {
                     .record(slot as usize)
                     .ok_or_else(|| format_error("mod index slot absent"))?;
                 if record.is_unused()
-                    || record.size < 0
+                    || record.size <= 0
                     || record.size as usize > super::delta::MAX_FILE_BYTES
                 {
                     return Err(format_error(
-                        "mod target is unused, a directory or exceeds the file limit",
+                        "mod target is unused, empty, a directory or exceeds the file limit",
                     ));
                 }
                 pending.push(Pending {
@@ -195,6 +196,7 @@ impl Preparation {
             boot_lba: id.boot_lba,
             boot_sha256: target.sha256,
             index,
+            disc_index: Vec::new(),
             directories,
             pending,
             at: 0,
@@ -228,11 +230,22 @@ impl Preparation {
             return Err(format_error("boot extent outside source"));
         }
         if !self.metadata_checked && !self.pending.is_empty() {
-            if crate::read_data(source, INDEX_LBA, INDEX_BYTES)? != self.index
+            let disc_index = crate::read_data(source, INDEX_LBA, INDEX_BYTES)?;
+            // The index ends with one opaque byte outside the complete 7-byte
+            // records. The original discs differ from their embedded EXEs in
+            // that byte; validate every record and preserve each copy's tail.
+            let records_end = INDEX_BYTES / RECORD_SIZE * RECORD_SIZE;
+            if disc_index[..records_end] != self.index[..records_end]
                 || crate::read_data(source, DIRECTORY_LBA, DIRECTORY_BYTES)? != self.directories
             {
-                return Err(format_error("embedded and on-disc mod index views differ"));
+                return Err(format_error(
+                    "embedded and on-disc mod index records/directories differ",
+                ));
             }
+            self.disc_index = disc_index;
+            let mut directory_sector = [0; SECTOR_SIZE];
+            source.read_sector(DIRECTORY_LBA, &mut directory_sector)?;
+            form1(&directory_sector, DIRECTORY_LBA)?;
             let parsed = Index::parse(&self.index, &self.directories);
             for file in &self.pending {
                 let end = file
@@ -302,12 +315,9 @@ impl Preparation {
             for (package, entry) in &file.validators {
                 result = self.set.packages[*package].apply(entry, &file.bytes)?;
             }
-            let sub = file.sub.unwrap_or(Subheader {
-                file: 0,
-                channel: 0,
-                submode: sector::submode::DATA,
-                coding: 0,
-            });
+            let sub = file
+                .sub
+                .ok_or_else(|| format_error("mod source has no Form1 sector"))?;
             self.results
                 .push((file.entry.slot, Arc::from(result), sub, file.last_flags));
             file.bytes.clear();
@@ -315,6 +325,7 @@ impl Preparation {
             self.at += 1;
         }
         let mut index = self.index.clone();
+        let mut disc_index = self.disc_index.clone();
         let mut files = Vec::new();
         let mut next = count;
         let mut total = 0usize;
@@ -341,6 +352,7 @@ impl Preparation {
             let at = *slot as usize * RECORD_SIZE;
             index[at..at + 3].copy_from_slice(&next.to_le_bytes()[..3]);
             index[at + 3..at + 7].copy_from_slice(&(bytes.len() as i32).to_le_bytes());
+            disc_index[at..at + RECORD_SIZE].copy_from_slice(&index[at..at + RECORD_SIZE]);
             files.push(FileData {
                 lba: next,
                 bytes: bytes.clone(),
@@ -353,8 +365,11 @@ impl Preparation {
         let mut patches = BTreeMap::new();
         if !files.is_empty() {
             executable[EMBEDDED_INDEX..EMBEDDED_INDEX + INDEX_BYTES].copy_from_slice(&index);
-            for (n, data) in index.chunks(FORM1_DATA_SIZE).enumerate() {
-                patch(source, &mut patches, INDEX_LBA + n as u32, data)?;
+            for (n, data) in disc_index.chunks(FORM1_DATA_SIZE).enumerate() {
+                let start = n * FORM1_DATA_SIZE;
+                if data != &self.disc_index[start..start + data.len()] {
+                    patch(source, &mut patches, INDEX_LBA + n as u32, data)?;
+                }
             }
             for (n, data) in executable.chunks(FORM1_DATA_SIZE).enumerate() {
                 if data != &self.executable[n * FORM1_DATA_SIZE..n * FORM1_DATA_SIZE + data.len()] {

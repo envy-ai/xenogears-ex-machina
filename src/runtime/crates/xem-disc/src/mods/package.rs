@@ -8,6 +8,7 @@ use sha2::{Digest, Sha256};
 use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
 
+pub const MAX_SET_BYTES: usize = MAX_TOTAL_BYTES + 4 * MAX_PACKAGES + 12;
 pub const MAX_PACKAGE_BYTES: usize = 64 << 20;
 pub(super) const MAX_TOTAL_BYTES: usize = 128 << 20;
 const MAX_MANIFEST: usize = 64 << 10;
@@ -291,13 +292,13 @@ impl Package {
         format!("{}@{}", self.manifest.id, self.digest)
     }
     pub(super) fn apply(&self, entry: &FileEntry, source: &[u8]) -> Result<Vec<u8>> {
-        if let Some(expected) = &entry.source_sha256 {
-            if hash(source) != *expected {
-                return Err(format_error(format!(
-                    "mod {} file {} source SHA-256 differs",
-                    self.manifest.id, entry.slot
-                )));
-            }
+        if let Some(expected) = &entry.source_sha256
+            && hash(source) != *expected
+        {
+            return Err(format_error(format!(
+                "mod {} file {} source SHA-256 differs",
+                self.manifest.id, entry.slot
+            )));
         }
         let at = self.payload_start + entry.offset as usize;
         let bytes = &self.bytes[at..at + entry.length as usize];
@@ -371,7 +372,7 @@ impl PackageSet {
         self.packages.is_empty()
     }
     pub fn from_bytes(bytes: &[u8]) -> Result<Self> {
-        if bytes.len() > MAX_TOTAL_BYTES + 4 * MAX_PACKAGES + 12 {
+        if bytes.len() > MAX_SET_BYTES {
             return Err(format_error("mod set exceeds 128 MiB"));
         }
         let mut reader = Reader::new(bytes);
