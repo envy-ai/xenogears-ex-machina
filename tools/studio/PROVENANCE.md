@@ -65,7 +65,7 @@ Source revision: rpg_creator `1f690d0263af8881a2d33ee374a2e5006355748b`.
 | `src/styles/editor-controls.scss` | `src/editor-controls.scss` | Unchanged apart from source/revision header. |
 | `src/styles/editor-surfaces.scss` | `src/editor-surfaces.scss` | Unchanged apart from source/revision header. |
 | `src/styles/editor-typography.scss` | `src/editor-typography.scss` | Unchanged apart from source/revision header. |
-| `src/editor/GraphCanvas.tsx` | `src/editor/EventGraphEditor.tsx` | General read-only canvas ranges detailed below; pan/zoom, viewport culling, wires/ports and focus only. Dynamic finite bounds/origin and browser-safe extent checks are newly authored; domain/editor mutation code excluded. |
+| `src/editor/GraphCanvas.tsx` | `src/editor/EventGraphEditor.tsx` | General read-only canvas ranges detailed below; pan/zoom, viewport culling, wires/ports and focus only. Dynamic finite bounds/origin, browser-safe extent checks, vertical/right output ports and reversed wheel orientation are newly authored adaptations; domain/editor mutation code excluded. |
 | `src/editor/deltaHistory.ts` | `src/editor/deltaHistory.ts` lines 1–813 | Verbatim generic module after source/grant headers; existing generic IDs import reused. |
 | `src/editor/NameHistory.tsx` | `src/editor/editorState.ts` lines 3552–3559, 3561–3564, 3567–3582, 3616–3634 | Adapted focused-control labels/grouping only; newly authored validated persistence controller. No project reducer or global listeners. |
 

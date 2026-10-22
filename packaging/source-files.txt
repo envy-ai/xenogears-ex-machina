@@ -1301,6 +1301,7 @@ tools/studio/tests/e2e/events-real-disc.spec.ts
 tools/studio/tests/e2e/events.fixture.ts
 tools/studio/tests/e2e/events.spec.ts
 tools/studio/tests/e2e/field.spec.ts
+tools/studio/tests/e2e/graph-qol.spec.ts
 tools/studio/tests/e2e/nw-events-smoke.mjs
 tools/studio/tests/e2e/nw-real-discs-smoke.mjs
 tools/studio/tests/e2e/nw-smoke.mjs

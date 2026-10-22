@@ -412,7 +412,9 @@ labelled. Selecting another disc clears the previous loaded map view.
 Expand an actor to see its 32 event slots (Load, Idle, Talk, Touch, then numbered
 entries). The command list folds proven structures and exposes original raw PC,
 bytes, edges and diagnostics. The graph is a read-only layered view, with pan,
-zoom, selection and offscreen culling. Unfollowed/outside paths have explicit
+zoom, selection and offscreen culling. Wheel up zooms in; wheel down zooms out.
+Main flow connects bottom-to-top, with branch/switch-case outputs on the right.
+Unfollowed/outside paths have explicit
 non-executable destination markers. Lanes show actor/event spans, start/finish
 request links and possible shared-variable dependencies, without a guessed
 execution timeline. All views retain map diagnostic references.

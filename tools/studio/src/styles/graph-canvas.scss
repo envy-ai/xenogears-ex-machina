@@ -88,13 +88,12 @@
 .graph-canvas__content { min-height: 0; overflow: auto; user-select: text; }
 .graph-canvas__port {
   position: absolute;
-  top: 50%;
   width: 9px;
   height: 9px;
   border: 1px solid var(--editor-accent);
   border-radius: 50%;
   background: var(--editor-panel);
-  transform: translateY(-50%);
 }
-.graph-canvas__port--input { left: -6px; }
-.graph-canvas__port--output { right: -6px; }
+.graph-canvas__port--input { left: 50%; top: -1px; transform: translate(-50%, -50%); }
+.graph-canvas__port--output { left: 50%; bottom: -1px; transform: translate(-50%, 50%); }
+.graph-canvas__port--branch { right: -1px; top: 50%; transform: translate(50%, -50%); }

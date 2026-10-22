@@ -428,7 +428,13 @@ and domain navigation. The canvas owns readonly node frames/ports, cubic wires,
 selection focus, viewport culling, pan and zoom. It has no palette, inspector,
 node editing, project schema, draft recovery or graph history.
 
-Middle-drag or Space+drag pans; wheel zoom stays anchored under the pointer.
+Middle-drag or Space+drag pans; wheel up zooms in and wheel down zooms out,
+anchored under the pointer. Inputs enter at the top center and main outputs
+leave at the bottom center. An edge may set `fromPort: "right"` for an alternate
+output; the canvas shows a right-side port only on nodes using it. Omitted
+`fromPort` means `"bottom"`. The event view assigns branch and table-entry edges
+to the right port. All destinations retain their top input. Backward and self edges detour around
+the frames while retaining those port directions; culling includes both arcs.
 The copied zoom limits are 0.1–1.8. Home/Fit fits the supplied bounds; +/- zooms.
 Arrow keys move focus/selection; Enter activates the selected node through the
 caller. External selection is revealed even when initially outside the viewport.

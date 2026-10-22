@@ -21,6 +21,8 @@ export interface GraphCanvasEdge {
   to: string;
   kind: string;
   status: string;
+  /** Main flow leaves below; alternate paths may leave on the right. */
+  fromPort?: 'bottom' | 'right';
 }
 
 export interface GraphCanvasProps {
@@ -93,6 +95,7 @@ export function GraphCanvas({ nodes, edges, selectedId, onSelect, onActivate, ar
     for (const edge of edges) {
       if (!edge.id || edgeIds.has(edge.id)) throw new Error(`Duplicate or empty graph edge id: ${edge.id}`);
       if (!result.has(edge.from) || !result.has(edge.to)) throw new Error(`Graph edge ${edge.id} has an unknown endpoint.`);
+      if (edge.fromPort !== undefined && edge.fromPort !== 'bottom' && edge.fromPort !== 'right') throw new Error(`Graph edge ${edge.id} has an unknown output port.`);
       edgeIds.add(edge.id);
     }
     return { byId: result, canvas: { width, height,
@@ -196,7 +199,7 @@ export function GraphCanvas({ nodes, edges, selectedId, onSelect, onActivate, ar
       const modeScale = event.deltaMode === WheelEvent.DOM_DELTA_LINE ? 16
         : event.deltaMode === WheelEvent.DOM_DELTA_PAGE ? element.clientHeight : 1;
       const normalizedDelta = Math.max(-70, Math.min(70, event.deltaY * modeScale));
-      zoomAroundPoint(zoomRef.current * Math.exp(normalizedDelta * 0.0022), {
+      zoomAroundPoint(zoomRef.current * Math.exp(-normalizedDelta * 0.0022), {
         x: event.clientX - bounds.left, y: event.clientY - bounds.top,
       });
     };
@@ -232,17 +235,30 @@ export function GraphCanvas({ nodes, edges, selectedId, onSelect, onActivate, ar
   const visibleEdges = useMemo(() => edges.flatMap(edge => {
     const from = byId.get(edge.from)!;
     const to = byId.get(edge.to)!;
-    const start = { x: from.x + from.width, y: from.y + from.height / 2 };
-    const end = { x: to.x, y: to.y + to.height / 2 };
-    const bend = Math.max(70, (end.x - start.x) * 0.5);
-    // Include the Bezier's control hull: a wire may cross the viewport even
-    // while both endpoint nodes are off screen.
-    if (!intersects(Math.min(start.x, end.x - bend), Math.min(start.y, end.y),
-      Math.max(end.x, start.x + bend), Math.max(start.y, end.y), viewport)) return [];
-    const a = { x: start.x + canvas.originX, y: start.y + canvas.originY };
-    const b = { x: end.x + canvas.originX, y: end.y + canvas.originY };
-    return [{ edge, d: `M ${a.x} ${a.y} C ${a.x + bend} ${a.y}, ${b.x - bend} ${b.y}, ${b.x} ${b.y}` }];
+    const right = edge.fromPort === 'right';
+    const start = right ? { x: from.x + from.width, y: from.y + from.height / 2 }
+      : { x: from.x + from.width / 2, y: from.y + from.height };
+    const end = { x: to.x + to.width / 2, y: to.y };
+    const back = end.y <= start.y;
+    const bend = back ? 24 : Math.max(24, Math.abs(end.x - start.x) * 0.25, Math.abs(end.y - start.y) * 0.5);
+    const control1 = right ? { x: start.x + bend, y: start.y } : { x: start.x, y: start.y + bend };
+    const control2 = { x: end.x, y: end.y - bend };
+    // Return paths go around the frames, rather than retracing a vertical line
+    // through the nodes. Both end tangents still agree with their port sides.
+    const laneX = Math.max(from.x + from.width, to.x + to.width) + bend * 2;
+    const segments: [Point, Point, Point][] = back ? [
+      [control1, { x: laneX, y: start.y + bend }, { x: laneX, y: (start.y + end.y) / 2 }],
+      [{ x: laneX, y: end.y - bend }, control2, end],
+    ] : [[control1, control2, end]];
+    // Cull against every control point, including both arcs of a return path.
+    const points = [start, ...segments.flat()];
+    if (!intersects(Math.min(...points.map(point => point.x)), Math.min(...points.map(point => point.y)),
+      Math.max(...points.map(point => point.x)), Math.max(...points.map(point => point.y)), viewport)) return [];
+    const coordinates = (point: Point) => `${point.x + canvas.originX} ${point.y + canvas.originY}`;
+    return [{ edge, d: `M ${coordinates(start)} ${segments.map(segment => `C ${segment.map(coordinates).join(', ')}`).join(' ')}` }];
   }), [edges, byId, viewport, canvas.originX, canvas.originY]);
+
+  const rightOutputs = useMemo(() => new Set(edges.filter(edge => edge.fromPort === 'right').map(edge => edge.from)), [edges]);
 
   function beginPan(event: PointerEvent<HTMLDivElement>) {
     if (event.button !== 1 && !(event.button === 0 && (spaceHeld
@@ -311,7 +327,7 @@ export function GraphCanvas({ nodes, edges, selectedId, onSelect, onActivate, ar
       <button className="editor-button editor-button--compact" type="button" onClick={() => zoomAroundPoint(zoomRef.current / 1.2)} aria-label="Zoom out" title="Zoom out (-)">−</button>
       <span className="editor-text editor-text--code" aria-live="polite">{Math.round(zoom * 100)}%</span>
       <button className="editor-button editor-button--compact" type="button" onClick={() => zoomAroundPoint(zoomRef.current * 1.2)} aria-label="Zoom in" title="Zoom in (+)">+</button>
-      <span className="editor-text editor-text--caption" id={hintId}>Drag background to pan · Wheel to zoom · Arrows select · Enter follows</span>
+      <span className="editor-text editor-text--caption" id={hintId}>Drag background to pan · Wheel up zooms in · Arrows select · Enter follows</span>
     </div>
     <div ref={canvasRef} className="graph-canvas__viewport" tabIndex={0} role="group"
       aria-label={`${ariaLabel} canvas`} aria-describedby={hintId}
@@ -350,6 +366,7 @@ export function GraphCanvas({ nodes, edges, selectedId, onSelect, onActivate, ar
             <strong className="graph-canvas__label">{node.label}</strong>
             {node.content === undefined ? null : <div className="graph-canvas__content">{node.content}</div>}
             <span className="graph-canvas__port graph-canvas__port--output" aria-hidden="true" />
+            {rightOutputs.has(node.id) && <span className="graph-canvas__port graph-canvas__port--branch" aria-hidden="true" />}
           </article>)}
         </div>
       </div>
