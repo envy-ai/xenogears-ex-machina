@@ -68,6 +68,17 @@ explicitly confirmed. Inspector reads are revision-scoped. Live navigation uses
 M3's explicit actor/event selection API without loading a different map or
 resetting name drafts. Unavailable navigation and original errors remain visible.
 
+Selected schema details remain inline. Dirty scalar text is not discarded when
+another node is clicked: the target waits for Write & read back or Cancel draft;
+Keep editing abandons only that pending navigation. Returning the text to its
+last read value also clears the pending navigation, without changing nodes. Failed writes retain the
+text and target. Repeated selection of the current dirty node keeps its text.
+Refresh cannot replace a dirty draft. If the timeline or schema changes, dirty
+text remains visible for reference and cannot be applied to that newer state;
+Cancel draft explicitly discards it before refreshing or switching. Cancellation
+never rolls back a write already acknowledged by the runtime. Snapshot restore
+retains its separate confirmation modal.
+
 The native launch form passes `nw.require('node:process').env` explicitly into
 the child transport. Reading bare `process.env` in bundled browser code is unsafe:
 Vite replaces that expression. This preserves the owned child’s normal display,

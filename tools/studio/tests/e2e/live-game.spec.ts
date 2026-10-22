@@ -190,6 +190,104 @@ test('retains frame and runtime scalar errors through later successes and confir
   await expect.poll(() => storedErrors(errors)).toEqual(errorsAfterRefusal);
 });
 
+test('requires an explicit choice before switching away from an unapplied schema draft', async ({ page }) => {
+  await setupSyntheticGame(page);
+  const live = await openStudio(page);
+  await attachSyntheticGame(page, live);
+  const inspector = page.locator('[data-studio-panel="inspector"]');
+  const errors = page.locator('.studio-errors');
+  const root = inspector.locator('[data-schema-node="fixture_value"]');
+  const child = inspector.locator('[data-schema-node="fixture_record.value"]');
+  await inspector.getByRole('button', { name: 'Expand fixture_record' }).click();
+  await root.click();
+  await expect(inspector.getByLabel('Selected path')).toHaveValue('fixture_value');
+  await expect(inspector.getByLabel('Inspected value')).toHaveText('7');
+
+  await live.getByLabel('Snapshot name').fill('draft-baseline');
+  await live.getByRole('button', { name: 'Capture' }).click();
+  await expect(live.getByLabel('Session snapshots')).toHaveValue('draft-baseline');
+
+  const scalar = inspector.getByLabel('New scalar value');
+  const write = inspector.getByRole('button', { name: 'Write & read back' });
+  const notice = inspector.locator('.schema-draft-notice [role="status"]');
+  await scalar.fill('9');
+  await child.click();
+  await expect(inspector.getByLabel('Selected path')).toHaveValue('fixture_value');
+  await expect(scalar).toHaveValue('9');
+  await expect(notice).toContainText('Unapplied draft for fixture_value');
+  await expect(notice).toContainText('Waiting to select fixture_record.value');
+  await expect(inspector.getByRole('button', { name: 'Refresh value' })).toBeDisabled();
+
+  await inspector.getByRole('button', { name: 'Keep editing' }).click();
+  await expect(inspector.getByLabel('Selected path')).toHaveValue('fixture_value');
+  await expect(scalar).toHaveValue('9');
+  await expect(notice).not.toContainText('Waiting to select');
+  await child.click();
+  await expect(notice).toContainText('Waiting to select fixture_record.value');
+  await scalar.fill('7');
+  await expect(notice).toHaveCount(0);
+  await expect(inspector.getByLabel('Selected path')).toHaveValue('fixture_value');
+  await child.click();
+  await expect(inspector.getByLabel('Selected path')).toHaveValue('fixture_record.value');
+  await expect(inspector.getByLabel('Inspected value')).toHaveText('7');
+
+  await scalar.fill('8');
+  await root.click();
+  await expect(notice).toContainText('Waiting to select fixture_value');
+  await write.click();
+  await expect(inspector.getByLabel('Selected path')).toHaveValue('fixture_value');
+  await expect(inspector.getByLabel('Inspected value')).toHaveText('8');
+  await expect(scalar).toHaveValue('8');
+
+  await scalar.fill('13');
+  await child.click();
+  await expect(notice).toContainText('Waiting to select fixture_record.value');
+  await write.click();
+  await expect(errors).toContainText('Synthetic runtime refused scalar value 13');
+  await expect(inspector.getByLabel('Selected path')).toHaveValue('fixture_value');
+  await expect(scalar).toHaveValue('13');
+  await expect(notice).toContainText('Waiting to select fixture_record.value');
+  await inspector.getByRole('button', { name: 'Keep editing' }).click();
+  await expect(scalar).toHaveValue('13');
+  await inspector.getByRole('button', { name: 'Cancel draft' }).click();
+  await expect(inspector.getByLabel('Selected path')).toHaveValue('fixture_value');
+  await expect(inspector.getByLabel('Inspected value')).toHaveText('8');
+  const refusal = (await storedErrors(errors)).find(text => text.includes('Synthetic runtime refused scalar value 13'));
+  expect(refusal).toBeTruthy();
+
+  await scalar.fill('10');
+  await live.getByRole('button', { name: 'Step' }).click();
+  await expect(scalar).toHaveValue('10');
+  await expect(notice).toContainText('timeline or connection changed');
+  await expect(write).toBeDisabled();
+  await expect(inspector.getByRole('button', { name: 'Refresh value' })).toBeDisabled();
+  await child.click();
+  await expect(notice).toContainText('Waiting to select fixture_record.value');
+  await inspector.getByRole('button', { name: 'Cancel draft' }).click();
+  await expect(inspector.getByLabel('Selected path')).toHaveValue('fixture_record.value');
+  await expect(inspector.getByLabel('Inspected value')).toHaveText('8');
+  await root.click();
+  await expect(inspector.getByLabel('Selected path')).toHaveValue('fixture_value');
+  await expect(inspector.getByLabel('Inspected value')).toHaveText('8');
+
+  await scalar.fill('11');
+  await write.click();
+  await expect(inspector.getByRole('status')).toContainText('Read-back: 11');
+  await live.getByLabel('Session snapshots').selectOption('draft-baseline');
+  await live.getByRole('button', { name: 'Restore…' }).click();
+  await page.getByRole('dialog', { name: 'Restore session snapshot' }).getByRole('button', { name: 'Restore' }).click();
+  await expect(page.getByRole('dialog', { name: 'Restore session snapshot' })).toHaveCount(0);
+
+  await child.click();
+  await expect(inspector.getByLabel('Selected path')).toHaveValue('fixture_record.value');
+  await expect(inspector.getByLabel('Inspected value')).toHaveText('7');
+  await root.click();
+  await expect(inspector.getByLabel('Selected path')).toHaveValue('fixture_value');
+  await expect(inspector.getByLabel('Inspected value')).toHaveText('7');
+  await expect(scalar).toHaveValue('7');
+  expect((await storedErrors(errors)).some(text => text.includes(refusal!))).toBe(true);
+});
+
 test('keeps the schema tree selectable after opening details at supported widths', async ({ page }, testInfo) => {
   await setupSyntheticGame(page);
   const live = await openStudio(page);
@@ -246,13 +344,25 @@ test('window loss disconnects with its original error and a later attach leaves 
   await setupSyntheticGame(page);
   const live = await openStudio(page);
   const popup = await attachSyntheticGame(page, live);
+  const inspector = page.locator('[data-studio-panel="inspector"]');
+  await inspector.locator('[data-schema-node="fixture_value"]').click();
+  const scalar = inspector.getByLabel('New scalar value');
+  await scalar.fill('12');
+  await expect(inspector.getByRole('status')).toContainText('Unapplied draft for fixture_value');
   await popup.close();
 
   await expect(live.locator('> p[role="status"]')).toHaveText('Disconnected', { timeout: 5_000 });
   const errors = page.locator('.studio-errors');
   await expect(errors).toContainText('The attached game window was closed');
+  await expect(inspector.getByLabel('Retained scalar draft')).toHaveText('12');
+  await expect(inspector.locator('.schema-draft-notice [role="status"]')).toContainText('timeline or connection changed');
   const lostError = (await storedErrors(errors))[0]!;
 
   await attachSyntheticGame(page, live);
+  await expect(inspector.getByLabel('Retained scalar draft')).toHaveText('12');
+  await expect(inspector.getByRole('button', { name: 'Write & read back' })).toHaveCount(0);
+  await inspector.getByRole('button', { name: 'Cancel draft' }).click();
+  await inspector.locator('[data-schema-node="fixture_value"]').click();
+  await expect(inspector.getByLabel('Inspected value')).toHaveText('7');
   await expect.poll(() => storedErrors(errors)).toEqual([lostError]);
 });

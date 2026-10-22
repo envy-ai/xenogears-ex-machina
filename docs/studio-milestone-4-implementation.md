@@ -138,3 +138,20 @@ failed attempts and skips are indexed in ignored
 not a distributable game asset. No new push, PR, merge or later milestone is
 performed. Main-checkout PR46 hashes and decomp/prompt status are checked before
 completion.
+
+## Corrective inline inspector handoff
+
+Bart's latest instruction retains persistent inline details and supersedes the
+intervening modal-conversion request. No modal conversion was implemented;
+snapshot restore retains its existing independent modal. Preserve the real
+normal-click/geometry/readability regressions from attempts 25/28.
+
+Unapplied scalar text now holds a requested node change until explicit apply or
+cancel. Successful Write & read back follows the pending node; failed writes keep
+the original draft/selection/target. Cancel draft discards and follows the target;
+Keep editing abandons only pending navigation. Refresh cannot erase dirty text.
+Timeline/schema changes retain dirty text for reference without allowing it to be
+written into another state. Focused synthetic browser coverage exercises these
+normal-click flows, and affected real UI acceptance is rerun. Unchanged runtime,
+parity and full-suite evidence remains valid; exact corrective commands/results
+are appended to the ignored milestone-four verification index.

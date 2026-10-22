@@ -517,7 +517,10 @@ and selected public TLS certificate trust anchor. Packaged manifests have neithe
 Select/expand a schema node to inspect, enter an exact decimal integer or enum
 name and choose Write & read back. Unsupported/opaque/untyped/bit-field nodes
 are explicit. Values outside the declared integer range are refused without a
-write. Snapshots are named within the current connection; Restore requires
+write. Details stay inline. Clicking another node with unapplied scalar text waits
+for Write & read back or Cancel draft; Keep editing retains the current draft.
+Timeline/connection changes retain dirty text for reference with writing disabled
+until explicit cancellation. Snapshots are named within the current connection; Restore requires
 confirmation. Reboot/reconnect invalidates the previous inspector and snapshots.
 
 Jump to node requires the same disc and map already loaded in the event studio,

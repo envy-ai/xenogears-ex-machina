@@ -116,10 +116,13 @@ export async function runRealGameUiReal(): Promise<void> {
     await pwExpect(scalar).toBeDisabled();
     await live.getByRole('button', { name: 'Pause', exact: true }).click();
     await pwExpect(live.getByText(/browser · Paused · acknowledged/)).toBeVisible();
-    await pwExpect(scalar).toHaveValue('');
+    await pwExpect(scalar).toHaveValue('31');
+    await pwExpect(inspector.getByRole('status')).toContainText('timeline or connection changed');
     await pwExpect(inspector.getByRole('button', { name: 'Write & read back' })).toBeDisabled();
-    await inspector.getByRole('button', { name: 'Refresh value' }).click();
+    await pwExpect(inspector.getByRole('button', { name: 'Refresh value' })).toBeDisabled();
+    await inspector.getByRole('button', { name: 'Cancel draft' }).click();
     await pwExpect(inspector.getByLabel('Inspected value')).toContainText('30');
+    await pwExpect(scalar).toHaveValue('30');
     await scalar.fill('31');
     await inspector.getByRole('button', { name: 'Write & read back' }).click();
     await pwExpect(inspector.getByRole('status')).toContainText('Read-back: 31');

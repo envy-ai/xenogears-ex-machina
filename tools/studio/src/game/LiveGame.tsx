@@ -4,7 +4,7 @@ import { browserGameTransport, type GameWindow } from './browser';
 import { launchNativeGame, type NativeLaunch } from './native';
 import { gameJson, type GameValue } from './protocol';
 import { readLivePc, resolveLivePc, formatLivePc } from './pc';
-import type { SchemaNode } from './schema';
+import type { SchemaModel, SchemaNode } from './schema';
 import { nativeHost, selectNativePath } from '../platform/host';
 import { NumberField } from '../editor/NumberField';
 import { RecordSelect } from '../editor/RecordSelect';
@@ -120,27 +120,49 @@ export function SchemaInspector({ report }: { report(error: unknown): void }) {
   const [expanded, setExpanded] = useState(new Set<string>());
   const [selected, setSelected] = useState<SchemaNode | null>(null);
   const [value, setValue] = useState<{ revision: number; data: GameValue } | undefined>(undefined);
-  const [draft, setDraft] = useState<{ path: string; revision: number; text: string } | null>(null);
+  const [draft, setDraft] = useState<{ path: string; revision: number; text: string; original: string; schema: SchemaModel | null } | null>(null);
+  const [pendingNode, setPendingNode] = useState<SchemaNode | null>(null);
   const [confirmed, setConfirmed] = useState<{ revision: number; text: string } | null>(null);
   const request = useRef(0);
   const schema = state.schema;
-  useEffect(() => { ++request.current; setSelected(null); setValue(undefined); setDraft(null); setConfirmed(null); setExpanded(new Set()); }, [schema]);
+  const dirty = draft !== null && draft.text !== draft.original;
+  const currentDraft = draft?.schema === schema && draft?.revision === state.revision;
+  useEffect(() => {
+    ++request.current; setSelected(null); setValue(undefined); setConfirmed(null); setExpanded(new Set()); setPendingNode(null);
+    // A disconnected draft is retained for reference, never replayed on another schema.
+    setDraft(current => current && current.text !== current.original ? current : null);
+  }, [schema]);
+  const scalarText = (node: SchemaNode, next: GameValue) => typeof next === 'string'
+    ? schema?.resolve(node.type)?.kind === 'pointer' && /^0x[0-9a-f]+$/i.test(next) ? BigInt(next).toString() : next
+    : gameJson(next);
   const read = async (node: SchemaNode) => {
     const token = ++request.current;
-    setSelected(node); setValue(undefined); setDraft(null); setConfirmed(null);
+    setSelected(node); setValue(undefined); setDraft(null); setConfirmed(null); setPendingNode(null);
     if (node.unsupported || node.range) return;
     const revision = controller.getSnapshot().revision;
     const next = await controller.inspect(node);
     if (token !== request.current || controller.getSnapshot().schema !== schema || controller.getSnapshot().revision !== revision) return;
-    setValue({ revision, data: next }); setDraft({ path: node.path, revision, text: typeof next === 'string' ? schema?.resolve(node.type)?.kind === 'pointer' && /^0x[0-9a-f]+$/i.test(next) ? BigInt(next).toString() : next : gameJson(next) });
+    const text = scalarText(node, next);
+    setValue({ revision, data: next }); setDraft({ path: node.path, revision, text, original: text, schema });
   };
   const write = async () => {
-    if (!selected || !draft || draft.path !== selected.path || draft.revision !== controller.getSnapshot().revision) throw new Error('Enter a scalar draft for the selected path and current timeline');
+    if (!selected || !draft || draft.path !== selected.path || draft.schema !== controller.getSnapshot().schema || draft.revision !== controller.getSnapshot().revision) throw new Error('Enter a scalar draft for the selected path and current timeline');
     const token = ++request.current;
     const next = await controller.write(selected, draft.text);
     if (token !== request.current || controller.getSnapshot().schema !== schema) return;
     const revision = controller.getSnapshot().revision;
-    setValue({ revision, data: next }); setDraft({ ...draft, revision }); setConfirmed({ revision, text: `Read-back: ${gameJson(next)} · confirmed` });
+    const text = scalarText(selected, next);
+    setValue({ revision, data: next }); setDraft({ ...draft, revision, text, original: text }); setConfirmed({ revision, text: `Read-back: ${gameJson(next)} · confirmed` });
+    if (pendingNode) await read(pendingNode);
+  };
+  const choose = async (node: SchemaNode) => {
+    if (dirty) { if (node.path !== selected?.path || node.range) setPendingNode(node); return; }
+    await read(node);
+  };
+  const cancelDraft = async () => {
+    const target = pendingNode ?? (draft?.schema === schema ? selected : null);
+    setDraft(null); setPendingNode(null); setConfirmed(null);
+    if (target) await read(target);
   };
   const roots = schema?.roots(filter) ?? [];
   const rows: { node: SchemaNode; key: string }[] = [];
@@ -155,8 +177,13 @@ export function SchemaInspector({ report }: { report(error: unknown): void }) {
       if (at < 0) return;
       const index = event.key === 'Home' ? 0 : event.key === 'End' ? buttons.length - 1 : at + (event.key === 'ArrowDown' ? 1 : -1);
       if (index >= 0 && index < buttons.length) { event.preventDefault(); buttons[index].focus(); }
-    }}>{rows.map(({ node, key }) => { const children = schema!.children(node); return <DockerListRow key={key} intrinsicHeight selected={selected?.path === node.path && !node.range} columns="auto 1fr"><button className="editor-button editor-button--compact" aria-label={`${expanded.has(key) ? 'Collapse' : 'Expand'} ${node.label}`} title={`${expanded.has(key) ? 'Collapse' : 'Expand'} ${node.label}`} disabled={!children.length} aria-expanded={children.length ? expanded.has(key) : undefined} onClick={() => setExpanded(current => { const next = new Set(current); if (next.has(key)) next.delete(key); else next.add(key); return next; })}>{expanded.has(key) ? '−' : '+'}</button><button className="editor-button editor-button--compact editor-button--subtle schema-node" role="treeitem" aria-level={node.depth + 1} aria-selected={selected?.path === node.path && !node.range} data-schema-node={node.path} style={{ paddingInlineStart: `${node.depth * 10}px` }} title={`${node.path} · ${schema!.describe(node)}`} onClick={() => { void read(node).catch(report); }}><span className="editor-text">{node.label}</span><span className="editor-text editor-text--secondary">{schema!.describe(node)}</span></button></DockerListRow>; })}</div>{!rows.length && <DockerListEmpty>{schema ? 'No matching globals.' : 'No attached schema.'}</DockerListEmpty>}</DockerListBody></DockerList>
+    }}>{rows.map(({ node, key }) => { const children = schema!.children(node); return <DockerListRow key={key} intrinsicHeight selected={selected?.path === node.path && !node.range} columns="auto 1fr"><button className="editor-button editor-button--compact" aria-label={`${expanded.has(key) ? 'Collapse' : 'Expand'} ${node.label}`} title={`${expanded.has(key) ? 'Collapse' : 'Expand'} ${node.label}`} disabled={!children.length} aria-expanded={children.length ? expanded.has(key) : undefined} onClick={() => setExpanded(current => { const next = new Set(current); if (next.has(key)) next.delete(key); else next.add(key); return next; })}>{expanded.has(key) ? '−' : '+'}</button><button className="editor-button editor-button--compact editor-button--subtle schema-node" role="treeitem" aria-level={node.depth + 1} aria-selected={selected?.path === node.path && !node.range} data-schema-node={node.path} disabled={Boolean(state.busy)} style={{ paddingInlineStart: `${node.depth * 10}px` }} title={`${node.path} · ${schema!.describe(node)}`} onClick={() => { void choose(node).catch(report); }}><span className="editor-text">{node.label}</span><span className="editor-text editor-text--secondary">{schema!.describe(node)}</span></button></DockerListRow>; })}</div>{!rows.length && <DockerListEmpty>{schema ? 'No matching globals.' : 'No attached schema.'}</DockerListEmpty>}</DockerListBody></DockerList>
     {limit < roots.length && <button className="editor-button" onClick={() => setLimit(current => current + 128)}>Show more globals ({limit}/{roots.length})</button>}
-    {selected && <div className="editor-field-list"><label className="editor-field editor-field-label"><span>Selected path</span><input className="editor-control editor-control--text editor-control--code" value={selected.path} readOnly /></label><p className="editor-text">Type: {schema?.describe(selected)}</p><pre className="editor-text editor-text--code" aria-label="Inspected value">{value === undefined || value.revision !== state.revision || state.running ? selected.unsupported ?? 'Refresh to inspect the current state.' : gameJson(value.data)}</pre><button className="editor-button" disabled={Boolean(state.busy) || !!selected.unsupported || !!selected.range} onClick={() => { void read(selected).catch(report); }}>Refresh value</button><form className="live-toolbar" onSubmit={event => { event.preventDefault(); void write().catch(report); }}><label className="editor-field editor-field-label"><span>New scalar value</span><input className="editor-control editor-control--text editor-control--code" value={draft?.path === selected.path && draft.revision === state.revision ? draft.text : ''} onChange={event => setDraft({ path: selected.path, revision: state.revision, text: event.target.value })} disabled={!schema?.scalar(selected) || Boolean(state.busy) || Boolean(state.running)} /></label><button className="editor-button" type="submit" disabled={!schema?.scalar(selected) || Boolean(state.busy) || Boolean(state.running) || draft?.path !== selected.path || draft.revision !== state.revision}>Write & read back</button></form>{confirmed?.revision === state.revision && !state.running && <p className="editor-text" role="status">{confirmed.text}</p>}</div>}
+    {dirty && <div className="editor-field-list schema-draft-notice">
+      <p className="editor-text" role="status">{currentDraft ? `Unapplied draft for ${draft.path}. Write & read back to apply, or Cancel draft to discard.` : `The game timeline or connection changed. Unapplied draft for ${draft.path} is retained for reference and cannot be written. Cancel draft before refreshing or switching.`}{pendingNode && ` Waiting to select ${pendingNode.path}.`}</p>
+      {!selected && <pre className="editor-text editor-text--code" aria-label="Retained scalar draft">{draft.text}</pre>}
+      <div className="live-toolbar"><button className="editor-button" disabled={Boolean(state.busy)} onClick={() => { void cancelDraft().catch(report); }}>Cancel draft</button>{pendingNode && <button className="editor-button" disabled={Boolean(state.busy)} onClick={() => setPendingNode(null)}>Keep editing</button>}</div>
+    </div>}
+    {selected && <div className="editor-field-list"><label className="editor-field editor-field-label"><span>Selected path</span><input className="editor-control editor-control--text editor-control--code" value={selected.path} readOnly /></label><p className="editor-text">Type: {schema?.describe(selected)}</p><pre className="editor-text editor-text--code" aria-label="Inspected value">{value === undefined || value.revision !== state.revision || state.running ? selected.unsupported ?? 'Refresh to inspect the current state.' : gameJson(value.data)}</pre><button className="editor-button" disabled={Boolean(state.busy) || dirty || !!selected.unsupported || !!selected.range} onClick={() => { void read(selected).catch(report); }}>Refresh value</button><form className="live-toolbar" onSubmit={event => { event.preventDefault(); void write().catch(report); }}><label className="editor-field editor-field-label"><span>New scalar value</span><input className="editor-control editor-control--text editor-control--code" value={draft?.path === selected.path ? draft.text : ''} onChange={event => { const text = event.target.value; if (text === draft?.original) setPendingNode(null); setDraft(current => current && current.schema === schema && current.revision === state.revision ? { ...current, text } : current); }} disabled={!schema?.scalar(selected) || Boolean(state.busy) || Boolean(state.running) || !currentDraft} /></label><button className="editor-button" type="submit" disabled={!schema?.scalar(selected) || Boolean(state.busy) || Boolean(state.running) || draft?.path !== selected.path || !currentDraft}>Write & read back</button></form>{confirmed?.revision === state.revision && !state.running && <p className="editor-text" role="status">{confirmed.text}</p>}</div>}
   </section>;
 }

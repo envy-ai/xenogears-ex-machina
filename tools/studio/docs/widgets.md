@@ -504,7 +504,14 @@ navigation. Type/path and original errors remain visible. Scalar entry uses a
 text control to preserve exact 64-bit decimal integers; NumberField is reserved
 for bounded frame counts without clamping. Unsupported/bit-field/untyped nodes
 are explicit and cannot be written. The tree invalidates reads on session,
-selection and timeline changes. Feature Sass owns layout only.
+selection and timeline changes. Details remain inline in the persistent inspector.
+An unapplied scalar draft holds a requested node switch: Write & read back applies
+and reads the requested node, Cancel draft explicitly discards and switches, and
+Keep editing clears the pending switch without losing text. A rejected write
+retains the draft, selection and pending node. Refresh is disabled while dirty.
+Timeline/connection changes retain dirty text for reference, disable writing it,
+and require explicit cancellation before a new inspection. Feature Sass owns
+layout only.
 
 NumberField renders nonfinite draft state as an empty input while preserving the
 nonfinite model value for explicit validation. The live frame field exercises
