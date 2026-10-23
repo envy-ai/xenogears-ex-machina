@@ -5,7 +5,9 @@
 pub mod bindings;
 pub mod bundle;
 pub mod collision;
+pub mod command;
 pub mod domain;
+pub mod entities;
 pub mod entrances;
 pub mod formats;
 pub mod geometry;

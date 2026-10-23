@@ -1,6 +1,6 @@
 //! Source-owned, revisioned scene transactions. The immutable container is never
 //! replaced by a compiled result. History replays actions, not opaque byte blobs.
-use super::{bindings, bundle, collision, entrances, formats, geometry};
+use super::{bindings, bundle, collision, entities, entrances, formats, geometry, topology};
 use crate::field::{self, FieldError, FieldGraph, draft};
 use serde::{Deserialize, Serialize};
 use std::{collections::BTreeMap, sync::Arc};
@@ -53,6 +53,28 @@ pub enum Action {
         id: String,
         position: [i16; 3],
     },
+    AddCollisionVertex {
+        layer: String,
+        position: [i16; 3],
+    },
+    DuplicateCollisionVertex {
+        id: String,
+    },
+    DeleteCollisionVertex {
+        id: String,
+    },
+    AddCollisionTriangle {
+        layer: String,
+        vertices: [String; 3],
+        attribute: u8,
+        height_bump_raw: u8,
+    },
+    DuplicateCollisionTriangle {
+        id: String,
+    },
+    DeleteCollisionTriangle {
+        id: String,
+    },
     SetEntrance {
         value: entrances::Entrance,
     },
@@ -65,7 +87,7 @@ pub struct Document {
     pub entrance_selectors: Vec<u16>,
     pub actions: Vec<Action>,
     pub allocation_starts: Vec<u32>,
-    pub cursor: usize,
+    pub cursor: u32,
     pub next_id: u32,
 }
 #[derive(Clone, Debug, Serialize)]
@@ -77,11 +99,12 @@ pub struct Entity<T> {
 struct State {
     descriptors: Vec<Entity<formats::Descriptor>>,
     zones: Vec<Entity<formats::Zone>>,
-    collision: collision::Collision,
+    collision: entities::Collision,
     entrances: Vec<entrances::Entrance>,
 }
 struct Base {
     source: bundle::Source,
+    collision: collision::Collision,
     events: FieldGraph,
     references: bindings::References,
     model_count: usize,
@@ -108,6 +131,7 @@ pub struct Snapshot {
     pub descriptors: Vec<Entity<formats::Descriptor>>,
     pub zones: Vec<Entity<formats::Zone>>,
     pub collision: collision::Collision,
+    pub collision_entities: entities::Collision,
     pub entrances: Vec<entrances::Entrance>,
     pub source_sha256: String,
 }
@@ -188,7 +212,7 @@ impl Draft {
                     value,
                 })
                 .collect(),
-            collision,
+            collision: entities::Collision::from_source(&collision),
             entrances: entrance_records,
         };
         let references = bindings::capture(
@@ -199,6 +223,7 @@ impl Draft {
         Ok(Self {
             base: Arc::new(Base {
                 source,
+                collision,
                 events,
                 references,
                 model_count,
@@ -217,18 +242,19 @@ impl Draft {
     pub fn revision(&self) -> u32 {
         self.revision
     }
-    pub fn snapshot(&self) -> Snapshot {
-        Snapshot {
+    pub fn snapshot(&self) -> Result<Snapshot, FieldError> {
+        Ok(Snapshot {
             revision: self.revision,
             can_undo: self.cursor > 0,
             can_redo: self.cursor < self.actions.len(),
             modified: self.cursor > 0,
             descriptors: self.state.descriptors.clone(),
             zones: self.state.zones.clone(),
-            collision: self.state.collision.clone(),
+            collision: self.state.collision.resolve(&self.base.collision)?,
+            collision_entities: self.state.collision.clone(),
             entrances: self.state.entrances.clone(),
             source_sha256: self.base.source.header.source_sha256.clone(),
-        }
+        })
     }
     pub fn document(&self) -> Document {
         Document {
@@ -237,14 +263,15 @@ impl Draft {
             entrance_selectors: self.base.entrance_selectors.clone(),
             actions: self.actions.clone(),
             allocation_starts: self.allocation_starts.clone(),
-            cursor: self.cursor,
+            cursor: self.cursor as u32,
             next_id: self.next_id,
         }
     }
     pub fn import(document: Document) -> Result<Self, FieldError> {
+        let cursor = document.cursor as usize;
         if document.schema_version != 1
             || document.actions.len() > HISTORY_LIMIT
-            || document.cursor > document.actions.len()
+            || cursor > document.actions.len()
             || document.actions.len() != document.allocation_starts.len()
             || document.next_id == 0
         {
@@ -262,8 +289,8 @@ impl Draft {
             return Err(invalid("scene watermark reuses allocated identities"));
         }
         result.next_id = document.next_id;
-        result.state = result.replay(document.cursor)?;
-        result.cursor = document.cursor;
+        result.state = result.replay(cursor)?;
+        result.cursor = cursor;
         result.revision = 0;
         Ok(result)
     }
@@ -427,27 +454,78 @@ impl Draft {
                 state.zones.remove(at);
             }
             Action::SetCollisionVertex { id, position } => {
-                // Canonical source-derived identity, not an arbitrary mutable offset.
-                let parts: Vec<_> = id.split(':').collect();
-                if parts.len() != 4 || parts[0] != "collision" || parts[2] != "vertex" {
-                    return Err(invalid("invalid collision vertex identity"));
-                }
-                let layer = parts[1]
-                    .parse::<usize>()
-                    .map_err(|_| invalid("invalid collision layer identity"))?;
-                let vertex = parts[3]
-                    .parse::<usize>()
-                    .map_err(|_| invalid("invalid collision vertex identity"))?;
-                if id != &format!("collision:{layer}:vertex:{vertex}") {
-                    return Err(invalid("noncanonical collision vertex identity"));
-                }
-                let value = state
+                state
                     .collision
-                    .layers
-                    .get_mut(layer)
-                    .and_then(|l| l.vertices.get_mut(vertex))
-                    .ok_or_else(|| invalid("collision vertex outside source referenced prefix"))?;
-                value[..3].copy_from_slice(position);
+                    .vertex_layer(id)?
+                    .set_vertex(id, *position)?;
+            }
+            Action::AddCollisionVertex { layer, position } => {
+                state
+                    .collision
+                    .layer(layer)?
+                    .add_vertex(new_id(next, "collision_vertex")?, *position)?;
+            }
+            Action::DuplicateCollisionVertex { id } => {
+                let layer = state.collision.vertex_layer(id)?;
+                let value = layer
+                    .vertices
+                    .iter()
+                    .find(|v| v.id == *id)
+                    .ok_or_else(|| invalid("collision vertex not found"))?
+                    .value;
+                layer.vertices.push(Entity {
+                    id: new_id(next, "collision_vertex")?,
+                    value,
+                });
+            }
+            Action::DeleteCollisionVertex { id } => {
+                state.collision.vertex_layer(id)?.delete_vertex(id)?;
+            }
+            Action::AddCollisionTriangle {
+                layer,
+                vertices,
+                attribute,
+                height_bump_raw,
+            } => {
+                state.collision.layer(layer)?.add_triangle(
+                    new_id(next, "collision_triangle")?,
+                    vertices.clone(),
+                    *attribute,
+                    *height_bump_raw,
+                )?;
+            }
+            Action::DuplicateCollisionTriangle { id } => {
+                let layer = state.collision.triangle_layer(id)?;
+                let face = layer
+                    .triangles
+                    .iter()
+                    .find(|t| t.id == *id)
+                    .ok_or_else(|| invalid("collision triangle not found"))?
+                    .value
+                    .clone();
+                let mut vertices: [String; 3] = std::array::from_fn(|_| String::new());
+                for (target, original) in vertices.iter_mut().zip(&face.vertices) {
+                    let value = layer
+                        .vertices
+                        .iter()
+                        .find(|v| v.id == *original)
+                        .ok_or_else(|| invalid("collision source triangle has a dangling vertex"))?
+                        .value;
+                    *target = new_id(next, "collision_vertex")?;
+                    layer.vertices.push(Entity {
+                        id: target.clone(),
+                        value,
+                    });
+                }
+                layer.add_triangle(
+                    new_id(next, "collision_triangle")?,
+                    vertices,
+                    face.attribute,
+                    face.height_bump_raw,
+                )?;
+            }
+            Action::DeleteCollisionTriangle { id } => {
+                state.collision.triangle_layer(id)?.delete_triangle(id)?;
             }
             Action::SetEntrance { value } => {
                 let at = state
@@ -490,8 +568,27 @@ impl Draft {
         }
         let mut header = self.base.source.header.clone();
         header.descriptors = state.descriptors.iter().map(|e| e.value.clone()).collect();
-        let collision =
-            collision::encode_collision(&self.base.source.components[1].bytes, &state.collision)?;
+        let collision_value = state.collision.resolve(&self.base.collision)?;
+        let structural = state
+            .collision
+            .layers
+            .iter()
+            .zip(&self.base.initial.collision.layers)
+            .any(|(a, b)| {
+                entity_ids(&a.vertices) != entity_ids(&b.vertices)
+                    || entity_ids(&a.triangles) != entity_ids(&b.triangles)
+            });
+        let (collision, collision_logical) = if structural {
+            topology::rebuild(&self.base.source.components[1].bytes, &collision_value)?
+        } else {
+            (
+                collision::encode_collision(
+                    &self.base.source.components[1].bytes,
+                    &collision_value,
+                )?,
+                self.base.collision.logical_size,
+            )
+        };
         let zones = formats::encode_zones(&formats::Zones {
             zones: state.zones.iter().map(|e| e.value.clone()).collect(),
             tail: self.base.zones_tail.clone(),
@@ -500,7 +597,7 @@ impl Draft {
         replacements.insert(
             1,
             bundle::Replacement {
-                logical_size: self.base.source.components[1].logical_size,
+                logical_size: collision_logical,
                 bytes: collision,
             },
         );

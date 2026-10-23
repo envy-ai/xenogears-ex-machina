@@ -293,3 +293,21 @@ static instance reuses a source model/template rather than inventing compatible
 morph/material flags. Actor event-row CRUD and reference-safe collision topology
 are separate subsequent checkpoints. The public scene command remains decode
 only until the transaction contract is coherent and parity-tested.
+
+The stable collision entity checkpoint adds per-layer vertex/triangle IDs,
+source-derived references, opposite-edge joins, explicit dangling-reference
+refusal and history/import proofs. Structural writes append tables and preserve
+the exact original pre-table record. Independent review found a further conditional
+read: `field_motion.c:920–935` can compute a plane from triangle[-1] before checking
+its sentinel when attribute bit 0x400000 applies. Such layer relocation is refused
+until those vertex references can be closed; copying only its attribute or fourteen
+bytes does not establish that preservation. Same-layout transforms do not reindex
+those references. No generic bridge or guessed boundary triangle is inserted.
+
+The shared JSON operation is `field.scene.draft`, with a tagged kind for document
+open/import/edit/history/snapshot/compile/export/close. This keeps one new typed
+transport surface while the actor/script operations are developed. Source-owned
+scene handles have a four-document residency budget, distinct from event drafts.
+The original M6 source-memory context is retained in export/import. New UI, guarded
+frontend persistence and actual M7 authored gameplay remain acceptance work after
+the human mockup gate. Existing M6 visual limitations remain historical caveats.

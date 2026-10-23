@@ -19,9 +19,50 @@ fn invalid(message: impl Into<String>) -> FieldError {
 #[serde(deny_unknown_fields)]
 pub struct Input {
     pub bundle: Vec<u8>,
+    #[serde(default, deserialize_with = "portable_context")]
     pub context: Option<SourceContext>,
     pub source: Option<SourceIdentity>,
     pub module_sha256: Option<String>,
+}
+// These sizes originate in original u32 fields/bounded RAM observations.
+// Reject oversized wire lengths before usize deserialization so malformed input
+// has the same structured diagnostic on 32-bit WASM and 64-bit native hosts.
+fn portable_context<'de, D: serde::Deserializer<'de>>(
+    deserializer: D,
+) -> Result<Option<SourceContext>, D::Error> {
+    let value = Option::<serde_json::Value>::deserialize(deserializer)?;
+    let Some(value) = value else {
+        return Ok(None);
+    };
+    if value
+        .get("components")
+        .and_then(serde_json::Value::as_array)
+        .is_some_and(|components| {
+            components.iter().any(|c| {
+                [
+                    "index",
+                    "source_offset",
+                    "logical_size",
+                    "packed_size",
+                    "source_bytes_read",
+                    "output_size",
+                ]
+                .iter()
+                .any(|key| {
+                    c.get(key)
+                        .and_then(serde_json::Value::as_u64)
+                        .is_some_and(|n| n > u64::from(u32::MAX))
+                })
+            })
+        })
+    {
+        return Err(serde::de::Error::custom(
+            "source context lengths must fit portable u32 byte ranges",
+        ));
+    }
+    serde_json::from_value(value)
+        .map(Some)
+        .map_err(serde::de::Error::custom)
 }
 #[derive(Clone, Debug)]
 pub struct Component {

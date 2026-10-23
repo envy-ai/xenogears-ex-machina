@@ -44,6 +44,7 @@ const OPERATIONS: &[&str] = &[
     "echo",
     "field.decode",
     "field.scene.decode",
+    "field.scene.draft",
     "field.encode",
     "disc.open",
     "disc.poll",
@@ -107,6 +108,8 @@ enum Command {
     DraftSnapshot(DraftArgs),
     #[serde(rename = "field.draft.repack")]
     DraftRepack(DraftRepackArgs),
+    #[serde(rename = "field.scene.draft")]
+    SceneDraft(Box<scene::command::Request>),
     #[serde(rename = "field.scene.decode")]
     SceneDecode(Box<scene::DecodeArgs>),
     #[serde(rename = "field.decode")]
@@ -340,6 +343,9 @@ impl Command {
                 operations: OPERATIONS,
             },
             Self::Echo(value) => CommandResult::Echo(value),
+            Self::SceneDraft(args) => {
+                CommandResult::Json(studio.scenes.borrow_mut().execute(*args)?)
+            }
             Self::SceneDecode(args) => CommandResult::Json(json!(scene::decode(*args)?)),
             Self::FieldDecode(args) => {
                 CommandResult::FieldGraph(Box::new(field::decode(&args.bytes, args.declared_size)?))
@@ -441,6 +447,7 @@ impl From<field::FieldError> for StudioError {
 pub struct Studio {
     discs: RefCell<disc::DiscSessions>,
     drafts: RefCell<field::draft::Drafts>,
+    scenes: RefCell<scene::command::Scenes>,
 }
 
 #[cfg_attr(target_arch = "wasm32", wasm_bindgen)]

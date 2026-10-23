@@ -850,3 +850,48 @@ Event-selector repairs reuse the existing M6 compiler through a private adapter;
 public M6 actor-table bounds are unchanged. Scene packing now shares M6's exact
 packing-tail activation refusal. Complete unrelated component outputs and the
 original measured source guard are verified before container adoption.
+
+#### Scene document protocol (M7 backend, UI still gated)
+
+`field.scene.draft` is the typed document boundary. Its `args.kind` is one of
+`open`, `import`, `edit`, `undo`, `redo`, `snapshot`, `compile`, `export`, `close`.
+It uses the existing `{ok:result}` / `{error:{kind,message}}` envelope and preserves
+`echo` and the M6 event API. There are at most four open scene documents (a service
+memory budget); scene and event-draft handles are separate, monotonic namespaces.
+Failed open/import/edit never adopts a partial owner or consumes its identity.
+
+Open with `{kind:"open", input, entrances:[]}`. `input` has the same validated
+indexed bundle/context/source/module fields as `field.scene.decode`; `entrances`
+contains explicit established selectors. The result is `{scene,state}`. Edit with
+`{kind:"edit",scene,revision,action}`, then inspect/undo/redo using that current
+revision. Import establishes revision zero under a new handle. Export returns
+schema-one source and action history, including allocation starts and the allocator
+watermark; missing old fields are rejected, not migrated or silently defaulted.
+The cursor and entrance spans use portable u32 wire values; component context
+lengths exceeding u32 are rejected before host-sized integer deserialization.
+
+For example, after opening a document and receiving `scene:1,revision:0`:
+
+```json
+{"op":"field.scene.draft","args":{"kind":"edit","scene":1,"revision":0,"action":{"kind":"set_zone","id":"zone:0","corners":[[0,0,0],[0,0,100],[100,0,100],[100,0,0]]}}}
+{"op":"field.scene.draft","args":{"kind":"export","scene":1}}
+{"op":"field.scene.draft","args":{"kind":"compile","scene":1}}
+```
+
+These are illustrative values, not claims that zone0 exists in every map. Compile
+returns the deterministic authored bundle/hash, immutable source hash, stable
+entity ID order and event graph/bindings. It does not write a disc or a project.
+The frontend will own its guarded local project save after M7 human UI approval;
+exported source-derived documents and packages remain private local data.
+
+Collision snapshots expose `collision_entities` (stable layer/vertex/triangle IDs)
+and a resolved numeric collision view derived from those same entities. New
+triangles join only oppositely wound edges sharing exact stable vertex IDs;
+proximity never guesses a connection. Deletion opens neighbors to `-1`, and a
+referenced vertex cannot be removed. Duplicating a triangle copies its three
+vertices with new identities. Structural preparation preserves old opaque bytes
+and exact pre-table storage; conditional `triangle[-1]` plane dependencies return
+`unsupported_scene_collision` until their vertex-reference closure is proven.
+Same-layout vertex edits retain the original storage and reference identities.
+Actor-row CRUD/script placement, destructive entrance renumbering, scene UI and
+actual edited M7 native/browser gameplay are not claimed by this backend surface.

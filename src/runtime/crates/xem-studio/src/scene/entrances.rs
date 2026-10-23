@@ -13,7 +13,7 @@ fn invalid(message: impl Into<String>) -> FieldError {
 #[serde(deny_unknown_fields)]
 pub struct Entrance {
     pub selector: u16,
-    pub source_span: [usize; 2],
+    pub source_span: [u32; 2],
     pub x: i16,
     pub z: i16,
     pub layer: u8,
@@ -86,7 +86,10 @@ pub fn decode_entrances(
             .ok_or_else(|| invalid("truncated entrance record"))?;
         result.push(Entrance {
             selector: *selector,
-            source_span: [start, end],
+            source_span: [
+                u32::try_from(start).map_err(|_| invalid("entrance span exceeds portable u32"))?,
+                u32::try_from(end).map_err(|_| invalid("entrance span exceeds portable u32"))?,
+            ],
             x: i16::from_le_bytes([data[0], data[1]]),
             z: i16::from_le_bytes([data[2], data[3]]),
             layer: data[4],
@@ -120,7 +123,7 @@ pub fn encode_entrances(
     }
     let mut bytes = field::encode(graph)?;
     for value in entrances {
-        let at = graph.bytecode_offset + value.source_span[0];
+        let at = graph.bytecode_offset + value.source_span[0] as usize;
         bytes[at..at + 2].copy_from_slice(&value.x.to_le_bytes());
         bytes[at + 2..at + 4].copy_from_slice(&value.z.to_le_bytes());
         bytes[at + 4] = value.layer;
