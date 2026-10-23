@@ -865,7 +865,7 @@ indexed bundle/context/source/module fields as `field.scene.decode`; `entrances`
 contains explicit established selectors. The result is `{scene,state}`. Edit with
 `{kind:"edit",scene,revision,action}`, then inspect/undo/redo using that current
 revision. Import establishes revision zero under a new handle. Export returns
-schema-one source and action history, including allocation starts and the allocator
+schema-two source and action history, including allocation starts and the allocator
 watermark; missing old fields are rejected, not migrated or silently defaulted.
 The cursor and entrance spans use portable u32 wire values; component context
 lengths exceeding u32 are rejected before host-sized integer deserialization.
@@ -913,3 +913,19 @@ and 16 GiB/no-swap scope. It reads the existing original image in place, verifie
 source/context identities and complete outputs, and emits only numeric/hash
 summary data. Missing inputs or unavailable static templates are explicit; this
 target never claims runtime playback or generates editor screenshots.
+
+
+Scene open also accepts an optional `event_document` in the existing M6 schema1.
+Its base must exactly match the complete original event component and declared
+boundary from the selected bundle. The scene retains this authored history and
+M6 stable bindings; source bytes remain the immutable original bundle. Scene
+export schema2 includes the initial `event_document` as a required field; incomplete
+or older scene documents are explicitly rejected. M6's own document/protocol is
+unchanged. A scene transform must not reset prior authored event changes, and a
+zone-selector repair must follow an M6 node through its existing relocation.
+
+The M6 subdocument's unsigned numbers and numeric target keys are checked against
+portable u32 wire ranges before host-sized deserialization. `modified` indicates
+authored history relative to the original source, including an initial M6 edit;
+it is not a saved-project dirty flag. Frontend saved-state ownership must still
+compare the saved revision and active project/source/context generations.

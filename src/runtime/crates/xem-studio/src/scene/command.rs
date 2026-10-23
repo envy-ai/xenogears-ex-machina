@@ -15,6 +15,11 @@ pub enum Request {
     Open {
         input: Box<bundle::Input>,
         entrances: Vec<u16>,
+        #[serde(
+            default,
+            deserialize_with = "super::event_document::optional_from_json"
+        )]
+        event_document: Option<Box<crate::field::draft::Document>>,
     },
     Import {
         document: Box<domain::Document>,
@@ -84,9 +89,17 @@ impl Scenes {
     }
     pub fn execute(&mut self, request: Request) -> Result<Value, FieldError> {
         match request {
-            Request::Open { input, entrances } => {
+            Request::Open {
+                input,
+                entrances,
+                event_document,
+            } => {
                 self.admission()?;
-                self.adopt(domain::Draft::open(*input, entrances)?)
+                self.adopt(domain::Draft::open_with_events(
+                    *input,
+                    entrances,
+                    event_document,
+                )?)
             }
             Request::Import { document } => {
                 self.admission()?;

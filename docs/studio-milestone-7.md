@@ -348,3 +348,16 @@ stable bindings; do not make its compiled bytes the new original source or creat
 another event encoder. Then add qualified script-placement/actor transactions,
 with explicit shared/dynamic/global-effect refusals where closure is not proven.
 M7 UI approval remains pending and no new scene UI has been implemented.
+
+
+The M6 composition implementation keeps its schema1 event document as a required
+subdocument of scene export schema2. Scene open can receive an existing event
+document and validates its base against the complete original component before
+replaying it. Reference repair maps the initial compiled PC back to the M6 stable
+node ID, then reuses that existing compiler/state. This is distinct from adopting
+compiled bytes as the original source. Omitted open input means an unedited M6
+document; incomplete/old scene exports are rejected explicitly. Source-relative
+`modified` includes initial authored M6 history, while project saved ownership
+remains a separate revision/generation check. Tests for source mismatch, moved
+zone references, export/import and portable malformed subdocuments accompany the
+integration before new UI or further actor/script operations.

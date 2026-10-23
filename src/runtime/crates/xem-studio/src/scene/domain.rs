@@ -1,6 +1,8 @@
 //! Source-owned, revisioned scene transactions. The immutable container is never
 //! replaced by a compiled result. History replays actions, not opaque byte blobs.
-use super::{bindings, bundle, collision, entities, entrances, formats, geometry, topology};
+use super::{
+    bindings, bundle, collision, entities, entrances, event_document, formats, geometry, topology,
+};
 use crate::field::{self, FieldError, FieldGraph, draft};
 use serde::{Deserialize, Serialize};
 use std::{collections::BTreeMap, sync::Arc};
@@ -79,11 +81,13 @@ pub enum Action {
         value: entrances::Entrance,
     },
 }
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Document {
     pub schema_version: u32,
     pub input: bundle::Input,
+    #[serde(deserialize_with = "event_document::from_json")]
+    pub event_document: Box<draft::Document>,
     pub entrance_selectors: Vec<u16>,
     pub actions: Vec<Action>,
     pub allocation_starts: Vec<u32>,
@@ -106,6 +110,9 @@ struct Base {
     source: bundle::Source,
     collision: collision::Collision,
     events: FieldGraph,
+    event_draft: draft::Draft,
+    event_modified: bool,
+    event_nodes: BTreeMap<usize, String>,
     references: bindings::References,
     model_count: usize,
     zones_tail: Vec<u8>,
@@ -165,9 +172,26 @@ fn entity_ids<T>(values: &[Entity<T>]) -> Vec<String> {
 }
 impl Draft {
     pub fn open(input: bundle::Input, entrance_selectors: Vec<u16>) -> Result<Self, FieldError> {
+        Self::open_with_events(input, entrance_selectors, None)
+    }
+    pub fn open_with_events(
+        input: bundle::Input,
+        entrance_selectors: Vec<u16>,
+        event_document: Option<Box<draft::Document>>,
+    ) -> Result<Self, FieldError> {
         let source = bundle::Source::load(input)?;
         let c = &source.components;
-        let events = field::decode(&c[5].bytes, Some(c[5].logical_size))?;
+        let original_events = field::decode(&c[5].bytes, Some(c[5].logical_size))?;
+        let event_draft = event_document::open(&original_events, event_document)?;
+        let event_modified = event_draft.document().cursor > 0;
+        let compiled_events = event_draft.compile()?;
+        let events = compiled_events.graph;
+        let mut event_nodes = BTreeMap::new();
+        // Preserve the same deterministic first stable binding as a sorted-ID
+        // lookup, without scanning every node for every reference repair.
+        for (id, pc) in compiled_events.bindings {
+            event_nodes.entry(pc).or_insert(id);
+        }
         if events.actors.len() > source.header.descriptors.len() {
             return Err(invalid("event actors exceed source descriptors"));
         }
@@ -225,6 +249,9 @@ impl Draft {
                 source,
                 collision,
                 events,
+                event_draft,
+                event_modified,
+                event_nodes,
                 references,
                 model_count,
                 zones_tail: zones.tail,
@@ -247,7 +274,7 @@ impl Draft {
             revision: self.revision,
             can_undo: self.cursor > 0,
             can_redo: self.cursor < self.actions.len(),
-            modified: self.cursor > 0,
+            modified: self.cursor > 0 || self.base.event_modified,
             descriptors: self.state.descriptors.clone(),
             zones: self.state.zones.clone(),
             collision: self.state.collision.resolve(&self.base.collision)?,
@@ -258,8 +285,9 @@ impl Draft {
     }
     pub fn document(&self) -> Document {
         Document {
-            schema_version: 1,
+            schema_version: 2,
             input: self.base.source.input().clone(),
+            event_document: Box::new(self.base.event_draft.document()),
             entrance_selectors: self.base.entrance_selectors.clone(),
             actions: self.actions.clone(),
             allocation_starts: self.allocation_starts.clone(),
@@ -269,7 +297,7 @@ impl Draft {
     }
     pub fn import(document: Document) -> Result<Self, FieldError> {
         let cursor = document.cursor as usize;
-        if document.schema_version != 1
+        if document.schema_version != 2
             || document.actions.len() > HISTORY_LIMIT
             || cursor > document.actions.len()
             || document.actions.len() != document.allocation_starts.len()
@@ -277,7 +305,11 @@ impl Draft {
         {
             return Err(invalid("invalid scene document schema/history"));
         }
-        let mut result = Self::open(document.input, document.entrance_selectors)?;
+        let mut result = Self::open_with_events(
+            document.input,
+            document.entrance_selectors,
+            Some(document.event_document),
+        )?;
         for (action, start) in document.actions.into_iter().zip(document.allocation_starts) {
             if start < result.next_id {
                 return Err(invalid("scene history reuses allocated identities"));
@@ -569,13 +601,14 @@ impl Draft {
             .base
             .references
             .remap(&self.base.events, &descriptor_ids, &zone_ids)?;
-        let event_draft = draft::Draft::open(self.base.events.clone())?;
-        let rewrites = patches
-            .iter()
-            .map(|p| (format!("pc:{}", p.pc), p.operand, p.value as u8))
-            .collect::<Vec<_>>();
-        let mut events =
-            event_draft.compile_with_scene_operands(&rewrites, descriptor_ids.len())?;
+        let rewrites = patches.iter().map(|p| {
+            let node = self.base.event_nodes.get(&p.pc).cloned().ok_or_else(|| unsupported("scene reference belongs to compiler storage without a stable authored node"))?;
+            Ok((node,p.operand,p.value as u8))
+        }).collect::<Result<Vec<_>,FieldError>>()?;
+        let mut events = self
+            .base
+            .event_draft
+            .compile_with_scene_operands(&rewrites, descriptor_ids.len())?;
         if !state.entrances.is_empty() {
             events.bytes = entrances::encode_entrances(
                 &events.graph,

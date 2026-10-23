@@ -961,6 +961,7 @@ src/runtime/crates/xem-studio/src/scene/command.rs
 src/runtime/crates/xem-studio/src/scene/domain.rs
 src/runtime/crates/xem-studio/src/scene/entities.rs
 src/runtime/crates/xem-studio/src/scene/entrances.rs
+src/runtime/crates/xem-studio/src/scene/event_document.rs
 src/runtime/crates/xem-studio/src/scene/formats.rs
 src/runtime/crates/xem-studio/src/scene/geometry.rs
 src/runtime/crates/xem-studio/src/scene/mod.rs
