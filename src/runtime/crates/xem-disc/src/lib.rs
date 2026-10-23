@@ -163,3 +163,6 @@ mod tests {
         assert!(identify::iso_find(&mut disc, "NOPE.BIN").unwrap().is_none());
     }
 }
+
+pub mod field_context;
+pub mod packed;

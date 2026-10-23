@@ -669,6 +669,7 @@ src/port/disc.c
 src/port/division.c
 src/port/encounters.c
 src/port/fiber.c
+src/port/field_source.c
 src/port/gte.c
 src/port/gte_asm.c
 src/port/include/include_asm.h
@@ -774,6 +775,7 @@ src/runtime/crates/xem-core/src/dialogue.rs
 src/runtime/crates/xem-core/src/encounters.rs
 src/runtime/crates/xem-core/src/exe.rs
 src/runtime/crates/xem-core/src/field.rs
+src/runtime/crates/xem-core/src/field_source.rs
 src/runtime/crates/xem-core/src/focus.rs
 src/runtime/crates/xem-core/src/inspect.rs
 src/runtime/crates/xem-core/src/lib.rs
@@ -789,6 +791,7 @@ src/runtime/crates/xem-core/src/save.rs
 src/runtime/crates/xem-core/src/snapshot.rs
 src/runtime/crates/xem-core/src/time.rs
 src/runtime/crates/xem-core/tests/fibers.rs
+src/runtime/crates/xem-core/tests/field_source.rs
 src/runtime/crates/xem-core/tests/persistence.rs
 src/runtime/crates/xem-desktop/Cargo.toml
 src/runtime/crates/xem-desktop/build.rs
@@ -801,6 +804,7 @@ src/runtime/crates/xem-disc/examples/synthetic-disc.rs
 src/runtime/crates/xem-disc/src/cache.rs
 src/runtime/crates/xem-disc/src/chd.rs
 src/runtime/crates/xem-disc/src/cue.rs
+src/runtime/crates/xem-disc/src/field_context.rs
 src/runtime/crates/xem-disc/src/identify.rs
 src/runtime/crates/xem-disc/src/index.rs
 src/runtime/crates/xem-disc/src/install.rs
@@ -810,9 +814,11 @@ src/runtime/crates/xem-disc/src/mods/integrity.rs
 src/runtime/crates/xem-disc/src/mods/mod.rs
 src/runtime/crates/xem-disc/src/mods/overlay.rs
 src/runtime/crates/xem-disc/src/mods/package.rs
+src/runtime/crates/xem-disc/src/packed.rs
 src/runtime/crates/xem-disc/src/read_at.rs
 src/runtime/crates/xem-disc/src/sector.rs
 src/runtime/crates/xem-disc/src/source.rs
+src/runtime/crates/xem-disc/tests/field_context.rs
 src/runtime/crates/xem-disc/tests/mod_packages.rs
 src/runtime/crates/xem-disc/tests/user_discs.rs
 src/runtime/crates/xem-game/Cargo.toml
@@ -950,6 +956,7 @@ src/runtime/crates/xem-studio/tests/field.rs
 src/runtime/crates/xem-studio/tests/field_draft.rs
 src/runtime/crates/xem-studio/tests/field_draft_parity.rs
 src/runtime/crates/xem-studio/tests/field_real_edit.rs
+src/runtime/crates/xem-studio/tests/field_real_package.rs
 src/runtime/crates/xem-studio/tests/field_relocation.rs
 src/runtime/crates/xem-studio/tests/field_sweep.rs
 src/runtime/crates/xem-studio/tests/lanes.rs
@@ -1343,6 +1350,7 @@ tools/studio/tests/e2e/field-disc-lifecycle.spec.ts
 tools/studio/tests/e2e/field-draft-parity.spec.ts
 tools/studio/tests/e2e/field-edit.spec.ts
 tools/studio/tests/e2e/field-real-playback.mjs
+tools/studio/tests/e2e/field-source-context.mjs
 tools/studio/tests/e2e/field.spec.ts
 tools/studio/tests/e2e/graph-qol.spec.ts
 tools/studio/tests/e2e/live-game-sequence.ts
@@ -1365,6 +1373,7 @@ tools/studio/tests/e2e/wasm-overlay-parity.mjs
 tools/studio/tests/field_oracle.py
 tools/studio/tests/unit/disc-server.test.ts
 tools/studio/tests/unit/discs.test.ts
+tools/studio/tests/unit/event-search.test.ts
 tools/studio/tests/unit/files.test.ts
 tools/studio/tests/unit/game-pc.test.ts
 tools/studio/tests/unit/game-real-parity.test.ts

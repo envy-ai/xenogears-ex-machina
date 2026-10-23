@@ -396,12 +396,24 @@ impl Session {
                             ),
                         ));
                     }
+                    // A field-only package leaves the other known game disc
+                    // untouched, but must still declare it for native changer
+                    // preparation. Actual image validation remains unchanged.
+                    let package_discs = if id.disc.is_some() {
+                        [xem_disc::KnownDisc::Disc1, xem_disc::KnownDisc::Disc2]
+                            .into_iter()
+                            .map(|disc| json!({"serial":disc.serial(),"sha256":xem_disc::identify::hex(&disc.executable_sha256())}))
+                            .collect::<Vec<_>>()
+                    } else {
+                        Vec::new()
+                    };
                     self.identity = Some(json!({
                         "disc": id.disc.map(|disc| disc.number()),
                         "serial": id.disc.map(|disc| disc.serial()).or(test_fixture.then_some("SLUS-99999")),
                         "boot_path": id.boot_path, "boot_lba": id.boot_lba,
                         "boot_sha256": xem_disc::identify::hex(&id.sha256),
                         "executable_bytes": id.executable.len(), "test_fixture": test_fixture,
+                        "package_discs": package_discs,
                     }));
                     self.stage = Stage::Index;
                 }
@@ -629,6 +641,7 @@ impl DiscSessions {
                 )
             })?;
         let slot = record.slot;
+        let lba = record.record.lba;
         if state.event_read.as_ref().is_none_or(|read| read.map != map) {
             state.event_read = Some(BundleRead::new(record));
         }
@@ -645,8 +658,23 @@ impl DiscSessions {
         let component = extract_events(&bytes)?;
         state.event_read = None;
         if include_bundle {
+            let identity = state.identity.as_ref().expect("ready identity");
+            let source = if identity["test_fixture"] == false && identity["disc"].as_u64().is_some()
+            {
+                json!(xem_disc::field_context::SourceIdentity {
+                    disc: identity["disc"].as_u64().expect("disc") as u8,
+                    boot_sha256: identity["boot_sha256"].as_str().expect("boot hash").into(),
+                    map,
+                    slot: slot as u32,
+                    lba,
+                    indexed_size: bytes.len() as u32,
+                    source_sha256: xem_disc::field_context::hash(&bytes)
+                })
+            } else {
+                Value::Null
+            };
             return Ok(
-                json!({"session":session,"map":map,"slot":slot,"state":"ready","placeholder":component.is_none(),"bytes":bytes}),
+                json!({"session":session,"map":map,"slot":slot,"state":"ready","placeholder":component.is_none(),"bytes":bytes,"source":source}),
             );
         }
         Ok(
@@ -679,6 +707,44 @@ pub fn replace_events(
     base: &crate::field::FieldGraph,
     compiled: &crate::field::draft::Compiled,
 ) -> Result<Vec<u8>, StudioError> {
+    replace_events_inner(bundle, base, compiled, None)
+}
+
+/// A measured original load supplies exact source bytes beyond indexed EOF.
+pub fn replace_events_with_context(
+    bundle: &[u8],
+    base: &crate::field::FieldGraph,
+    compiled: &crate::field::draft::Compiled,
+    context: &xem_disc::field_context::SourceContext,
+    source: &xem_disc::field_context::SourceIdentity,
+    module: &str,
+) -> Result<Vec<u8>, StudioError> {
+    replace_events_inner(bundle, base, compiled, Some((context, source, module)))
+}
+fn replace_events_inner(
+    bundle: &[u8],
+    base: &crate::field::FieldGraph,
+    compiled: &crate::field::draft::Compiled,
+    context: Option<(
+        &xem_disc::field_context::SourceContext,
+        &xem_disc::field_context::SourceIdentity,
+        &str,
+    )>,
+) -> Result<Vec<u8>, StudioError> {
+    if bundle.len() > MAX_BUNDLE_BYTES {
+        return Err(StudioError::new(
+            "invalid_bundle",
+            "source bundle exceeds the supported bound",
+        ));
+    }
+    let guard = match context {
+        Some((context, source, module)) => context
+            .guard(bundle, source, module)
+            .map_err(|e| StudioError::new("invalid_source_context", e))?,
+        None => Vec::new(),
+    };
+    let mut measured = bundle.to_vec();
+    measured.extend_from_slice(&guard);
     if bundle.len() > MAX_BUNDLE_BYTES {
         return Err(StudioError::new(
             "invalid_bundle",
@@ -728,11 +794,11 @@ pub fn replace_events(
             .checked_add(16)
             .ok_or_else(|| StudioError::new("invalid_bundle", "component allocation overflow"))?
             .min(MAX_COMPONENT_BYTES);
-        let decoded = packed::decode_block(&bundle[start..], limit).map_err(|cause| {
+        let decoded = packed::decode_block(&measured[start..], limit).map_err(|cause| {
             StudioError::new(
-                "unsupported_bundle",
+                if matches!(cause,packed::PackedError::Truncated{..}) {"source_context_required"} else {"unsupported_bundle"},
                 format!(
-                    "component {index} cannot be preserved from the bounded original file: {cause}"
+                    "component {index} cannot be preserved without complete measured source memory: {cause}"
                 ),
             )
         })?;
@@ -775,7 +841,7 @@ pub fn replace_events(
             "packing tail would activate an unresolved destination or change decoded execution",
         ));
     }
-    let start = bundle
+    let start = measured
         .len()
         .checked_add(3)
         .map(|n| n & !3)
@@ -789,7 +855,7 @@ pub fn replace_events(
             "authored bundle exceeds the supported bound",
         ));
     }
-    let mut result = bundle.to_vec();
+    let mut result = measured;
     result.resize(start, 0);
     result.extend_from_slice(&encoded);
     let declared = u32::try_from(compiled.declared_size)
@@ -806,6 +872,11 @@ pub fn replace_events(
                 format!("appending changed decoded component {index}"),
             ));
         }
+    }
+    if let Some((context, _, _)) = context {
+        context
+            .verify_outputs(&result, Some(5))
+            .map_err(|e| StudioError::new("invalid_source_context", e))?;
     }
     let actual = extract_events(&result)?
         .ok_or_else(|| StudioError::new("invalid_bundle", "replacement became a placeholder"))?;

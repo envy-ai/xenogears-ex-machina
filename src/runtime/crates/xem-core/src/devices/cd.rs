@@ -217,6 +217,8 @@ pub struct DeliveredSector {
 
 /// The drive.
 pub struct Cd {
+    /// Host observation generation; not game/snapshot state.
+    media_generation: u64,
     disc: Option<Box<dyn SectorSource>>,
     /// The number of the disc in the drive (0: none, or a disc without one).
     inserted: u8,
@@ -260,6 +262,7 @@ pub struct Cd {
 impl Default for Cd {
     fn default() -> Self {
         Cd {
+            media_generation: 0,
             disc: None,
             inserted: 0,
             shelf: Vec::new(),
@@ -302,6 +305,7 @@ impl Cd {
             shell_latch: self.shell_latch,
             sequence: self.sequence,
             sector_log: self.sector_log.take(),
+            media_generation: self.media_generation.wrapping_add(1),
             xa_sectors: self.xa_sectors,
             ..Cd::default()
         };
@@ -318,6 +322,7 @@ impl Cd {
         state.disc = discs.iter().position(|(number, _)| *number == state.inserted).map(|i| discs.remove(i).1);
         state.shelf = discs;
         state.sector_log = self.sector_log.take();
+        state.media_generation = self.media_generation.wrapping_add(1);
         *self = state;
         if let Some(number) = self.wanted.filter(|&number| self.holds(number)) {
             self.change(number);
@@ -333,6 +338,7 @@ impl Cd {
     /// Put disc `number` (0 for a disc without one) in the drive, the lid
     /// closed on it, as at boot.
     pub fn insert_disc(&mut self, number: u8, disc: Box<dyn SectorSource>) {
+        self.media_generation = self.media_generation.wrapping_add(1);
         self.disc = Some(disc);
         self.inserted = number;
     }
@@ -354,6 +360,11 @@ impl Cd {
     /// asks the player for it).
     pub fn wanted(&self) -> Option<u8> {
         self.wanted
+    }
+
+    /// Host-only observation epoch, invalidated whenever media changes.
+    pub fn media_generation(&self) -> u64 {
+        self.media_generation
     }
 
     /// The number of the disc in the drive.
@@ -406,6 +417,7 @@ impl Cd {
 
     /// Open the lid: the motor and any read stop.
     fn open_lid(&mut self) {
+        self.media_generation = self.media_generation.wrapping_add(1);
         self.lid_open = true;
         self.shell_latch = true;
         self.motor = false;

@@ -12,7 +12,7 @@ import { ActorTree } from './ActorTree';
 import { ActorLanes } from './ActorLanes';
 import { CommandList } from './CommandList';
 import { MapDiagnostics } from './MapDiagnostics';
-import { actorName, eventName, instructionPhrase, reachableInstructionPcs, formatPc, type FieldGraph, type EventStructure, type MapLanes, type NameTable, type Selection } from './model';
+import { actorName, eventName, instructionPhrase, findInstruction, reachableInstructionPcs, formatPc, type FieldGraph, type EventStructure, type MapLanes, type NameTable, type Selection } from './model';
 import { useFieldDraft } from './useFieldDraft';
 import { DraftEditor } from './DraftEditor';
 import type { DraftSnapshot } from '../backend/drafts';
@@ -431,13 +431,13 @@ export function EventViews() {
       <button className="editor-button editor-button--compact" disabled={s.draft.inlineDirty || (s.draft.pending || Boolean(s.busy)) || !s.draft.snapshot.can_redo} onClick={() => s.applySnapshot(s.draft.history('redo'))} title="Ctrl+Shift+Z">Redo</button>
       <button className="editor-button editor-button--compact" disabled={s.draft.inlineDirty || (s.draft.pending || Boolean(s.busy))} onClick={s.draft.validate}>Validate</button>
       <button className="editor-button editor-button--compact" disabled={s.draft.inlineDirty || (s.draft.pending || Boolean(s.busy)) || !s.folder} onClick={() => s.draft.save(s.map!, discNumber, names).catch(s.report)} title="Ctrl+S">Save project</button>
-      <button className="editor-button editor-button--compact" disabled={s.draft.inlineDirty || (s.draft.pending || Boolean(s.busy)) || !s.folder} onClick={() => s.draft.load(s.map!, discNumber, s.context).then(result => { if (result) { s.history.reset(result.names); s.applySnapshot(result.snapshot); } }).catch(s.report)}>Load project</button>
+      <button className="editor-button editor-button--compact" disabled={s.draft.inlineDirty || (s.draft.pending || Boolean(s.busy)) || !s.folder} onClick={() => s.draft.load(s.map!, discNumber, s.context, activeDisc?.session ?? null).then(result => { if (result) { s.history.reset(result.names); s.applySnapshot(result.snapshot); } }).catch(s.report)}>Load project</button>
       <button className="editor-button editor-button--compact" disabled={(s.draft.pending || Boolean(s.busy))} onClick={() => { if (discardArmed) { s.applySnapshot(s.draft.discard()); setDiscardArmed(false); } else setDiscardArmed(true); }}>{discardArmed ? 'Confirm discard draft' : 'Discard draft…'}</button>
       <button className="editor-button editor-button--compact" disabled={s.draft.inlineDirty || (s.draft.pending || Boolean(s.busy)) || !s.folder || !activeDisc} onClick={() => s.draft.build(s.map!, activeDisc!.session).catch(s.report)}>Build package</button>
       <button className="editor-button editor-button--compact" disabled={s.draft.inlineDirty || (s.draft.pending || Boolean(s.busy)) || !s.draft.canPlay || s.draft.lastBuild?.revision !== s.draft.snapshot.revision || s.draft.lastBuild?.draft !== s.draft.snapshot.draft} onClick={() => s.draft.play().catch(s.report)}>Play</button>
-      <span className="editor-text editor-text--caption">Authored draft · {s.draft.inlineDirty ? 'Unapplied fields · build blocked' : !s.draft.hasSavedProject && !s.draft.snapshot.modified ? 'Unmodified source' : s.draft.snapshot.revision === s.draft.savedRevision ? 'Saved' : 'Unsaved'} · Live runtime separate</span>
+      <span className="editor-text editor-text--caption">Authored draft · {s.draft.inlineDirty ? 'Unapplied fields · build blocked' : s.draft.contextDirty ? 'Unsaved' : !s.draft.hasSavedProject && !s.draft.snapshot.modified ? 'Unmodified source' : s.draft.snapshot.revision === s.draft.savedRevision ? 'Saved' : 'Unsaved'} · Live runtime separate</span>
     </div>}
-    <label className="editor-field editor-field-label event-find"><span>Find within map</span><input ref={s.findRef} className="editor-control editor-control--text" value={s.find} onChange={event => s.setFind(event.target.value)} placeholder="Mnemonic, name or PC" onKeyDown={event => { if (event.key === 'Enter' && s.graph) { const text = s.find.toLowerCase(); const found = s.graph.instructions.find(instruction => `${instructionPhrase(instruction, names, s.map ?? 0)} ${formatPc(instruction.pc)}`.toLowerCase().includes(text)); if (found) { const entry = s.graph.entries.find(entry => reachableInstructionPcs(s.graph!, entry.pc).has(found.pc)); s.select({ actor: entry?.actor ?? s.selection.actor, event: entry?.event ?? s.selection.event, pc: found.pc }, true); } } }} /></label>
+    <label className="editor-field editor-field-label event-find"><span>Find within map</span><input ref={s.findRef} className="editor-control editor-control--text" value={s.find} onChange={event => s.setFind(event.target.value)} placeholder="Mnemonic, name or PC" onKeyDown={event => { if (event.key === 'Enter' && s.graph) { const found = findInstruction(s.graph.instructions, s.find, names, s.map ?? 0); if (found) { const entry = s.graph.entries.find(entry => reachableInstructionPcs(s.graph!, entry.pc).has(found.pc)); s.select({ actor: entry?.actor ?? s.selection.actor, event: entry?.event ?? s.selection.event, pc: found.pc }, true); } } }} /></label>
     {s.graph && s.map !== null ? <><p className="editor-text event-caption">Map {s.map} · {actorName(names, s.map, s.selection.actor)} · {eventName(names, s.map, s.selection.actor, s.selection.event)} · {s.graph.instructions.length} map instructions · Authored view; original image stays read-only</p>
       <div className="event-view-surface" role="tabpanel" aria-label={s.view === 'list' ? 'Command list' : s.view === 'graph' ? 'Flow graph' : 'Actor lanes'}>
         {s.view === 'list' && s.graph.actors.length === 0 && <div className="event-command-view"><DockerList><DockerListEmpty>This component has no actor/event entries.</DockerListEmpty></DockerList></div>}
@@ -486,5 +486,5 @@ function NameEditor({ onClose }: { onClose(): void }) {
 
 export function useEventPackagePlay() {
   const { draft } = useEvents();
-  return { register: draft.registerPlay };
+  return { register: draft.registerPlay, registerSource: draft.registerSource };
 }

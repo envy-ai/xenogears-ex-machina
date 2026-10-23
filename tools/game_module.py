@@ -84,6 +84,7 @@ WRAPPED = {"mode_dispatch", "model_draw_sprite_model", "sprite_set_draw_matrix",
            "battle_sprite_command_run"}
 WRAPPED |= {"sprite_request_frame", "sprite_queue_upload", "sprite_reserve_texture_columns", "battle_popup_draw_glyph"}
 WRAPPED |= {"battle_command_panel_fade", "sprite_set_view_matrix", "field_encounter_count_down"}
+WRAPPED |= {"field_load_from_bundle", "field_decompress_component"}
 WRAPPED |= {"window_reveal_text", "field_movie_run_frames", "movie_mode_read_playback_input"}
 
 CFLAGS = [

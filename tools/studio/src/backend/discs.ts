@@ -39,6 +39,8 @@ export interface DiscIdentity {
   boot_sha256: string;
   executable_bytes: number;
   test_fixture: boolean;
+  /** Known original family targets; unedited members pass through unchanged. */
+  package_discs: { serial: string; sha256: string }[];
 }
 
 export interface DiscStatus extends DiscProgress {
@@ -79,7 +81,13 @@ export interface MapEvents {
   component: EventComponent | null;
 }
 
-export interface MapBundle { session:number; map:number; slot:number; state: 'ready'; placeholder:boolean; bytes:number[] }
+export interface SourceIdentity { disc:number; boot_sha256:string; map:number; slot:number; lba:number; indexed_size:number; source_sha256:string }
+export interface SourceContext {
+  schema_version:1; provenance:'runtime_field_decompress'; module_sha256:string;
+  identity:SourceIdentity; source_address:number; allocation_size:number; load_vblank:string;
+  components:{index:number;source_offset:number;logical_size:number;packed_size:number;source_bytes_read:number;output_size:number;output_sha256:string;destination_address:number;extra:number[]}[];
+}
+export interface MapBundle { session:number; map:number; slot:number; state: 'ready'; placeholder:boolean; bytes:number[]; source:SourceIdentity|null }
 
 export interface CueTrack {
   file: string;

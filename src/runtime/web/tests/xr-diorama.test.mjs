@@ -44,7 +44,7 @@
 
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
-import { existsSync, mkdirSync, readFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, test } from 'node:test';
 import { HAND_MODEL, HEADLESS, IWER, NO_WEBGPU, QUEST, QUEST_BROWSER, SHOTS, USER_DISC, WEB, start, status } from './support.mjs';
@@ -363,13 +363,27 @@ describe('the seated diorama in a headset browser', { skip: !available && `needs
       }, name);
       await at(0.1);
       await frames(3);
+      await shape('open');
+      await frames(3);
+      const convergenceDirectory = mkdtempSync(join(SHOTS, 'xr-diorama-convergence-'));
+      const convergencePath = join(convergenceDirectory, 'diagnostics.json');
+      const convergence = await observeAnchorConvergence(page, { timeoutMs: 10_000, windowMs: 300, anchorTolerance: 1e-5 });
+      if (!convergence.converged) {
+        writeFileSync(convergencePath, `${JSON.stringify({
+          phase: 'pre-gesture-camera-follow-convergence',
+          convergence,
+          scaling: { status: 'not-started because camera follow did not converge' },
+        }, null, 2)}\n`, { flag: 'wx' });
+        assert.fail(`camera-follow anchor did not converge within 10 seconds: ${JSON.stringify({ reason: convergence.reason, sampleCount: convergence.samples.length, bestWindowMs: convergence.bestWindowMs })}`);
+      }
       await shape('gather');
       await frames(3);
       const seen = [];
       for (let i = 1; i <= 10; i++) {
         await at(0.1 + 0.015 * i);
         await frames(2);
-        seen.push((await status(page)).xr);
+        const sample = await status(page);
+        seen.push({ ...sample.xr, sampledAtMs: Date.now(), xrFrame: sample.page.xr.frames, gameFrames: sample.loop.gameFrames });
       }
       await shape('open');
       await frames(4);
@@ -377,6 +391,25 @@ describe('the seated diorama in a headset browser', { skip: !available && `needs
       const anchors = seen.map((s) => s.space.anchor);
       const anchorMoved = Math.max(...anchors.map((a) => Math.hypot(...a.map((v, i) => v - anchors[0][i]))));
       const tables = seen.map((s) => s.space.scale);
+      writeFileSync(convergencePath, `${JSON.stringify({
+        phase: 'pre-gesture-camera-follow-convergence-and-scaling',
+        convergence,
+        scaling: {
+          samples: seen.map((s) => ({
+            sampledAtMs: s.sampledAtMs,
+            xrFrame: s.xrFrame,
+            gameFrames: s.gameFrames,
+            target: s.space.target,
+            anchor: s.space.anchor,
+            scale: s.space.scale,
+            roomFromWorld: s.space.roomFromWorld,
+            dioramaScale: s.dioramaScale,
+            scaling: s.scaling,
+          })),
+          anchorMovedMeters: anchorMoved,
+          firstToLastScaleRatio: tables[tables.length - 1] / tables[0],
+        },
+      }, null, 2)}\n`, { flag: 'wx' });
       console.log(`scaling: shown ${seen.map((s) => s.dioramaScale.toFixed(3))}, the table ${(tables[tables.length - 1] / tables[0]).toFixed(3)} times, `
         + `the anchor within ${(anchorMoved * 1000).toFixed(4)} mm, keys ${[...new Set(seen.map((s) => s.keyWidth))]} m; committed ${(await page.evaluate(() => window.xem.settings.get())).settings.graphics.xr.diorama_scale}%`);
       assert.ok(seen.every((s) => s.scaling && s.diorama), `scaling the diorama shown: ${JSON.stringify(seen.map((s) => [s.scaling, s.diorama]))}`);
@@ -974,3 +1007,105 @@ describe('the seated diorama in a headset browser', { skip: !available && `needs
     }
   });
 });
+
+async function observeAnchorConvergence(page, { timeoutMs, windowMs, anchorTolerance }) {
+  const startedAt = Date.now();
+  const deadline = startedAt + timeoutMs;
+  const samples = [];
+  let bestWindowMs = 0;
+  let lastFrame = -1;
+  while (Date.now() < deadline) {
+    const info = await status(page);
+    const frame = info.page.xr.frames;
+    if (Number.isInteger(frame) && frame > lastFrame) {
+      lastFrame = frame;
+      samples.push({
+        timestampMs: Date.now(),
+        elapsedMs: Date.now() - startedAt,
+        xrFrame: frame,
+        gameFrames: info.loop.gameFrames,
+        target: info.xr.space?.target,
+        anchor: info.xr.space?.anchor,
+        scale: info.xr.space?.scale,
+        roomFromWorld: info.xr.space?.roomFromWorld,
+      });
+      const observation = samples[0];
+      const targetMovementMeters = maxVectorDistance(observation.target, samples.map((sample) => sample.target));
+      const scaleMovement = maxScalarDistance(observation.scale, samples.map((sample) => sample.scale));
+      const gameFramesStayedPaused = samples.every((sample) => sample.gameFrames === observation.gameFrames);
+      const sceneStable = gameFramesStayedPaused && targetMovementMeters <= 1e-6 && scaleMovement <= 1e-6;
+      const trailingCutoff = samples.at(-1).timestampMs - windowMs;
+      let trailingStart = 0;
+      while (trailingStart + 1 < samples.length && samples[trailingStart + 1].timestampMs <= trailingCutoff) trailingStart++;
+      const window = samples.slice(trailingStart);
+      const durationMs = window.at(-1).timestampMs - window[0].timestampMs;
+      if (durationMs >= windowMs && new Set(window.map((sample) => sample.xrFrame)).size >= 2) {
+        const anchorMovementMeters = maxVectorDistance(window[0].anchor, window.map((sample) => sample.anchor));
+        const roomFromWorldMovement = maxScalarVectorDistance(window[0].roomFromWorld, window.map((sample) => sample.roomFromWorld));
+        bestWindowMs = sceneStable && anchorMovementMeters <= anchorTolerance && roomFromWorldMovement <= 1e-5
+          ? Math.max(bestWindowMs, durationMs) : bestWindowMs;
+        if (sceneStable && anchorMovementMeters <= anchorTolerance && roomFromWorldMovement <= 1e-5) {
+          return {
+            converged: true,
+            windowMs: durationMs,
+            distinctXRFrames: new Set(window.map((sample) => sample.xrFrame)).size,
+            gameFramesStayedPaused,
+            anchorMovementMeters,
+            targetMovementMeters,
+            scaleMovement,
+            roomFromWorldMovement,
+            samples: window,
+          };
+        }
+      } else if (sceneStable) {
+        const anchorMovementMeters = maxVectorDistance(window[0].anchor, window.map((sample) => sample.anchor));
+        const roomFromWorldMovement = maxScalarVectorDistance(window[0].roomFromWorld, window.map((sample) => sample.roomFromWorld));
+        if (anchorMovementMeters <= anchorTolerance && roomFromWorldMovement <= 1e-5) bestWindowMs = Math.max(bestWindowMs, durationMs);
+      }
+    }
+    const remainingMs = deadline - Date.now();
+    if (remainingMs <= 0) break;
+    try {
+      await page.waitForFunction((previous) => window.xem.status().page.xr.frames > previous, lastFrame,
+        { timeout: Math.min(250, remainingMs), polling: 10 });
+    } catch (error) {
+      if (error?.name !== 'TimeoutError') throw error;
+      // Keep waiting only until the measured deadline; no fixed settle delay is assumed.
+    }
+  }
+  const first = samples[0];
+  const last = samples.at(-1);
+  return {
+    converged: false,
+    reason: samples.length < 2 ? 'XR frame counter did not advance'
+      : !first || !samples.every((sample) => sample.gameFrames === first.gameFrames)
+        ? 'game frames advanced while convergence was being observed'
+        : 'no stable camera-follow window observed',
+    timeoutMs,
+    observedMs: last ? last.timestampMs - startedAt : Date.now() - startedAt,
+    requiredWindowMs: windowMs,
+    bestWindowMs,
+    sampleCount: samples.length,
+    distinctXRFrames: new Set(samples.map((sample) => sample.xrFrame)).size,
+    gameFramesStayedPaused: Boolean(first && samples.every((sample) => sample.gameFrames === first.gameFrames)),
+    totalAnchorMovementMeters: first && last ? maxVectorDistance(first.anchor, [last.anchor]) : null,
+    samples,
+  };
+}
+
+function maxVectorDistance(origin, vectors) {
+  if (!Array.isArray(origin) || !vectors.every((vector) => Array.isArray(vector) && vector.length === origin.length)) return Infinity;
+  if (![...origin, ...vectors.flat()].every(Number.isFinite)) return Infinity;
+  return Math.max(0, ...vectors.map((vector) => Math.hypot(...vector.map((value, index) => value - origin[index]))));
+}
+
+function maxScalarDistance(origin, values) {
+  if (!Number.isFinite(origin) || !values.every(Number.isFinite)) return Infinity;
+  return Math.max(0, ...values.map((value) => Math.abs(value - origin)));
+}
+
+function maxScalarVectorDistance(origin, vectors) {
+  if (!Array.isArray(origin) || !vectors.every((vector) => Array.isArray(vector) && vector.length === origin.length)) return Infinity;
+  if (![...origin, ...vectors.flat()].every(Number.isFinite)) return Infinity;
+  return Math.max(0, ...vectors.map((vector) => Math.max(...vector.map((value, index) => Math.abs(value - origin[index])))));
+}

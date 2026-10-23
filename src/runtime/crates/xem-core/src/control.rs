@@ -1007,6 +1007,25 @@ impl<M: GameModule> Session<M> {
             "status" => Ok(self.status()),
             // Return the schema actually used by this session, never a client-selected
             // file. The identity binds the inspector model to this connection/module.
+            "field_source_context" => {
+                if !self.runtime.identity.packages.is_empty() {
+                    return Err("field source context requires a vanilla runtime load".into());
+                }
+                let map = u32::try_from(arg_u64("map").ok_or("field_source_context needs map")?)
+                    .map_err(|_| "invalid context map")?;
+                let source =
+                    arg_str("source_sha256").ok_or("field_source_context needs source_sha256")?;
+                let module = self.runtime.identity.module.clone();
+                let services = self.runtime.services();
+                let context = services.field_sources.query(
+                    map,
+                    source,
+                    &module,
+                    services.cd.inserted(),
+                    services.cd.media_generation(),
+                )?;
+                serde_json::to_value(context).map_err(|e| e.to_string())
+            }
             "schema" => {
                 let schema = self.schema()?;
                 if schema.module_sha256.as_deref() != Some(self.runtime.identity.module.as_str()) {
@@ -1462,7 +1481,7 @@ impl<M: GameModule> Session<M> {
                     // mean the game ignores the pad.
                     "pad_queue_reads_last_frame": services.input_reads_last_frame,
                     "stopped": stopped,
-                    "valid_commands": ["pad", "press", "hold", "act", "context", "targets", "field", "pick", "navigate", "interact", "assist", "assist_stop", "shop_quantity", "frames", "run_until", "inspect", "write", "snapshot",
+                    "valid_commands": ["pad", "press", "hold", "act", "context", "targets", "field", "field_source_context", "pick", "navigate", "interact", "assist", "assist_stop", "shop_quantity", "frames", "run_until", "inspect", "write", "snapshot",
                                         "restore", "rewind_configure", "rewind", "rewind_step", "fast_forward_configure", "fast_forward", "fast_forward_pace", "actor_view", "attack_page", "sound_mode", "random_battles",
                                         "half_encounters", "text_speed", "movie_skip", "auto_advance", "binaural", "audio_capture", "focus_pause", "music_advance", "scenario", "boot_mode", "enter_field", "debug", "debug_status", "debug_tick", "reset", "schedule", "record", "replay", "card_list", "card_present"],
                 }))

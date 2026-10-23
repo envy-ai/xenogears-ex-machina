@@ -8,6 +8,10 @@ export interface Backend {
   disc_fill?(session: number, offset: number, bytes: Uint8Array): string;
 }
 
+export class StudioCommandError extends Error {
+  constructor(readonly kind: string, message: string) { super(`${kind}: ${message}`); }
+}
+
 /** Decode the transport envelope; an echoed error-shaped value remains data. */
 export function readCommandResult<T = unknown>(reply: string): T {
   const envelope: unknown = JSON.parse(reply);
@@ -20,7 +24,7 @@ export function readCommandResult<T = unknown>(reply: string): T {
       if (error && typeof error === 'object' && !Array.isArray(error)
           && Object.keys(error).length === 2 && 'kind' in error && 'message' in error
           && typeof error.kind === 'string' && typeof error.message === 'string') {
-        throw new Error(`${error.kind}: ${error.message}`);
+        throw new StudioCommandError(error.kind, error.message);
       }
     }
   }

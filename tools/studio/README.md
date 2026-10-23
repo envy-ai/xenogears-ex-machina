@@ -1,9 +1,10 @@
 # XEM Studio
 
-The studio has a dockable shell and a host-independent Rust/wasm command
-service. Its field-event backend inspects original components without editing
-game data or connecting to the running game. Milestone-three views use the explicitly approved command-list, graph and
-actor-lane layouts. Names are the only editable project metadata.
+The studio has a dockable shell and a shared Rust/wasm command service. Its
+command list, flow graph and actor lanes inspect original field scripts and
+edit a separate authored draft. Packages apply edits through the virtual disc;
+original images stay read-only. The live inspector attaches through the existing
+native/browser runtime adapters.
 
 ## Try it
 
@@ -592,8 +593,8 @@ message}}`, including arbitrary error-shaped echo data.
 | `field.draft.close` | `{draft}` → `{closed:handle}` |
 | `field.templates` | no args → safe standalone templates derived from authoritative opcode metadata |
 | `field.instruction` | `{bytes,operands}` → prepared `{bytes,targets}`; operand encoding remains in Rust |
-| `field.map_bundle` | `{session,map}` → bounded pending/ready source bundle and its actual index slot, through the existing binary-fill disc transport |
-| `field.draft.repack` | `{draft,bundle}` → replacement bundle bytes; source stream and declared boundary must match the immutable draft base |
+| `field.map_bundle` | `{session,map}` → bounded pending/ready source bundle, actual index slot and `source` original-disc identity (null for synthetic inputs), through the existing binary-fill disc transport |
+| `field.draft.repack` | `{draft,bundle,context?,source?,module_sha256?}` → replacement bundle bytes; source stream and declared boundary must match the immutable draft base. The three optional measured-context arguments are supplied together. |
 
 Actions use a `kind` tag:
 
@@ -663,6 +664,118 @@ Repacking requires complete bounded decoding of all nine original descriptors,
 including unaffected component 8. Some original files (the current map-23
 acceptance candidate among them) end before that stream's full packed output:
 its final bytes depend on adjacent original RAM. Such builds report
-`unsupported_bundle` and preserve the draft and last-good build. Sector padding
-is a different input and is not substituted. Real-disc M6 Build/Play acceptance
-is pending resolution of that source-context requirement.
+`source_context_required` and preserve the draft and last-good build until the
+matching measured context is available. Sector padding is a different input and
+is not substituted. The source-context contract is described below. The local M6 acceptance fixture
+now verifies measured map-23 context, project Save/Load, deterministic Studio
+Build/Play, and execution of the same package in native and browser hosts.
+
+### Measured original field source context
+
+Some original packed components consume bytes beyond the indexed map file. A
+logical component prefix or sector padding cannot establish the complete original
+output. Build refuses these files with `source_context_required` until a matching
+vanilla runtime has observed the selected map's complete original load. It reads
+that observation through the existing attached runtime, without booting another
+map automatically. Unsupported, incomplete or stale observations remain errors.
+
+The read-only runtime command is
+`{"cmd":"field_source_context","map":23,"source_sha256":"<indexed bundle SHA256>"}`.
+The version-1 response binds `provenance: "runtime_field_decompress"` to the running
+module SHA256, known original disc/boot hash, map, index slot/LBA, indexed file
+size/hash, word-rounded allocation, source address and canonical decimal load
+vblank. Its nine component records identify descriptor index/offset/logical size,
+packed length, exact source consumption, complete output length/SHA256,
+destination address and measured bytes consumed beyond indexed EOF. These bytes
+are private source data and stay in local project/ignored verification files.
+Reset, restore, disc changes and a new load invalidate prior observations; an
+incomplete or failed load cannot publish context. Active packages are refused.
+
+The shared observer captures input immediately before each original decompressor
+and compares its complete output with destination RAM immediately afterward.
+Studio validates the context against the selected original bundle and module,
+materializes only consistent consumed bytes beyond EOF before appending events,
+and rechecks every unchanged component's complete output. It never assumes
+sector-rounded input is original RAM or invents a decompression tail.
+
+The project JSON optionally carries `source_context`. Newly acquired valid
+context marks the project **Unsaved** independently of instruction undo/redo.
+Save persists it through the selected file adapter; Load validates it against the
+selected original disc before adoption. Save before changing maps, or explicitly
+discard the draft. A changed project/session/revision/context generation rejects
+stale asynchronous completions and preserves the current draft and last-good
+build. A successfully saved matching context permits reproducible Build without
+reacquiring it from an attached vanilla runtime.
+
+For isolated browser acceptance while the owned HTTPS preview remains active,
+`XEM_STUDIO_TEST_PORT` selects the loopback test server's port (default 5176).
+It does not alter the development NW.js origin grant or certificate configuration.
+
+
+Find within map accepts exact `@0123` or `0x0123` hexadecimal instruction PCs.
+These select the instruction at that PC, including a relocated authored binding,
+rather than an earlier branch/call whose operand mentions it. Other queries
+continue to search mnemonics and displayed names/operands.
+
+
+For an identified original image, disc identity includes `package_discs`, the
+known original game's two boot identities supplied by Rust's existing
+`KnownDisc` facts. Studio Build declares that family and modifies only the
+selected disc/map file; the other disc passes through unchanged. Declaration
+does not certify another image: native/browser preparation still verifies every
+actual image and the unchanged M5 target/hash checks remain mandatory. This
+allows the same field package to boot natively when the original sibling disc
+is present in the changer, as well as in the browser.
+
+
+### M6 verification and trying the runtime
+
+The local map-23 acceptance changes an existing message selector, inserts a call,
+and creates its reachable event. Both production hosts display the selected
+existing message. The causal probe observes the authored marker rise from 0 to
+4660 during ordinary field entry, before Cross input; vanilla stays 0, and Cross
+leaves those values unchanged. Both hosts use the exact same Studio-exported package set. The
+shared virtual-disc check preserves every map-22 byte and the other disc's index
+and files. Package-absent and disabled RAM hashes match; enabled RAM hashes match
+across hosts. Enabled versus absent whole RAM differs because the M5 virtual
+file index is intentionally patched, even while an unchanged map is loaded.
+Gameplay status comparisons explicitly retain the expected package identity.
+
+The new raw-index fixture models MODE2 sectors with header/ECC gaps and a
+seven-byte record crossing the 2048-byte user-data boundary. Private full source,
+context, project, packages and screenshots stay under ignored
+`tmp/studio/milestone-6/`; they are not distributable assets or CI inputs.
+
+For an end-to-end browser session, use a runtime built with the field-source
+observer, select the original disc and load the source map in its vanilla state,
+then attach Studio and Build. Save the project again when context acquisition
+marks it Unsaved. The saved matching context makes later builds reproducible
+without reacquiring it. Native Play likewise needs an executable containing the
+same observer-enabled module, the original disc and configured settings/cards.
+
+The retained local acceptance builds are
+`tmp/studio/milestone-6/checkpoint-36/web` and
+`tmp/studio/milestone-6/checkpoint-36/cargo-target/release/xem-desktop`.
+Select the web directory with `XEM_STUDIO_GAME_DIR` when starting Studio, and
+select the native executable in Live game. Use the existing explicit
+`XEM_STUDIO_TLS_DIR`; no certificate-validation bypass is needed. An already
+running preview retains its launch configuration until its owner restarts it.
+The preserved LAN preview currently uses its older checkpoint67 runtime; its
+process/configuration was kept intact during isolated M6 checks.
+
+
+For isolated runtime-browser retries, `XEM_WEB_TEST_OUTPUT_DIR` selects a fresh
+artifact directory; its default remains `build/web-test`. The headset scaling
+check pauses the game and observes camera-follow convergence over at least
+300 ms before starting the gesture. This synchronizes the existing presentation
+easing; it does not change the renderer or the original `<1 mm` scaling-anchor
+assertion. Each invocation retains diagnostics in a unique subdirectory.
+
+
+The local runtime verification retains its first full-run exit1 (copied Android
+setup syntax and a headset test precondition), alongside focused passing retries.
+Android boot/x86/ARM64 and the unchanged strict headset assertion passed. Both
+NW modes passed: dev retains only the approved localhost origin/public anchor;
+the built app uses the unchanged packaged manifest with neither development
+grant. The earlier built-fixture timeout remains historical evidence. Actual
+commands, inputs, exits and caveats are in the ignored M6 verification index.

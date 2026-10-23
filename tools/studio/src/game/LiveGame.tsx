@@ -11,6 +11,7 @@ import { RecordSelect } from '../editor/RecordSelect';
 import { EditorDialogShell } from '../editor/EditorDialogShell';
 import { DockerList, DockerListBody, DockerListRow, DockerListEmpty } from '../editor/DockerList';
 import { useEventNavigation, useEventPackagePlay } from '../events/EventStudio';
+import type { SourceContext } from '../backend/discs';
 import './live-game.scss';
 
 const Context = createContext<GameController | null>(null);
@@ -81,6 +82,15 @@ export function LiveControls({ report }: { report(error: unknown): void }) {
     } finally { setAttaching(false); }
   };
   useEffect(() => {
+    eventPackage.registerSource(async source => {
+      if (busy) throw new Error('Wait for the current game operation before reading source context');
+      const context=await controller.command({cmd:'field_source_context',map:source.map,source_sha256:source.source_sha256}) as unknown as SourceContext;
+      if (context.module_sha256!==controller.getSnapshot().schema?.identity.module) throw new Error('Runtime source context module changed during capture');
+      return context;
+    });
+    return () => eventPackage.registerSource(null);
+  },[eventPackage.registerSource,controller,busy]);
+  useEffect(() => {
     eventPackage.register(async build => {
       if (busy) throw new Error('Wait for the current game operation before launching a package');
       setAttaching(true);
@@ -96,7 +106,9 @@ export function LiveControls({ report }: { report(error: unknown): void }) {
           if (!api?.packages || !api.boot) throw new Error('This game page does not expose package staging and fresh boot');
           api.setRunning(false);
           await controller.disconnect();
-          api.packages.stage(build.bytes, { enabled: true });
+          // The runtime validates Uint8Array in its own window realm.
+          const bytes = new (game as Window & typeof globalThis).Uint8Array(build.bytes);
+          api.packages.stage(bytes, { enabled: true });
           await api.boot({ run: false, rewind: false });
           await controller.connect(await browserGameTransport(game as unknown as GameWindow, location.origin));
         }

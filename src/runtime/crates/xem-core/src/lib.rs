@@ -18,6 +18,7 @@ pub mod time;
 pub mod devices;
 pub mod encounters;
 pub mod field;
+pub mod field_source;
 pub mod exe;
 pub mod inspect;
 pub mod memory;

@@ -117,6 +117,7 @@ fn pull_session_identifies_fixture_lists_maps_and_extracts_components() {
     assert_eq!(ready["phase"], "ready");
     assert_eq!(ready["identity"]["disc"], Value::Null);
     assert_eq!(ready["identity"]["test_fixture"], true);
+    assert_eq!(ready["identity"]["package_discs"], json!([]));
     assert_eq!(
         ready["identity"]["boot_sha256"],
         "dfe782b25d3e17220c592d2646d05ac78b3d42dd110d291a46c1f3d87c13ba6d"

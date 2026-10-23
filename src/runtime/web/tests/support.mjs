@@ -16,7 +16,9 @@ import { serve } from '../serve.mjs';
 export const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '../../../..');
 export const WEB = process.env.XEM_WEB_ROOT ?? join(ROOT, 'build', 'web');
 /** Screenshots the tests take, for people to look at. */
-export const SHOTS = join(ROOT, 'build', 'web-test');
+export const SHOTS = process.env.XEM_WEB_TEST_OUTPUT_DIR
+  ? resolve(process.env.XEM_WEB_TEST_OUTPUT_DIR)
+  : join(ROOT, 'build', 'web-test');
 export const USER_DISC = process.env.XEM_DISC1 ?? join(ROOT, 'discs', 'Xenogears disc 1.chd');
 export const USER_DISC2 = process.env.XEM_DISC2 ?? join(ROOT, 'discs', 'Xenogears disc 2.chd');
 // The native host the tests compare with (XEM_HEADLESS: another build's, as the test suite's).

@@ -67,6 +67,7 @@ enum Pending {
 /// The services the imports reach: the console's devices and the clock.
 #[derive(Default)]
 pub struct Services {
+    pub(crate) field_sources: crate::field_source::FieldSources,
     pending: Option<Pending>,
     pub(crate) focus_pause: crate::focus::FocusPause,
     /// The host's view for the game's actors (src/port/activity.c): the
@@ -230,6 +231,25 @@ impl ImportHandler for Services {
     fn import(&mut self, import: Import<'_>, memory: &mut dyn GameMemory) -> Action {
         let arg = |i: usize| import.args.get(i).copied().unwrap_or(0);
         match import.name {
+            "field_source" => {
+                let mut raw = [0u8; 32];
+                if arg(1) != 32 || memory.read(arg(0), &mut raw).is_err() {
+                    self.field_sources
+                        .invalidate("malformed field observer record".into());
+                } else {
+                    let record = std::array::from_fn(|i| {
+                        u32::from_le_bytes(raw[i * 4..i * 4 + 4].try_into().expect("record word"))
+                    });
+                    self.field_sources.observe(
+                        record,
+                        self.cd.inserted(),
+                        self.cd.media_generation(),
+                        self.clock.vblanks,
+                        memory,
+                    );
+                }
+                Action::Return(0)
+            }
             "yield" => {
                 self.last_wait = Some(YieldReason::from_raw(arg(0)));
                 self.pending = Some(Pending::Stop(Stop::Yield(YieldReason::from_raw(arg(0)))));
@@ -630,6 +650,7 @@ impl<M: GameModule> Runtime<M> {
         services.clock.counters = Default::default();
         services.clock.reconcile_audio_due();
         services.cd.power_on();
+        services.field_sources.clear();
         let memory = self.module.memory();
         let loaded = match &self.executable {
             Some((address, text)) => memory.write(*address, text),
@@ -1093,6 +1114,7 @@ impl<M: GameModule> Runtime<M> {
         clock.external_audio = services.clock.external_audio;
         services.gpu.restore_state(loaded.gpu);
         services.cd.restore_state(loaded.cd);
+        services.field_sources.clear();
         services.mdec = loaded.mdec;
         services.spu.restore_state(loaded.spu);
         services.card.restore_state(loaded.card);

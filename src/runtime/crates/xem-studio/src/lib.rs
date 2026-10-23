@@ -149,6 +149,9 @@ struct DraftArgs {
 struct DraftRepackArgs {
     draft: u32,
     bundle: Vec<u8>,
+    context: Option<xem_disc::field_context::SourceContext>,
+    source: Option<xem_disc::field_context::SourceIdentity>,
+    module_sha256: Option<String>,
 }
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -249,9 +252,27 @@ impl Command {
                 let drafts = studio.drafts.borrow();
                 let draft = drafts.get(args.draft)?;
                 let compiled = draft.compile()?;
-                CommandResult::Json(
-                    json!({"bytes":disc::replace_events(&args.bundle,&draft.document().base,&compiled)?,"source_sha256":draft.document().base.source_sha256}),
-                )
+                let base = &draft.document().base;
+                let bytes = match (&args.context, &args.source, &args.module_sha256) {
+                    (None, None, None) => disc::replace_events(&args.bundle, base, &compiled)?,
+                    (Some(context), Some(source), Some(module)) => {
+                        disc::replace_events_with_context(
+                            &args.bundle,
+                            base,
+                            &compiled,
+                            context,
+                            source,
+                            module,
+                        )?
+                    }
+                    _ => {
+                        return Err(StudioError::new(
+                            "invalid_args",
+                            "measured repack requires context, selected source identity and module_sha256 together",
+                        ));
+                    }
+                };
+                CommandResult::Json(json!({"bytes":bytes,"source_sha256":base.source_sha256}))
             }
             Self::FieldInstruction(args) => {
                 CommandResult::Json(json!(field::draft::instruction_template(args)?))

@@ -3,14 +3,22 @@
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { closeSync, existsSync, mkdirSync, openSync, readFileSync, readSync, statSync, writeFileSync } from 'node:fs';
 import { dirname, join, resolve, sep } from 'node:path';
 import { createInterface } from 'node:readline';
 import { test } from 'node:test';
 import { HEADLESS, NO_WEBGPU, ROOT, WEB, start } from '../../../../src/runtime/web/tests/support.mjs';
 
 const enabled = process.env.XEM_STUDIO_M6_REAL_PLAYBACK === '1';
+const markerProbeEnabled = process.env.XEM_STUDIO_M6_MARKER_PROBE === '1';
 const milestoneRoot = resolve(ROOT, 'tmp/studio/milestone-6');
+// Proven by xem-disc/src/index.rs: the boot text is resident at 0x80010000,
+// and the game's index starts after its four-byte boot word.
+const DISC1_INDEX_RAM_BASE = 0x80010004;
+const INDEX_LBA = 24;
+const FORM1_USER_DATA_OFFSET = 24;
+const FORM1_DATA_BYTES = 2048;
+const RAW_SECTOR_BYTES = 2352;
 
 test('gated real M6 field edit plays through browser and native using the same package set', {
   skip: !enabled && 'set XEM_STUDIO_M6_REAL_PLAYBACK=1 to enable private M6 real-disc playback',
@@ -55,12 +63,28 @@ test('gated real M6 field edit plays through browser and native using the same p
   assert.equal(evidence.edited_message, visibleMessage.index, 'authored event selects the message whose bytes are checked at runtime');
   assert.equal(evidence.non_event_components_equal, true, 'the fixture verified every non-event component before packaging');
   assert.ok(parsedSet.manifest.files.length >= 1, 'selected package contains its authored map delta');
+  assert.equal(statSync(discPath).size % RAW_SECTOR_BYTES, 0, 'original raw BIN has a whole-sector extent');
+  const originalSectorCount = statSync(discPath).size / RAW_SECTOR_BYTES;
+  const untouchedSlot = evidence.untouched_map.slot;
+  const untouched = parsedSet.manifest.files.find(file => file.disc === evidence.disc1.serial && file.slot === untouchedSlot);
+  if (untouched) {
+    assert.equal(untouched.kind, 'delta', 'any bundled unchanged map remains a source-validated delta');
+    assert.equal(untouched.source_sha256, untouched.result_sha256, 'any bundled map 22 delta preserves its exact source bytes');
+  }
+  const originalUntouchedRecord = originalIndexRecord(discPath, untouchedSlot);
+  const originalEditedRecord = originalIndexRecord(discPath, evidence.slot);
   const mapEdit = parsedSet.manifest.files.find(file => file.slot === evidence.slot && file.disc === evidence.disc1.serial);
   assert.ok(mapEdit, 'package manifest contains the authored map 23 slot');
   assert.equal(mapEdit.kind, 'delta', 'authored map remains a source-validated delta');
-  const untouched = parsedSet.manifest.files.find(file => file.slot === evidence.untouched_map.slot && file.disc === evidence.disc1.serial);
+  const expectedEditedRecord = {
+    lba: virtualLba(parsedSet.manifest.files, evidence.disc1.serial, evidence.slot, originalSectorCount),
+    size: mapEdit.result_size,
+  };
   assert.equal(evidence.untouched_map.source_equals_result, true, 'fixture verified the untouched source map is byte-identical');
-  if (untouched) assert.equal(untouched.source_sha256, untouched.result_sha256, 'any bundled untouched map member is source-equals-result');
+  const expectedUntouchedRecord = untouched ? {
+    lba: virtualLba(parsedSet.manifest.files, evidence.disc1.serial, untouchedSlot, originalSectorCount),
+    size: untouched.result_size,
+  } : decodeIndexRecord(originalUntouchedRecord);
   assert.equal(mapEdit.source_sha256, evidence.source_bundle_sha256, 'authored delta binds to the source map bundle hash');
   assert.equal(mapEdit.result_sha256, evidence.result_bundle_sha256, 'authored delta result matches the private verified bundle');
   mkdirSync(artifactRoot, { recursive: false });
@@ -72,21 +96,23 @@ test('gated real M6 field edit plays through browser and native using the same p
     const modes = {};
     for (const mode of ['absent', 'disabled', 'enabled']) {
       modes[mode] = await browserRoute(page, mode, setBytes, discPath,
-        mode === 'enabled' ? expectedMessageBytes : expectedVanillaMessage);
+        mode === 'enabled' ? expectedMessageBytes : expectedVanillaMessage, 23, evidence.slot);
       const screenshot = await page.locator('canvas').screenshot({ path: join(artifactRoot, `browser-${mode}.png`) });
       modes[mode].screenshot = { sha256: sha256(screenshot), path: `browser-${mode}.png` };
     }
     const nativeModes = {};
     for (const mode of ['absent', 'disabled', 'enabled']) {
       nativeModes[mode] = await nativeRoute(mode, packageSetPath, discPath, artifactRoot, evidence,
-        mode === 'enabled' ? expectedMessageBytes : expectedVanillaMessage);
+        mode === 'enabled' ? expectedMessageBytes : expectedVanillaMessage, 23, `native-${mode}`, true, evidence.slot);
     }
 
     const untouchedBrowser = {};
     const untouchedPage = await browser.page();
     try {
       for (const mode of ['absent', 'disabled', 'enabled']) {
-        untouchedBrowser[mode] = await browserRoute(untouchedPage, mode, setBytes, discPath, null, evidence.untouched_map.map);
+        untouchedBrowser[mode] = await browserRoute(untouchedPage, mode, setBytes, discPath, null, evidence.untouched_map.map, untouchedSlot);
+        const screenshot = await untouchedPage.locator('canvas').screenshot({ path: join(artifactRoot, `browser-untouched-${mode}.png`) });
+        untouchedBrowser[mode].screenshot = { sha256: sha256(screenshot), path: `browser-untouched-${mode}.png` };
       }
     } finally {
       await untouchedPage.close();
@@ -94,16 +120,61 @@ test('gated real M6 field edit plays through browser and native using the same p
     const untouchedNative = {};
     for (const mode of ['absent', 'disabled', 'enabled']) {
       untouchedNative[mode] = await nativeRoute(mode, packageSetPath, discPath, artifactRoot, evidence, null,
-        evidence.untouched_map.map, `untouched-native-${mode}`);
+        evidence.untouched_map.map, `untouched-native-${mode}`, true, untouchedSlot);
     }
-    for (const mode of ['disabled', 'enabled']) {
-      assert.equal(untouchedBrowser[mode].memoryHash, untouchedBrowser.absent.memoryHash,
-        `browser ${mode} preserves the original untouched map runtime memory`);
-      assert.equal(untouchedNative[mode].memoryHash, untouchedNative.absent.memoryHash,
-        `native ${mode} preserves the original untouched map runtime memory`);
+    for (const mode of ['absent', 'disabled', 'enabled']) {
       assert.equal(untouchedBrowser[mode].memoryHash, untouchedNative[mode].memoryHash,
-        `untouched map ${mode} memory matches between production hosts`);
+        `untouched map ${mode} raw memory hash matches between production hosts`);
+      const expectedStatus = statusWithPackages(untouchedBrowser.absent.status,
+        mode === 'enabled' ? [parsedSet.identity] : []);
+      assert.deepEqual(untouchedBrowser[mode].status, expectedStatus,
+        `browser ${mode} preserves gameplay status and has the expected package identity`);
+      assert.deepEqual(untouchedNative[mode].status, expectedStatus,
+        `native ${mode} preserves gameplay status and has the expected package identity`);
+      assert.deepEqual(untouchedBrowser[mode].status, untouchedNative[mode].status,
+        `untouched map ${mode} status matches between production hosts`);
+      assert.equal(untouchedBrowser[mode].fieldMap, evidence.untouched_map.map,
+        `browser ${mode} still runs the untouched map`);
+      assert.equal(untouchedNative[mode].fieldMap, evidence.untouched_map.map,
+        `native ${mode} still runs the untouched map`);
+      assert.equal(untouchedBrowser[mode].fieldMap, untouchedNative[mode].fieldMap,
+        `untouched map ${mode} field-map value matches between production hosts`);
+      assert.equal(untouchedBrowser[mode].screenshot.sha256, untouchedBrowser.absent.screenshot.sha256,
+        `browser ${mode} untouched-map screenshot matches package-absent`);
+      assert.equal(untouchedNative[mode].screenshot.sha256, untouchedNative.absent.screenshot.sha256,
+        `native ${mode} untouched-map screenshot matches package-absent`);
+      if (mode === 'enabled') {
+        const expectedUntouchedRecordBytes = encodeIndexRecord(expectedUntouchedRecord);
+        assert.ok(untouchedBrowser[mode].indexRecord.equals(expectedUntouchedRecordBytes),
+          'browser enabled map 22 index record uses its sorted manifest virtual LBA and result_size');
+        assert.ok(untouchedNative[mode].indexRecord.equals(expectedUntouchedRecordBytes),
+          'native enabled map 22 index record uses its sorted manifest virtual LBA and result_size');
+      } else {
+        assert.ok(untouchedBrowser[mode].indexRecord.equals(originalUntouchedRecord),
+          `browser ${mode} map 22 index record remains original`);
+        assert.ok(untouchedNative[mode].indexRecord.equals(originalUntouchedRecord),
+          `native ${mode} map 22 index record remains original`);
+      }
     }
+    for (const mode of ['absent', 'disabled', 'enabled']) {
+      assert.equal(modes[mode].memoryHash, nativeModes[mode].memoryHash,
+        `${mode} map 23 raw memory hash matches between production hosts`);
+    }
+    for (const mode of ['absent', 'disabled']) {
+      assert.ok(modes[mode].indexRecord.equals(originalEditedRecord),
+        `${mode} map 23 index record remains original`);
+      assert.ok(nativeModes[mode].indexRecord.equals(originalEditedRecord),
+        `native ${mode} map 23 index record remains original`);
+    }
+    const expectedEditedRecordBytes = encodeIndexRecord(expectedEditedRecord);
+    assert.ok(modes.enabled.indexRecord.equals(expectedEditedRecordBytes),
+      'browser enabled index record uses the deterministic appended LBA and manifest result_size');
+    assert.ok(nativeModes.enabled.indexRecord.equals(expectedEditedRecordBytes),
+      'native enabled index record uses the deterministic appended LBA and manifest result_size');
+    assert.notEqual(modes.enabled.memoryHash, modes.absent.memoryHash,
+      'browser enabled raw hash includes the expected global file-index update');
+    assert.notEqual(nativeModes.enabled.memoryHash, nativeModes.absent.memoryHash,
+      'native enabled raw hash includes the expected global file-index update');
 
     for (const mode of ['absent', 'disabled']) {
       assert.equal(modes[mode].memoryHash, modes.absent.memoryHash, `browser ${mode} memory matches package-absent vanilla`);
@@ -159,11 +230,90 @@ test('gated real M6 field edit plays through browser and native using the same p
         exactExistingMessageBytesInActiveWindow: true,
         originalDiscAndModuleIdentityMatch: true,
         serviceFixtureVerifiedUntouchedMapSourceEqualsResult: true,
-        enabledRuntimeMatchesVanillaOnUntouchedMap: true,
+        untouchedMapStatusAndScreenshotMatchPackageAbsent: true,
+        enabledIndexRecordsMatchSortedManifestLbasAndResultSizes: true,
+        enabledRawMemoryHashIncludesExpectedGlobalIndexRecordChange: true,
+        allModeRawMemoryHashesMatchAcrossHosts: true,
         authoredVariableObservedAfterNormalInputAndFrames: true,
         browserNativeSchemaStatusAndEnabledHashParity: true,
       },
     }, null, 2)}\n`, { flag: 'wx' });
+  } finally {
+    if (browser) await browser.close();
+  }
+});
+
+test('gated real M6 authored marker differs from vanilla only after the normal field route', {
+  skip: !markerProbeEnabled && 'set XEM_STUDIO_M6_MARKER_PROBE=1 to enable the private M6 marker probe',
+  timeout: 600_000,
+}, async () => {
+  const fixtureRoot = requiredPath('XEM_STUDIO_M6_FIXTURE_ROOT');
+  const packageSetPath = requiredPath('XEM_STUDIO_M6_SET');
+  const discPath = requiredPath('XEM_STUDIO_M6_DISC1');
+  const extractRoot = requiredPath('XEM_STUDIO_EXTRACT_ROOT');
+  const artifactRoot = requiredPath('XEM_STUDIO_M6_MARKER_ARTIFACT_ROOT');
+  for (const path of [fixtureRoot, packageSetPath, artifactRoot]) {
+    assert.ok(path === milestoneRoot || path.startsWith(milestoneRoot + sep), 'private M6 inputs and outputs stay under ignored milestone storage');
+  }
+  assert.equal(discPath, resolve(join(extractRoot, 'discs/disc1.bin')),
+    'runtime reads the explicitly selected original disc 1 BIN');
+  assert.ok(existsSync(join(fixtureRoot, 'evidence.json')) && existsSync(packageSetPath)
+    && existsSync(discPath) && existsSync(HEADLESS), 'private fixture, package, disc, and native host exist');
+  assert.ok(existsSync(join(WEB, 'game/game.wasm')) && existsSync(join(WEB, 'game/schema.json')),
+    'selected production browser build includes the game module and schema');
+  assert.ok(existsSync(dirname(artifactRoot)) && !existsSync(artifactRoot), 'marker evidence leaf is fresh');
+
+  const evidence = JSON.parse(readFileSync(join(fixtureRoot, 'evidence.json'), 'utf8'));
+  const setBytes = readFileSync(packageSetPath);
+  const variable = evidence.authored_variable;
+  const marker = variable.marker;
+  assert.equal(marker, 0x1234, 'fixture marker is the authored 0x1234 value');
+  mkdirSync(artifactRoot, { recursive: false });
+
+  let browser;
+  try {
+    browser = await start({ args: NO_WEBGPU });
+    const page = await browser.page();
+    const browserModes = {};
+    for (const mode of ['absent', 'enabled']) {
+      browserModes[mode] = await browserRoute(page, mode, setBytes, discPath, null, 23, undefined,
+        { variable, marker });
+    }
+    const nativeModes = {};
+    for (const mode of ['absent', 'enabled']) {
+      nativeModes[mode] = await nativeRoute(mode, packageSetPath, discPath, artifactRoot, evidence,
+        null, 23, `marker-native-${mode}`, false, undefined, { variable, marker });
+    }
+
+    for (const hostModes of [browserModes, nativeModes]) {
+      assert.equal(hostModes.absent.markerProbe.title, 0, 'vanilla authored-variable slot starts clear at the title checkpoint');
+      assert.equal(hostModes.enabled.markerProbe.title, 0, 'enabled authored-variable slot starts clear at the title checkpoint');
+      assert.notEqual(hostModes.absent.markerProbe.field, marker,
+        'vanilla original field route does not set the authored marker before input');
+      assert.notEqual(hostModes.absent.markerProbe.afterInput, marker,
+        'vanilla remains off the authored marker after the same public input and bounded frames');
+      assert.equal(hostModes.enabled.markerProbe.afterInput, marker,
+        'enabled route reaches the authored marker after the same public input and bounded frames');
+    }
+    for (const mode of ['absent', 'enabled']) {
+      assert.deepEqual(browserModes[mode].markerProbe, nativeModes[mode].markerProbe,
+        `${mode} authored-variable observations match between production hosts`);
+    }
+    writeFileSync(join(artifactRoot, 'marker-probe.json'), `${JSON.stringify({
+      acceptance: 'gated real-disc marker comparison across vanilla and authored package routes',
+      packageSetSha256: sha256(setBytes),
+      variableReference: variable.operand_reference,
+      marker,
+      route: { titleFrames: 303, fieldMap: 23, fieldFrames: 430, publicButton: 'cross', postInputFrames: 600 },
+      browser: Object.fromEntries(Object.entries(browserModes).map(([mode, result]) => [mode, result.markerProbe])),
+      native: Object.fromEntries(Object.entries(nativeModes).map(([mode, result]) => [mode, result.markerProbe])),
+      checks: {
+        titleValueClearBothModes: true,
+        vanillaDoesNotReachAuthoredMarker: true,
+        enabledReachesMarkerAfterPublicInput: true,
+        browserNativeValuesMatch: true,
+      },
+    }, null, 2)}\n`);
   } finally {
     if (browser) await browser.close();
   }
@@ -234,7 +384,7 @@ function matchingWindow(candidates, expected) {
   return candidates.some(candidate => candidate.bytes.subarray(0, expected.length).equals(expected));
 }
 
-async function browserRoute(page, mode, setBytes, discPath, expectedMessageBytes, targetMap = 23) {
+async function browserRoute(page, mode, setBytes, discPath, expectedMessageBytes, targetMap = 23, indexSlot = undefined, markerProbe = undefined) {
   if (mode === 'absent') {
     await page.setInputFiles('#file', discPath);
     await page.waitForFunction(() => ['identified', 'failed'].includes(window.xem.status().disc?.state), null, { timeout: 120_000 });
@@ -253,6 +403,7 @@ async function browserRoute(page, mode, setBytes, discPath, expectedMessageBytes
   const bootMode = await browserCommand(page, { cmd: 'boot_mode', mode: 0 });
   requireNoError(bootMode, `browser ${mode} title boot`);
   requireNoError(await page.evaluate(() => window.xem.run({ cmd: 'frames', count: 303 })), `browser ${mode} title frames`);
+  const markerTitle = markerProbe ? await browserVariable(page, schema, markerProbe.variable) : undefined;
   requireNoError(await browserCommand(page, {
     cmd: 'scenario', mode: 1,
     writes: [
@@ -262,15 +413,31 @@ async function browserRoute(page, mode, setBytes, discPath, expectedMessageBytes
     ],
   }), `browser ${mode} field setup`);
   requireNoError(await page.evaluate(() => window.xem.run({ cmd: 'frames', count: 430 })), `browser ${mode} field frames`);
+  const markerField = markerProbe ? await browserVariable(page, schema, markerProbe.variable) : undefined;
   const status = await browserCommand(page, { cmd: 'status' });
   const memoryHash = await browserCommand(page, { cmd: 'memory_hash' });
+  const selectedSlot = indexSlot;
   const candidates = await browserWindows(page);
   const messageMatches = expectedMessageBytes ? matchingWindow(candidates, expectedMessageBytes) : false;
   if (expectedMessageBytes) assert.ok(messageMatches, `browser ${mode} active window matches expected existing message bytes`);
-  const fieldMap = await browserCommand(page, { cmd: 'inspect', path: 'mode_field_map_id', depth: 0 });
-  assert.equal(Number(fieldMap), targetMap, `browser ${mode} enters map ${targetMap}`);
-  return { schema, identity: schema.identity, status, memoryHash, candidates, messageMatchesOriginal: expectedMessageBytes && mode !== 'enabled' && messageMatches,
-    messageMatchesEdited: expectedMessageBytes && mode === 'enabled' && messageMatches, disc: discStatus.identity };
+  const fieldMapReply = await browserCommand(page, { cmd: 'inspect', path: 'mode_field_map_id', depth: 0 });
+  const fieldMap = Number(fieldMapReply);
+  assert.equal(fieldMap, targetMap, `browser ${mode} enters map ${targetMap}`);
+  const indexRecord = selectedSlot === undefined ? undefined : hexBytes(await browserCommand(page, { cmd: 'read_memory', address: DISC1_INDEX_RAM_BASE + selectedSlot * 7, length: 7 }));
+  let markerProbeResult;
+  if (markerProbe) {
+    const afterInput = (await browserAdvance(page, schema, markerProbe.variable)).value;
+    const values = { title: markerTitle, field: markerField, afterInput };
+    const firstObserved = Object.entries(values).find(([, value]) => value === markerProbe.marker)?.[0] ?? null;
+    markerProbeResult = { ...values, firstObserved };
+  }
+  return { schema, identity: schema.identity, status, memoryHash, fieldMap, indexRecord, candidates, messageMatchesOriginal: expectedMessageBytes && mode !== 'enabled' && messageMatches,
+    messageMatchesEdited: expectedMessageBytes && mode === 'enabled' && messageMatches, disc: discStatus.identity, markerProbe: markerProbeResult };
+}
+
+async function browserVariable(page, schema, variable) {
+  const address = variableAddress(schema, variable);
+  return hexBytes(await browserCommand(page, { cmd: 'read_memory', address, length: 2 })).readUInt16LE(0);
 }
 
 async function browserAdvance(page, schema, variable) {
@@ -282,7 +449,7 @@ async function browserAdvance(page, schema, variable) {
   return { address, value: hexBytes(result).readUInt16LE(0) };
 }
 
-async function nativeRoute(mode, setPath, discPath, outputRoot, evidence, expectedMessageBytes, targetMap = 23, label = `native-${mode}`) {
+async function nativeRoute(mode, setPath, discPath, outputRoot, evidence, expectedMessageBytes, targetMap = 23, label = `native-${mode}`, captureScreenshot = Boolean(expectedMessageBytes), indexSlot = undefined, markerProbe = undefined) {
   const cardPath = join(outputRoot, `cards-${label}`);
   mkdirSync(cardPath, { recursive: false });
   const args = ['--disc', discPath, '--control', '--cards', cardPath];
@@ -295,23 +462,34 @@ async function nativeRoute(mode, setPath, discPath, outputRoot, evidence, expect
     const schema = requireNoError(await client.command({ cmd: 'schema' }), `native ${mode} schema`);
     requireNoError(await client.command({ cmd: 'boot_mode', mode: 0 }), `native ${mode} title boot`);
     requireNoError(await client.command({ cmd: 'frames', count: 303 }), `native ${mode} title frames`);
+    const markerTitle = markerProbe ? await nativeVariable(client, schema, markerProbe.variable) : undefined;
     requireNoError(await client.command({ cmd: 'scenario', mode: 1, writes: [
       { path: 'game_data.map', value: targetMap },
       { path: 'mode_kernel_menu_running', value: 0 },
       { path: 'mode_field_entered_once', value: 0 },
     ] }), `native ${mode} field setup`);
     requireNoError(await client.command({ cmd: 'frames', count: 430 }), `native ${label} field frames`);
+    const markerField = markerProbe ? await nativeVariable(client, schema, markerProbe.variable) : undefined;
     const status = requireNoError(await client.command({ cmd: 'status' }), `native ${mode} status`);
     const memoryHash = requireNoError(await client.command({ cmd: 'memory_hash' }), `native ${mode} memory hash`);
     const fieldMap = requireNoError(await client.command({ cmd: 'inspect', path: 'mode_field_map_id', depth: 0 }), `native ${mode} field map`);
     assert.equal(Number(fieldMap), targetMap, `native ${label} enters map ${targetMap}`);
+    const indexRecord = indexSlot === undefined ? undefined : hexBytes(await client.command({ cmd: 'read_memory', address: DISC1_INDEX_RAM_BASE + indexSlot * 7, length: 7 }));
     const candidates = await nativeWindows(client, schema);
     const messageMatches = expectedMessageBytes ? matchingWindow(candidates, expectedMessageBytes) : false;
     if (expectedMessageBytes) assert.ok(messageMatches, `native ${mode} active window matches expected existing message bytes`);
     const screenshotPath = join(outputRoot, `${label}.png`);
-    if (expectedMessageBytes) requireNoError(await client.command({ cmd: 'screenshot', path: screenshotPath }), `native ${mode} screenshot`);
+    if (captureScreenshot) requireNoError(await client.command({ cmd: 'screenshot', path: screenshotPath }), `native ${mode} screenshot`);
     let authoredMarker;
-    if (mode === 'enabled' && targetMap === 23) {
+    let markerProbeResult;
+    if (markerProbe) {
+      requireNoError(await client.command({ cmd: 'press', buttons: ['cross'], frames: 1 }), `native ${mode} public cross-button input`);
+      requireNoError(await client.command({ cmd: 'frames', count: 600 }), `native ${mode} bounded marker-probe frames`);
+      const afterInput = await nativeVariable(client, schema, markerProbe.variable);
+      const values = { title: markerTitle, field: markerField, afterInput };
+      const firstObserved = Object.entries(values).find(([, value]) => value === markerProbe.marker)?.[0] ?? null;
+      markerProbeResult = { ...values, firstObserved };
+    } else if (mode === 'enabled' && targetMap === 23) {
       requireNoError(await client.command({ cmd: 'press', buttons: ['cross'], frames: 1 }), 'native public cross-button input');
       requireNoError(await client.command({ cmd: 'frames', count: 600 }), 'native bounded authored-event frames');
       const address = variableAddress(schema, evidence.authored_variable);
@@ -319,15 +497,21 @@ async function nativeRoute(mode, setPath, discPath, outputRoot, evidence, expect
       authoredMarker = { address, value: hexBytes(value).readUInt16LE(0) };
     }
     return {
-      schema, identity: schema.identity, status, memoryHash, disc: schema.identity.disc,
+      schema, identity: schema.identity, status, memoryHash, fieldMap: Number(fieldMap), indexRecord, disc: schema.identity.disc,
       messageMatchesOriginal: expectedMessageBytes && mode !== 'enabled' && messageMatches,
       messageMatchesEdited: expectedMessageBytes && mode === 'enabled' && messageMatches,
-      authoredMarker,
-      screenshot: expectedMessageBytes ? { path: `${label}.png`, sha256: sha256(readFileSync(screenshotPath)) } : undefined,
+      authoredMarker, markerProbe: markerProbeResult,
+      screenshot: captureScreenshot ? { path: `${label}.png`, sha256: sha256(readFileSync(screenshotPath)) } : undefined,
     };
   } finally {
     await client.close();
   }
+}
+
+async function nativeVariable(client, schema, variable) {
+  const address = variableAddress(schema, variable);
+  const bytes = requireNoError(await client.command({ cmd: 'read_memory', address, length: 2 }), 'native authored-variable probe');
+  return hexBytes(bytes).readUInt16LE(0);
 }
 
 async function nativeWindows(client, schemaReply) {
@@ -421,6 +605,88 @@ class NativeControl {
   }
 }
 
+function rawIndexRecordBytes(slot, readRaw) {
+  const bytes = Buffer.alloc(7);
+  let logical = slot * 7;
+  let copied = 0;
+  while (copied < bytes.length) {
+    const offsetInSector = logical % FORM1_DATA_BYTES;
+    const length = Math.min(bytes.length - copied, FORM1_DATA_BYTES - offsetInSector);
+    const lba = INDEX_LBA + Math.floor(logical / FORM1_DATA_BYTES);
+    const rawOffset = lba * RAW_SECTOR_BYTES + FORM1_USER_DATA_OFFSET + offsetInSector;
+    readRaw(rawOffset, bytes, copied, length);
+    logical += length;
+    copied += length;
+  }
+  return bytes;
+}
+
+function statusWithPackages(status, packages) {
+  return {
+    ...status,
+    identity: { ...status.identity, packages },
+  };
+}
+
+function originalIndexRecord(discPath, slot) {
+  const fd = openSync(discPath, 'r');
+  try {
+    return rawIndexRecordBytes(slot, (rawOffset, target, targetOffset, length) => {
+      assert.equal(readSync(fd, target, targetOffset, length, rawOffset), length,
+        'original disc contains the requested bytes from its sector-aware logical index');
+    });
+  } finally {
+    closeSync(fd);
+  }
+}
+
+test('synthetic raw MODE2 reader handles slot 652 and a record crossing Form1 sectors', () => {
+  const rawTrack = Buffer.alloc((INDEX_LBA + 3) * RAW_SECTOR_BYTES, 0xa5);
+  const logicalIndex = Buffer.alloc(FORM1_DATA_BYTES * 3);
+  const records = new Map();
+  for (const slot of [292, 652]) {
+    const record = encodeIndexRecord({ lba: 0x12340 + slot, size: 0x102030 + slot });
+    record.copy(logicalIndex, slot * 7);
+    records.set(slot, record);
+  }
+  for (let sector = 0; sector < 3; sector++) {
+    const logicalStart = sector * FORM1_DATA_BYTES;
+    const chunk = logicalIndex.subarray(logicalStart, logicalStart + FORM1_DATA_BYTES);
+    chunk.copy(rawTrack, (INDEX_LBA + sector) * RAW_SECTOR_BYTES + FORM1_USER_DATA_OFFSET);
+  }
+  for (const [slot, expected] of records) {
+    const observed = rawIndexRecordBytes(slot, (rawOffset, target, targetOffset, length) => {
+      rawTrack.copy(target, targetOffset, rawOffset, rawOffset + length);
+    });
+    assert.ok(observed.equals(expected), `synthetic raw slot ${slot} reads exact index bytes through MODE2/Form1 sector mapping`);
+  }
+});
+
+function decodeIndexRecord(bytes) {
+  return {
+    lba: bytes[0] | (bytes[1] << 8) | (bytes[2] << 16),
+    size: bytes.readInt32LE(3),
+  };
+}
+
+function encodeIndexRecord(record) {
+  const bytes = Buffer.alloc(7);
+  bytes[0] = record.lba & 0xff;
+  bytes[1] = (record.lba >>> 8) & 0xff;
+  bytes[2] = (record.lba >>> 16) & 0xff;
+  bytes.writeInt32LE(record.size, 3);
+  return bytes;
+}
+
+function virtualLba(files, discSerial, targetSlot, originalSectorCount) {
+  let next = originalSectorCount;
+  for (const file of files.filter(entry => entry.disc === discSerial).sort((a, b) => a.slot - b.slot)) {
+    if (file.slot === targetSlot) return next;
+    next += Math.max(1, Math.ceil(file.result_size / FORM1_DATA_BYTES));
+  }
+  assert.fail('target package file was absent while deriving its deterministic virtual LBA');
+}
+
 function variableAddress(schema, variable) {
   const base = schema.schema?.globals?.field_event_variables?.address;
   assert.ok(Number.isInteger(base), 'running module schema exposes the field_event_variables global address');
@@ -435,7 +701,9 @@ function summarize(modes) {
   return Object.fromEntries(Object.entries(modes).map(([mode, value]) => [mode, {
     identity: value.identity ?? value.schema.identity,
     status: value.status,
+    fieldMap: value.fieldMap,
     memoryHash: value.memoryHash,
+    indexRecord: value.indexRecord ? decodeIndexRecord(value.indexRecord) : undefined,
     messageMatchesOriginal: value.messageMatchesOriginal,
     messageMatchesEdited: value.messageMatchesEdited,
     authoredMarker: value.authoredMarker,

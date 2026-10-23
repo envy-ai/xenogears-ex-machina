@@ -139,6 +139,14 @@ export function instructionPhrase(instruction: Instruction, names: NameTable, ma
   return `${phrase.charAt(0).toUpperCase()}${phrase.slice(1)}${operands.length ? `: ${operands.join(', ')}` : ''}`;
 }
 
+/** An explicit PC selects that instruction, not an earlier operand referencing it. */
+export function findInstruction(instructions: readonly Instruction[], query: string, names: NameTable, map: number): Instruction | undefined {
+  const text = query.trim().toLowerCase();
+  const address = /^(?:@|0x)([0-9a-f]+)$/.exec(text);
+  if (address) return instructions.find(instruction => instruction.pc === Number.parseInt(address[1], 16));
+  return instructions.find(instruction => `${instructionPhrase(instruction, names, map)} ${formatPc(instruction.pc)}`.toLowerCase().includes(text));
+}
+
 /** Build once per graph, preserving every diagnostic category and storage reason. */
 export function instructionDiagnostics(graph: FieldGraph): Map<number, string[]> {
   const result = new Map<number, string[]>();

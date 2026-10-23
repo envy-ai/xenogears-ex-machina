@@ -1,7 +1,7 @@
 import { expect, test } from '@playwright/test';
 import { readFileSync } from 'node:fs';
 
-interface TraceEntry { request: unknown; response: unknown }
+interface TraceEntry { request: unknown; response: unknown; rejection_only?: boolean; semantic_rejection?: boolean }
 interface DraftParityFixture { synthetic_only: true; trace: TraceEntry[] }
 
 async function send(page: import('@playwright/test').Page, command: unknown): Promise<unknown> {
@@ -24,6 +24,16 @@ test('matches native draft protocol replies through wasm for the same synthetic 
   await page.goto('/');
   await expect(page.locator('[data-panel-id="backend"]')).toContainText('xem-studio 0.5.0');
   for (const [index, step] of fixture.trace.entries()) {
-    expect(await send(page, step.request), `native/WASM response at trace step ${index}`).toEqual(step.response);
+    const actual = await send(page, step.request);
+    if (step.rejection_only) {
+      expect(actual, `WASM rejects malformed context at trace step ${index}`).toHaveProperty('error');
+      expect(step.response, `native rejects malformed context at trace step ${index}`).toHaveProperty('error');
+      if (step.semantic_rejection) {
+        expect(actual, `WASM semantically rejects representable context at trace step ${index}`).toHaveProperty('error.kind', 'invalid_source_context');
+        expect(step.response, `native semantically rejects representable context at trace step ${index}`).toHaveProperty('error.kind', 'invalid_source_context');
+      }
+    } else {
+      expect(actual, `native/WASM response at trace step ${index}`).toEqual(step.response);
+    }
   }
 });

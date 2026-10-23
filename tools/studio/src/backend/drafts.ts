@@ -1,6 +1,7 @@
 /** M6 authored draft transport. Rust owns graph edits, revisions and history. */
 import { readCommandResult, type Backend } from './service';
 import type { FieldGraph } from '../events/model';
+import type { SourceContext, SourceIdentity } from './discs';
 
 export type OperandValue = { kind: 'literal'; value: number; immediate?: boolean } | { kind: 'target'; node: string };
 export interface NodeInput { bytes: number[]; targets?: Record<string, string> }
@@ -41,7 +42,7 @@ export class FieldDraftSession {
   }
   compile(): CompiledDraft { return this.call('compile', { draft: this.snapshot.draft }); }
   export(): DraftDocument { return this.call('export', { draft: this.snapshot.draft }); }
-  repack(bundle: number[]): { bytes: number[]; source_sha256: string } { return this.call('repack', { draft: this.snapshot.draft, bundle }); }
+  repack(bundle: number[], context?:SourceContext, source?:SourceIdentity): { bytes: number[]; source_sha256: string } { return this.call('repack', { draft: this.snapshot.draft, bundle, ...(context ? {context,source,module_sha256:context.module_sha256} : {}) }); }
   close(): void { this.call('close', { draft: this.snapshot.draft }); }
   nodeAt(pc: number): string | null { return Object.entries(this.snapshot.bindings).find(([, placed]) => placed === pc)?.[0] ?? null; }
 }

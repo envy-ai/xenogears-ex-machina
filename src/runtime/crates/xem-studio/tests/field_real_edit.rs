@@ -5,6 +5,7 @@ use std::collections::BTreeSet;
 use std::fs::{self, OpenOptions};
 use std::io::Write;
 use std::path::{Path, PathBuf};
+use xem_disc::field_context::{SourceContext, SourceIdentity};
 use xem_studio::{Studio, packed};
 
 const MAP: u32 = 23;
@@ -92,6 +93,20 @@ fn open_disc(studio: &Studio, path: &Path, expected_disc: u64) -> (u32, Value) {
         state["identity"]["test_fixture"].as_bool(),
         Some(false),
         "real-source fixture does not use the test identity bypass"
+    );
+    let expected_package_discs = json!([
+        {
+            "serial": xem_disc::KnownDisc::Disc1.serial(),
+            "sha256": xem_disc::identify::hex(&xem_disc::KnownDisc::Disc1.executable_sha256())
+        },
+        {
+            "serial": xem_disc::KnownDisc::Disc2.serial(),
+            "sha256": xem_disc::identify::hex(&xem_disc::KnownDisc::Disc2.executable_sha256())
+        }
+    ]);
+    assert_eq!(
+        state["identity"]["package_discs"], expected_package_discs,
+        "either known original disc identity lists both exact package-family targets"
     );
     (session, state["identity"].clone())
 }
@@ -235,6 +250,26 @@ fn gated_real_disc_service_discovers_and_packages_a_map23_edit_candidate() {
     );
     let target = map_bundle(&studio, session1, MAP);
     let source_bundle = byte_array(&target["bytes"], "map 23 source bundle");
+    let context_path = PathBuf::from(
+        std::env::var_os("XEM_STUDIO_M6_SOURCE_CONTEXT")
+            .expect("gated M6 fixture requires explicit XEM_STUDIO_M6_SOURCE_CONTEXT"),
+    );
+    let context_bytes = fs::read(&context_path).expect("read private measured context capture");
+    let source_context: SourceContext = serde_json::from_slice(&context_bytes)
+        .expect("captured context follows the shared strict schema");
+    let source_identity: SourceIdentity = serde_json::from_value(target["source"].clone())
+        .expect("public map bundle identifies its verified original source");
+    let module = source_context.module_sha256.clone();
+    assert_eq!(
+        source_context.identity, source_identity,
+        "captured runtime context belongs to this map bundle"
+    );
+    let context_guard = source_context
+        .guard(&source_bundle, &source_identity, &module)
+        .expect("all nine original component outputs match the measured runtime context");
+    let mut measured_source_bundle = source_bundle.clone();
+    measured_source_bundle.extend_from_slice(&context_guard);
+    let context_sha256 = hex_hash(&context_bytes);
     let slot23 =
         u32::try_from(integer(&target["slot"], "map 23 index slot")).expect("slot fits u32");
     let original_component = ok(
@@ -257,8 +292,8 @@ fn gated_real_disc_service_discovers_and_packages_a_map23_edit_candidate() {
         &original_component["component"]["declared_size"],
         "component declared size",
     );
-    let original_message_table =
-        decoded_component(&source_bundle, 7).expect("map 23 message-table component 7 is present");
+    let original_message_table = decoded_component(&measured_source_bundle, 7)
+        .expect("map 23 message-table component 7 is present");
     let message_count = usize::from(u16::from_le_bytes(
         original_message_table[0..2]
             .try_into()
@@ -669,7 +704,7 @@ fn gated_real_disc_service_discovers_and_packages_a_map23_edit_candidate() {
         &command(
             &studio,
             "field.draft.repack",
-            json!({"draft":draft,"bundle":source_bundle}),
+            json!({"draft":draft,"bundle":source_bundle,"context":source_context.clone(),"source":source_identity.clone(),"module_sha256":module.clone()}),
         ),
         "repack authored events into original map 23 bundle",
     );
@@ -726,7 +761,7 @@ fn gated_real_disc_service_discovers_and_packages_a_map23_edit_candidate() {
             source_offset == result_offset,
             "non-event component {index} retains its source offset descriptor"
         );
-        let source_component = decoded_component(&source_bundle, index);
+        let source_component = decoded_component(&measured_source_bundle, index);
         let result_component = decoded_component(&modified_bundle, index);
         let component_evidence = match (source_size, source_component, result_component) {
             (0, None, None) => json!({
@@ -867,7 +902,9 @@ fn gated_real_disc_service_discovers_and_packages_a_map23_edit_candidate() {
         "untouched_map":{"map":untouched_map,"slot":untouched_slot,"bundle_sha256":hex_hash(&untouched_bytes),"source_equals_result":true},
         "package_sha256":hex_hash(&package_bytes),"package_set_sha256":hex_hash(&set_bytes),
         "package_files_are_deltas":true,"non_event_components":non_event_components,
-        "non_event_components_equal":all_non_event_components_equal
+        "non_event_components_equal":all_non_event_components_equal,
+        "source_context_sha256":context_sha256,"source_context_module_sha256":module,
+        "source_context_component_output_sha256":source_context.components.iter().map(|component| (component.index.to_string(),Value::String(component.output_sha256.clone()))).collect::<serde_json::Map<_,_>>()
     });
     write_new(
         &output.join("evidence.json"),
