@@ -35,8 +35,11 @@ fn version_reports_package_version_and_supported_operations() {
         "operations": [
             "version", "echo", "field.decode", "field.encode", "disc.open",
             "disc.poll", "disc.missing", "disc.close", "disc.maps", "field.map_events",
-            "field.structure", "names.validate", "field.lanes", "disc.cue",
-            "package.build", "package.inspect", "package.bundle"
+            "field.map_bundle", "field.structure", "names.validate", "field.lanes", "disc.cue",
+            "package.build", "package.inspect", "package.bundle", "field.draft.open",
+            "field.templates", "field.instruction", "field.draft.edit", "field.draft.undo",
+            "field.draft.redo", "field.draft.compile", "field.draft.export",
+            "field.draft.import", "field.draft.close", "field.draft.snapshot", "field.draft.repack"
         ]
     });
 

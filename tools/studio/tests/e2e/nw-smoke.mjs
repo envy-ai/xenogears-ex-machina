@@ -114,8 +114,12 @@ try {
     version: '0.5.0',
     operations: [
       'version', 'echo', 'field.decode', 'field.encode', 'disc.open', 'disc.poll',
-      'disc.missing', 'disc.close', 'disc.maps', 'field.map_events', 'field.structure',
-      'names.validate', 'field.lanes', 'disc.cue', 'package.build', 'package.inspect', 'package.bundle',
+      'disc.missing', 'disc.close', 'disc.maps', 'field.map_events', 'field.map_bundle',
+      'field.structure', 'names.validate', 'field.lanes', 'disc.cue', 'package.build',
+      'package.inspect', 'package.bundle', 'field.draft.open', 'field.templates', 'field.instruction',
+      'field.draft.edit', 'field.draft.undo', 'field.draft.redo', 'field.draft.compile',
+      'field.draft.export', 'field.draft.import', 'field.draft.close', 'field.draft.snapshot',
+      'field.draft.repack',
     ],
   });
   assert.deepEqual(result.versionResponse, { ok: result.version });

@@ -6,6 +6,7 @@ export interface NativeLaunch {
   disc: string;
   settingsDirectory: string;
   cardsDirectory: string;
+  packages?: string;
 }
 export function launchNativeGame(options: NativeLaunch, spawn: typeof Spawn, environment: NodeJS.ProcessEnv): GameTransport {
   for (const [name, path] of Object.entries(options)) {
@@ -13,7 +14,8 @@ export function launchNativeGame(options: NativeLaunch, spawn: typeof Spawn, env
     const absolute = path.startsWith('/') || (/^[A-Za-z]:/.test(path) && ['/', separator].includes(path[2])) || path.startsWith(separator.repeat(2));
     if (!absolute || path.includes(String.fromCharCode(0))) throw new Error(`${name} must be an explicit absolute local path`);
   }
-  const child = spawn(options.executable, ['--disc', options.disc, '--cards', options.cardsDirectory, '--control', '--control-paused'], {
+  const packageArguments = options.packages ? ['--packages', options.packages] : [];
+  const child = spawn(options.executable, ['--disc', options.disc, '--cards', options.cardsDirectory, '--control', '--control-paused', ...packageArguments], {
     shell: false, stdio: ['pipe', 'pipe', 'pipe'], env: { ...environment, XEM_DATA_DIR: options.settingsDirectory },
   });
   return nativeGameTransport(child);

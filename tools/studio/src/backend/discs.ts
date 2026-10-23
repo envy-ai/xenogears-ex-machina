@@ -79,6 +79,8 @@ export interface MapEvents {
   component: EventComponent | null;
 }
 
+export interface MapBundle { session:number; map:number; slot:number; state: 'ready'; placeholder:boolean; bytes:number[] }
+
 export interface CueTrack {
   file: string;
   number: number;
@@ -454,6 +456,15 @@ export class DiscSession {
       safeInteger(map, 'Map id');
       const result = await this.ready<MapEvents>('field.map_events', scope, undefined, { session: this.id, map });
       if (result.map !== map || typeof result.placeholder !== 'boolean' || (result.placeholder ? result.component !== null : !result.component)) throw new Error('Invalid field.map_events result');
+      return result;
+    }, options);
+  }
+
+  mapBundle(map: number, options: DiscOptions = {}): Promise<MapBundle> {
+    return this.enqueue(async scope => {
+      safeInteger(map, 'Map id');
+      const result = await this.ready<MapBundle>('field.map_bundle', scope, undefined, { session: this.id, map });
+      if (result.map !== map || !Number.isSafeInteger(result.slot) || !Array.isArray(result.bytes)) throw new Error('Invalid field.map_bundle result');
       return result;
     }, options);
   }

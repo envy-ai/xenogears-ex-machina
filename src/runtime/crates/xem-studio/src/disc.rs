@@ -603,6 +603,19 @@ impl DiscSessions {
     }
 
     pub fn map_events(&mut self, session: u32, map: u32) -> Result<Value, StudioError> {
+        self.read_map(session, map, false)
+    }
+
+    pub fn map_bundle(&mut self, session: u32, map: u32) -> Result<Value, StudioError> {
+        self.read_map(session, map, true)
+    }
+
+    fn read_map(
+        &mut self,
+        session: u32,
+        map: u32,
+        include_bundle: bool,
+    ) -> Result<Value, StudioError> {
         let state = self.session(session)?;
         state.require_ready()?;
         let record = state
@@ -615,6 +628,7 @@ impl DiscSessions {
                     format!("map {map} outside this disc's map registry"),
                 )
             })?;
+        let slot = record.slot;
         if state.event_read.as_ref().is_none_or(|read| read.map != map) {
             state.event_read = Some(BundleRead::new(record));
         }
@@ -627,8 +641,14 @@ impl DiscSessions {
                 json!({"session": session, "map": map, "state": "pending", "missing": state.missing()}),
             );
         }
-        let component = extract_events(&read.bytes)?;
+        let bytes = std::mem::take(&mut read.bytes);
+        let component = extract_events(&bytes)?;
         state.event_read = None;
+        if include_bundle {
+            return Ok(
+                json!({"session":session,"map":map,"slot":slot,"state":"ready","placeholder":component.is_none(),"bytes":bytes}),
+            );
+        }
         Ok(
             json!({"session": session, "map": map, "state": "ready", "placeholder": component.is_none(), "component": component}),
         )
@@ -650,4 +670,150 @@ fn native_session(_path: String) -> Result<Session, StudioError> {
         "unsupported_host",
         "wasm disc sessions require pull ranges",
     ))
+}
+
+/// Append an authored event stream without moving or rewriting any other
+/// component. Its immutable source must be this bundle's actual event stream.
+pub fn replace_events(
+    bundle: &[u8],
+    base: &crate::field::FieldGraph,
+    compiled: &crate::field::draft::Compiled,
+) -> Result<Vec<u8>, StudioError> {
+    if bundle.len() > MAX_BUNDLE_BYTES {
+        return Err(StudioError::new(
+            "invalid_bundle",
+            "source bundle exceeds the supported bound",
+        ));
+    }
+    let original = extract_events(bundle)?
+        .ok_or_else(|| StudioError::new("invalid_bundle", "placeholder has no event component"))?;
+    if original.bytes != crate::field::encode(base)? || original.declared_size != base.declared_size
+    {
+        return Err(StudioError::new(
+            "source_mismatch",
+            "draft base does not match this bundle's complete event stream and declared boundary",
+        ));
+    }
+    if compiled.bytes == original.bytes && compiled.declared_size == original.declared_size {
+        return Ok(bundle.to_vec());
+    }
+    if compiled.graph != crate::field::decode(&compiled.bytes, Some(compiled.declared_size))? {
+        return Err(StudioError::new(
+            "invalid_graph",
+            "compiled graph differs from its component bytes",
+        ));
+    }
+    // The original loader reads NINE descriptors. Appending can expose bytes
+    // to a previously truncated final stream, so establish complete bounded
+    // decoding of each unaffected stream before changing the container.
+    let mut unaffected = Vec::new();
+    for index in 0..9 {
+        if index == 5 {
+            continue;
+        }
+        let logical = u32_at(bundle, 0x10c + index * 4)? as usize;
+        let start = u32_at(bundle, 0x130 + index * 4)? as usize;
+        // Explicit absent descriptors in synthetic/public containers carry no
+        // stream. Nonempty real descriptors must follow the loader contract.
+        if logical == 0 && start == 0 {
+            continue;
+        }
+        if start < HEADER || start >= bundle.len() || logical > MAX_COMPONENT_BYTES {
+            return Err(StudioError::new(
+                "invalid_bundle",
+                format!("component {index} has an invalid size or packed-stream offset"),
+            ));
+        }
+        let limit = logical
+            .checked_add(16)
+            .ok_or_else(|| StudioError::new("invalid_bundle", "component allocation overflow"))?
+            .min(MAX_COMPONENT_BYTES);
+        let decoded = packed::decode_block(&bundle[start..], limit).map_err(|cause| {
+            StudioError::new(
+                "unsupported_bundle",
+                format!(
+                    "component {index} cannot be preserved from the bounded original file: {cause}"
+                ),
+            )
+        })?;
+        if decoded.data.len() < logical {
+            return Err(StudioError::new(
+                "invalid_bundle",
+                format!("component {index} decodes shorter than its declared size"),
+            ));
+        }
+        unaffected.push((index, start, limit, decoded.data));
+    }
+    let encoded =
+        packed::encode_literals(&compiled.bytes, MAX_COMPONENT_BYTES).map_err(packed_error)?;
+    let decoded = packed::decode_block(&encoded, MAX_COMPONENT_BYTES).map_err(packed_error)?;
+    if decoded.data.len().saturating_sub(compiled.declared_size) > 16
+        || decoded.data.get(..compiled.bytes.len()) != Some(compiled.bytes.as_slice())
+    {
+        return Err(StudioError::new(
+            "invalid_bundle",
+            "authored packing exceeded the allocation tail contract",
+        ));
+    }
+    // The event decoder includes the explicit packing tail in u16 PC bounds.
+    let padded_graph = crate::field::decode(&decoded.data, Some(compiled.declared_size))?;
+    if compiled
+        .graph
+        .diagnostics
+        .outside
+        .iter()
+        .chain(&compiled.graph.diagnostics.inner)
+        .any(|[_, target]| {
+            *target >= compiled.graph.stream_size - compiled.graph.bytecode_offset
+                && *target < decoded.data.len() - compiled.graph.bytecode_offset
+        })
+        || padded_graph.instructions != compiled.graph.instructions
+        || padded_graph.diagnostics != compiled.graph.diagnostics
+    {
+        return Err(StudioError::new(
+            "unsupported_relocation",
+            "packing tail would activate an unresolved destination or change decoded execution",
+        ));
+    }
+    let start = bundle
+        .len()
+        .checked_add(3)
+        .map(|n| n & !3)
+        .ok_or_else(|| StudioError::new("invalid_bundle", "bundle append offset overflow"))?;
+    let size = start
+        .checked_add(encoded.len())
+        .ok_or_else(|| StudioError::new("invalid_bundle", "bundle append size overflow"))?;
+    if size > MAX_BUNDLE_BYTES {
+        return Err(StudioError::new(
+            "invalid_bundle",
+            "authored bundle exceeds the supported bound",
+        ));
+    }
+    let mut result = bundle.to_vec();
+    result.resize(start, 0);
+    result.extend_from_slice(&encoded);
+    let declared = u32::try_from(compiled.declared_size)
+        .map_err(|_| StudioError::new("invalid_bundle", "component size exceeds u32"))?;
+    let start = u32::try_from(start)
+        .map_err(|_| StudioError::new("invalid_bundle", "component offset exceeds u32"))?;
+    result[0x120..0x124].copy_from_slice(&declared.to_le_bytes());
+    result[0x144..0x148].copy_from_slice(&start.to_le_bytes());
+    for (index, start, limit, expected) in unaffected {
+        let actual = packed::decode_block(&result[start..], limit).map_err(packed_error)?;
+        if actual.data != expected {
+            return Err(StudioError::new(
+                "invalid_bundle",
+                format!("appending changed decoded component {index}"),
+            ));
+        }
+    }
+    let actual = extract_events(&result)?
+        .ok_or_else(|| StudioError::new("invalid_bundle", "replacement became a placeholder"))?;
+    if actual.bytes != decoded.data || actual.declared_size != compiled.declared_size {
+        return Err(StudioError::new(
+            "invalid_bundle",
+            "replacement event stream verification failed",
+        ));
+    }
+    Ok(result)
 }

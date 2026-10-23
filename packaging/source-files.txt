@@ -156,6 +156,8 @@ docs/studio-milestone-4-implementation.md
 docs/studio-milestone-4.md
 docs/studio-milestone-5-implementation.md
 docs/studio-milestone-5.md
+docs/studio-milestone-6-implementation.md
+docs/studio-milestone-6.md
 docs/verification/phase0-agent.json
 docs/verification/phase0-authoring.json
 docs/verification/phase0-gaps.json
@@ -930,6 +932,8 @@ src/runtime/crates/xem-studio/data/field-opcodes.json
 src/runtime/crates/xem-studio/src/bin/xem-package.rs
 src/runtime/crates/xem-studio/src/disc.rs
 src/runtime/crates/xem-studio/src/field/decode.rs
+src/runtime/crates/xem-studio/src/field/draft.rs
+src/runtime/crates/xem-studio/src/field/draft/relocate.rs
 src/runtime/crates/xem-studio/src/field/graph.rs
 src/runtime/crates/xem-studio/src/field/lanes.rs
 src/runtime/crates/xem-studio/src/field/mod.rs
@@ -943,6 +947,10 @@ src/runtime/crates/xem-studio/src/packed.rs
 src/runtime/crates/xem-studio/tests/command.rs
 src/runtime/crates/xem-studio/tests/disc.rs
 src/runtime/crates/xem-studio/tests/field.rs
+src/runtime/crates/xem-studio/tests/field_draft.rs
+src/runtime/crates/xem-studio/tests/field_draft_parity.rs
+src/runtime/crates/xem-studio/tests/field_real_edit.rs
+src/runtime/crates/xem-studio/tests/field_relocation.rs
 src/runtime/crates/xem-studio/tests/field_sweep.rs
 src/runtime/crates/xem-studio/tests/lanes.rs
 src/runtime/crates/xem-studio/tests/names.rs
@@ -1262,6 +1270,7 @@ tools/studio/scripts/tls-directory.d.ts
 tools/studio/scripts/tls-directory.js
 tools/studio/src/App.tsx
 tools/studio/src/backend/discs.ts
+tools/studio/src/backend/drafts.ts
 tools/studio/src/backend/remote-discs.ts
 tools/studio/src/backend/service.ts
 tools/studio/src/domain/ids.ts
@@ -1288,11 +1297,13 @@ tools/studio/src/editor/workspaceLayout.ts
 tools/studio/src/events/ActorLanes.tsx
 tools/studio/src/events/ActorTree.tsx
 tools/studio/src/events/CommandList.tsx
+tools/studio/src/events/DraftEditor.tsx
 tools/studio/src/events/EventStudio.tsx
 tools/studio/src/events/MapDiagnostics.tsx
 tools/studio/src/events/events.scss
 tools/studio/src/events/model.ts
 tools/studio/src/events/test-driver.ts
+tools/studio/src/events/useFieldDraft.ts
 tools/studio/src/events/useWindowedRows.ts
 tools/studio/src/events/workspace.scss
 tools/studio/src/game/LiveGame.tsx
@@ -1327,6 +1338,11 @@ tools/studio/src/styles/graph-canvas.scss
 tools/studio/tests/e2e/events-real-disc.spec.ts
 tools/studio/tests/e2e/events.fixture.ts
 tools/studio/tests/e2e/events.spec.ts
+tools/studio/tests/e2e/field-build-play.spec.ts
+tools/studio/tests/e2e/field-disc-lifecycle.spec.ts
+tools/studio/tests/e2e/field-draft-parity.spec.ts
+tools/studio/tests/e2e/field-edit.spec.ts
+tools/studio/tests/e2e/field-real-playback.mjs
 tools/studio/tests/e2e/field.spec.ts
 tools/studio/tests/e2e/graph-qol.spec.ts
 tools/studio/tests/e2e/live-game-sequence.ts

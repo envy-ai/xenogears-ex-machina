@@ -113,3 +113,33 @@ fn read_byte(source: &[u8], position: &mut usize, output: &[u8]) -> Result<u8, P
     *position += 1;
     Ok(value)
 }
+
+/// Deterministic literal-only encoding for newly authored components. The last
+/// group is explicitly completed with authored zero literals and a terminal flag
+/// byte. This does not claim to reproduce the original compressor's token choice.
+pub fn encode_literals(data: &[u8], output_limit: usize) -> Result<Vec<u8>, PackedError> {
+    let size = data
+        .len()
+        .checked_add(7)
+        .map(|n| n & !7)
+        .ok_or(PackedError::OutputLimit {
+            size: data.len(),
+            limit: output_limit,
+        })?;
+    if size > output_limit || size > u32::MAX as usize {
+        return Err(PackedError::OutputLimit {
+            size,
+            limit: output_limit,
+        });
+    }
+    let mut result = Vec::with_capacity(5 + size + size / 8);
+    result.extend_from_slice(&(size as u32).to_le_bytes());
+    for start in (0..size).step_by(8) {
+        result.push(0);
+        for index in start..start + 8 {
+            result.push(data.get(index).copied().unwrap_or(0));
+        }
+    }
+    result.push(0); // Measured final speculative flag read, even for empty data.
+    Ok(result)
+}

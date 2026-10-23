@@ -4,6 +4,8 @@ export interface FilesAdapter {
   readonly name: string;
   list(path?: string): Promise<FileEntry[]>;
   read(path: string): Promise<Uint8Array>;
+  /** Existing contained path, available only in the native file adapter. */
+  nativePath?(path: string): Promise<string>;
   writeAtomic(path: string, data: Uint8Array): Promise<void>;
 }
 

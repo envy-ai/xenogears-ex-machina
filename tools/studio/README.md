@@ -230,10 +230,9 @@ Operations:
 
 - `{"op":"version"}` (args absent or null) returns
   `{"ok":{"version":"0.5.0","operations":[...]}}`. The version follows
-  the runtime workspace package version. Current operations are `version`, `echo`,
-  `field.decode`, `field.encode`, `disc.open`, `disc.poll`, `disc.missing`,
-  `disc.close`, `disc.maps`, `field.map_events`, `field.structure`,
-  `names.validate`, `field.lanes` and `disc.cue`.
+  the runtime workspace package version. The returned `operations` array is the
+  complete current method list; inspection, package and authored-draft methods
+  are documented below.
 - `{"op":"echo","args":value}` returns `{"ok":value}`. Any JSON value,
   including null, false, zero, an empty string, and objects with `ok` or `error`
   keys is accepted unchanged inside `ok`; the args field is required.
@@ -566,3 +565,104 @@ and local packages under ignored `tmp/` or `.local/`. Deltas copy unchanged
 regions from the user's original instead of including an original file member.
 The format, compatibility policy and checked limits are recorded in
 [the M5 plan](../../docs/studio-milestone-5-implementation.md).
+
+### Field authoring drafts (milestone 6)
+
+The event workspace edits a separate authored draft. Original images and the live
+schema inspector remain separate. The list, flow graph and actor lanes render the
+same compiled draft graph; operand encoding, validation, history and relocation
+run in shared Rust on native and wasm. The existing `field.encode` contract still
+requires a canonical unedited graph.
+
+`field.draft.open {graph}` returns `{draft,revision,graph,bindings,can_undo,
+can_redo,modified}`. `bindings` maps stable source IDs (`pc:0`, etc.) and authored
+IDs (`new:1`, etc.) to compiled PCs. These IDs survive relocation and project
+save/reload. Every mutation supplies `{draft,revision}`; stale revisions fail
+without changing the draft. New methods retain `{ok:result}` / `{error:{kind,
+message}}`, including arbitrary error-shaped echo data.
+
+| Operation | Arguments/result |
+| --- | --- |
+| `field.draft.edit` | `{draft,revision,action}` → updated snapshot |
+| `field.draft.undo`, `field.draft.redo` | `{draft,revision}` → updated snapshot |
+| `field.draft.snapshot` | `{draft}` → current snapshot |
+| `field.draft.compile` | `{draft}` → `{bytes,declared_size,graph,bindings}` |
+| `field.draft.export` | `{draft}` → versioned base/actions/cursor/allocation document |
+| `field.draft.import` | `{document}` → new handle and snapshot; validates/replays history |
+| `field.draft.close` | `{draft}` → `{closed:handle}` |
+| `field.templates` | no args → safe standalone templates derived from authoritative opcode metadata |
+| `field.instruction` | `{bytes,operands}` → prepared `{bytes,targets}`; operand encoding remains in Rust |
+| `field.map_bundle` | `{session,map}` → bounded pending/ready source bundle and its actual index slot, through the existing binary-fill disc transport |
+| `field.draft.repack` | `{draft,bundle}` → replacement bundle bytes; source stream and declared boundary must match the immutable draft base |
+
+Actions use a `kind` tag:
+
+- `set_operand`: `{node,operand,value}`. Value is `{kind:"literal",value,
+  immediate?:boolean}` for raw numeric operands, or `{kind:"target",node}` for
+  an address bound to a stable instruction. Numeric address edits must resolve
+  to an existing instruction. Operand widths, variable-bank references, actor
+  selectors and control-flow diagnostics are checked.
+- `insert_after`: `{after,bytes,targets?:{"operand-index":"node-id"}}`. The
+  template must decode as one supported ordinary instruction. Every authored
+  address operand requires a stable target. No insertion splits paired setup/
+  consumer instructions or fixed-relative skip windows.
+- `new_event`: `{actor,event,nodes:[{bytes,targets?},...]}`. Explicitly choose one
+  existing actor and an absent or terminal-only event slot (0–31). Zero is absent
+  only in the leading-ff map-record format. New actors and slot deletion are not
+  implemented. Authored event nodes can be edited or extended by insertion.
+- `batch`: `{actions:[...]}` groups 1–32 non-batch actions into one undo step.
+  Failure preserves the original draft, allocator and revision.
+
+A draft document includes the allocator start for every retained action and its
+final watermark. Undo followed by an alternate edit does not reuse abandoned
+IDs. Missing/invalid history fields and reused allocator positions are errors;
+there is no implicit migration. There may be at most 16 open drafts and 128
+applied transactions per draft. Unsupported forms/limits fail explicitly.
+
+Same-size operand edits stay in place. Growth appends dependency-closed code
+islands, redirects entrances and returns to original continuations. Pinned
+map-entry records, gaps and overlapping storage are preserved. Relocation of
+unresolved inner paths, wrapped instructions, unbounded jump tables and opaque
+data is refused. Compound setup/consumer units remain contiguous. The final
+packed stream is revalidated, including its explicit zero-literal tail, so
+padding cannot activate a formerly unresolved destination. Extra trampoline
+jumps consume original interpreter dispatch budget; equivalent flow does not
+promise unchanged frame timing.
+
+The inline editor has Apply/Cancel (Ctrl+Enter/Escape). Unapplied fields block
+selection changes and new builds; cancel or apply before navigating. Insert
+opens insertion controls. Ctrl+Z / Ctrl+Shift+Z operate authored history when
+focus is outside text entry; Ctrl+S saves the project. Existing Ctrl+1/2/3 view
+shortcuts, graph controls and live-inspector shortcuts remain available.
+
+Save project writes `field-map-N.json` through the selected file adapter. It
+contains private source-derived graph data, authored history and the names
+metadata needed to restore the draft. Keep it in your local project, outside
+published source. Load validates map/disc/base identity and names before adoption.
+Delayed I/O cannot replace a different project/map/revision. A saved edit undone
+back to original bytes is still unsaved relative to that saved project; save or
+explicitly discard before leaving. Failed operations retain their original error
+in the persistent UI and preserve the draft and last successful build.
+
+Build package reads the selected map's actual source bundle, replaces only its
+event component, and invokes the unchanged M5 package/delta builder. The new
+stream uses deterministic literal-only packing with explicit final-group zeros
+and terminal flag; unchanged component streams retain their original bytes.
+Output is `field-map-N-<package-sha256>.xemmods` in the project. Its content-based
+path keeps a retained native build from being overwritten by a failed later
+build. Playback requires a successful build of the current applied revision.
+
+For browser playback, first open the same-origin runtime from Live game, import
+and boot your original disc. Play stages the exact package bytes and performs a
+fresh boot through the existing API, then starts it. Native playback uses the
+configured executable/disc/settings/cards paths and the same saved package via
+its existing `--packages` argument. No new game logic, module loader, remote
+origin, TLS permission or live-memory patch mechanism is introduced.
+
+Repacking requires complete bounded decoding of all nine original descriptors,
+including unaffected component 8. Some original files (the current map-23
+acceptance candidate among them) end before that stream's full packed output:
+its final bytes depend on adjacent original RAM. Such builds report
+`unsupported_bundle` and preserve the draft and last-good build. Sector padding
+is a different input and is not substituted. Real-disc M6 Build/Play acceptance
+is pending resolution of that source-context requirement.

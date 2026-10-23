@@ -21,6 +21,7 @@ export async function openNodeFolder(folder: string, fs: Fs, path: Path): Promis
   const existing = async (relative: string) => contained(await fs.realpath(path.join(root, ...pathParts(relative))));
   return {
     kind: 'node', name: path.basename(root),
+    nativePath: existing,
     async list(relative = '') {
       const entries = await fs.readdir(await existing(relative), { withFileTypes: true });
       return sortEntries(await Promise.all(entries.map(async entry => ({

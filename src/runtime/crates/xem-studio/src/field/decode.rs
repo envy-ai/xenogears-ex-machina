@@ -47,7 +47,7 @@ fn pick<'a>(
     ))
 }
 
-fn instruction(code: &[u8], pc: usize) -> Result<Instruction, FieldError> {
+pub(super) fn instruction(code: &[u8], pc: usize) -> Result<Instruction, FieldError> {
     if pc > 0xffff || code.len() > 0x10000 {
         return Err(FieldError::new(
             "invalid_pc",

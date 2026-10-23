@@ -5,6 +5,8 @@ export interface BrowserGameApi {
   cancellableRun: true;
   status(): { running: boolean; session: unknown; page: { sessionGeneration: number } };
   setRunning(running: boolean): void;
+  boot?(options: { run: boolean; rewind: boolean }): Promise<unknown>;
+  packages?: { stage(bytes: Uint8Array, options: { enabled: boolean }): unknown };
   commandJson(json: string): string;
   run(command: { cmd: 'frames'; count: number }, options?: { signal?: AbortSignal }): Promise<unknown>;
 }

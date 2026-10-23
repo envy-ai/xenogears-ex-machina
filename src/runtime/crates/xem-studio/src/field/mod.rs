@@ -1,6 +1,7 @@
 //! Lossless inspection of unedited original field-event components.
 
 mod decode;
+pub mod draft;
 mod graph;
 pub mod lanes;
 mod opcodes;

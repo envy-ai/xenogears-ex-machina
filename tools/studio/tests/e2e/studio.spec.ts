@@ -76,7 +76,7 @@ test('shows all workspace panels and the loaded wasm backend version', async ({ 
   await expect(page.locator('[data-panel-id="backend"]')).toBeVisible();
   await expect(page.locator('[data-panel-id="log"]')).toBeVisible();
   await expect(page.locator('[data-panel-id="backend"]')).toContainText(
-    'Operations: version, echo, field.decode, field.encode, disc.open, disc.poll, disc.missing, disc.close, disc.maps, field.map_events, field.structure, names.validate, field.lanes, disc.cue, package.build, package.inspect, package.bundle',
+    'Operations: version, echo, field.decode, field.encode, disc.open, disc.poll, disc.missing, disc.close, disc.maps, field.map_events, field.map_bundle, field.structure, names.validate, field.lanes, disc.cue, package.build, package.inspect, package.bundle, field.draft.open, field.templates, field.instruction, field.draft.edit, field.draft.undo, field.draft.redo, field.draft.compile, field.draft.export, field.draft.import, field.draft.close, field.draft.snapshot, field.draft.repack',
   );
   await expectResponseToFillBackend(page);
   await page.screenshot({ path: resolve(artifactsDirectory, 'shell-1440x900.png') });

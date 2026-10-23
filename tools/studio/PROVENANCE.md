@@ -144,3 +144,14 @@ copy. The authored Form1 integrity implementation cross-references the pinned
 lookup tables are generated from the documented polynomials, not copied.
 Packages built from user-owned disc files and all real-disc acceptance inputs
 and outputs remain ignored local artifacts; they are never public source.
+
+## Milestone-six authored additions
+
+The field-draft backend/transport and inline event authoring controls are newly
+authored for this repository. They compose the already registered widget and
+canvas interfaces listed above; no additional RPG Creator source is extracted
+and the bounded MIT grant is not extended. Authoring templates are generated at
+runtime only from `xem-studio/data/field-opcodes.json`, whose public analysis-fact
+provenance and deterministic generator remain the milestone-two source of truth.
+Project drafts, package outputs and real-disc verification artifacts contain
+private source-derived data and remain local, outside the source allowlist.

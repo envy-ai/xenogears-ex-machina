@@ -49,6 +49,7 @@ const OPERATIONS: &[&str] = &[
     "disc.close",
     "disc.maps",
     "field.map_events",
+    "field.map_bundle",
     "field.structure",
     "names.validate",
     "field.lanes",
@@ -56,6 +57,18 @@ const OPERATIONS: &[&str] = &[
     "package.build",
     "package.inspect",
     "package.bundle",
+    "field.draft.open",
+    "field.templates",
+    "field.instruction",
+    "field.draft.edit",
+    "field.draft.undo",
+    "field.draft.redo",
+    "field.draft.compile",
+    "field.draft.export",
+    "field.draft.import",
+    "field.draft.close",
+    "field.draft.snapshot",
+    "field.draft.repack",
 ];
 
 #[derive(Deserialize)]
@@ -68,6 +81,30 @@ const OPERATIONS: &[&str] = &[
 enum Command {
     Version,
     Echo(Value),
+    #[serde(rename = "field.draft.open")]
+    DraftOpen(FieldEncodeArgs),
+    #[serde(rename = "field.templates")]
+    FieldTemplates,
+    #[serde(rename = "field.instruction")]
+    FieldInstruction(field::draft::InstructionArgs),
+    #[serde(rename = "field.draft.edit")]
+    DraftEdit(DraftEditArgs),
+    #[serde(rename = "field.draft.undo")]
+    DraftUndo(DraftRevisionArgs),
+    #[serde(rename = "field.draft.redo")]
+    DraftRedo(DraftRevisionArgs),
+    #[serde(rename = "field.draft.compile")]
+    DraftCompile(DraftArgs),
+    #[serde(rename = "field.draft.export")]
+    DraftExport(DraftArgs),
+    #[serde(rename = "field.draft.import")]
+    DraftImport(DraftImportArgs),
+    #[serde(rename = "field.draft.close")]
+    DraftClose(DraftArgs),
+    #[serde(rename = "field.draft.snapshot")]
+    DraftSnapshot(DraftArgs),
+    #[serde(rename = "field.draft.repack")]
+    DraftRepack(DraftRepackArgs),
     #[serde(rename = "field.decode")]
     FieldDecode(FieldDecodeArgs),
     #[serde(rename = "field.encode")]
@@ -84,6 +121,8 @@ enum Command {
     DiscMaps(SessionArgs),
     #[serde(rename = "field.map_events")]
     FieldMapEvents(MapArgs),
+    #[serde(rename = "field.map_bundle")]
+    FieldMapBundle(MapArgs),
     #[serde(rename = "field.structure")]
     FieldStructure(FieldStructureArgs),
     #[serde(rename = "names.validate")]
@@ -98,6 +137,36 @@ enum Command {
     PackageInspect(packages::InspectArgs),
     #[serde(rename = "package.bundle")]
     PackageBundle(packages::BundleArgs),
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct DraftArgs {
+    draft: u32,
+}
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct DraftRepackArgs {
+    draft: u32,
+    bundle: Vec<u8>,
+}
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct DraftRevisionArgs {
+    draft: u32,
+    revision: u32,
+}
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct DraftEditArgs {
+    draft: u32,
+    revision: u32,
+    action: field::draft::Action,
+}
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct DraftImportArgs {
+    document: Box<field::draft::Document>,
 }
 
 #[derive(Deserialize)]
@@ -176,6 +245,59 @@ impl Command {
 
     fn execute(self, studio: &Studio) -> Result<CommandResult, StudioError> {
         Ok(match self {
+            Self::DraftRepack(args) => {
+                let drafts = studio.drafts.borrow();
+                let draft = drafts.get(args.draft)?;
+                let compiled = draft.compile()?;
+                CommandResult::Json(
+                    json!({"bytes":disc::replace_events(&args.bundle,&draft.document().base,&compiled)?,"source_sha256":draft.document().base.source_sha256}),
+                )
+            }
+            Self::FieldInstruction(args) => {
+                CommandResult::Json(json!(field::draft::instruction_template(args)?))
+            }
+            Self::FieldTemplates => CommandResult::Json(field::draft::templates()?),
+            Self::DraftOpen(args) => {
+                CommandResult::Json(studio.drafts.borrow_mut().open(*args.graph)?)
+            }
+            Self::DraftImport(args) => {
+                CommandResult::Json(studio.drafts.borrow_mut().import(*args.document)?)
+            }
+            Self::DraftEdit(args) => {
+                let mut drafts = studio.drafts.borrow_mut();
+                let draft = drafts.get_mut(args.draft)?;
+                draft.edit(args.revision, args.action)?;
+                CommandResult::Json(draft.snapshot(args.draft)?)
+            }
+            Self::DraftUndo(args) => {
+                let mut drafts = studio.drafts.borrow_mut();
+                let draft = drafts.get_mut(args.draft)?;
+                draft.undo(args.revision)?;
+                CommandResult::Json(draft.snapshot(args.draft)?)
+            }
+            Self::DraftRedo(args) => {
+                let mut drafts = studio.drafts.borrow_mut();
+                let draft = drafts.get_mut(args.draft)?;
+                draft.redo(args.revision)?;
+                CommandResult::Json(draft.snapshot(args.draft)?)
+            }
+            Self::DraftCompile(args) => {
+                CommandResult::Json(json!(studio.drafts.borrow().get(args.draft)?.compile()?))
+            }
+            Self::DraftExport(args) => {
+                CommandResult::Json(json!(studio.drafts.borrow().get(args.draft)?.document()))
+            }
+            Self::DraftSnapshot(args) => CommandResult::Json(
+                studio
+                    .drafts
+                    .borrow()
+                    .get(args.draft)?
+                    .snapshot(args.draft)?,
+            ),
+            Self::DraftClose(args) => {
+                studio.drafts.borrow_mut().close(args.draft)?;
+                CommandResult::Json(json!({"closed":args.draft}))
+            }
             Self::PackageBuild(args) => CommandResult::Json(packages::build(args)?),
             Self::PackageInspect(args) => CommandResult::Json(packages::inspect(args)?),
             Self::PackageBundle(args) => CommandResult::Json(packages::bundle(args)?),
@@ -210,6 +332,12 @@ impl Command {
             Self::DiscMaps(args) => {
                 CommandResult::Json(studio.discs.borrow_mut().maps(args.session)?)
             }
+            Self::FieldMapBundle(args) => CommandResult::Json(
+                studio
+                    .discs
+                    .borrow_mut()
+                    .map_bundle(args.session, args.map)?,
+            ),
             Self::FieldMapEvents(args) => CommandResult::Json(
                 studio
                     .discs
@@ -286,6 +414,7 @@ impl From<field::FieldError> for StudioError {
 #[derive(Default)]
 pub struct Studio {
     discs: RefCell<disc::DiscSessions>,
+    drafts: RefCell<field::draft::Drafts>,
 }
 
 #[cfg_attr(target_arch = "wasm32", wasm_bindgen)]

@@ -517,3 +517,28 @@ NumberField renders nonfinite draft state as an empty input while preserving the
 nonfinite model value for explicit validation. The live frame field exercises
 this existing passthrough/emptyAs behavior: clearing it cannot silently step a
 frame or introduce a React NaN-value warning.
+
+## Authored field drafts
+
+`src/events/DraftEditor.tsx` composes registered above-label native text/select
+controls, buttons, typography and inset surfaces below the active event view.
+It adds no copied widget or modal. Selected operands remain inline. Apply uses
+one shared-Rust batch; Cancel restores the selected instruction's fields. Text
+entry retains native undo, while Ctrl+Enter/Escape apply/cancel. Insert and New
+event compose the same fields over schema-derived templates; unsupported forms
+are not invented. Event endings are the schema's End slot or Return forms.
+
+`src/events/useFieldDraft.ts` owns service-handle lifetime and UI operation
+ownership. Rust owns authored transactions and history. Pending map/project I/O
+disables fields, and source/project/session/revision/inline generations reject
+stale completion before adopting state. Changing selection with unapplied fields
+keeps the fields and asks for Apply/Cancel in the persistent diagnostic surface.
+Save/load, validation and builds use existing file/disc adapters. The toolbar
+retains last-good build identity while invalid fields block new build/play.
+Authored graphs are distinct from the live inspector; source-PC navigation maps
+through stable IDs after validating the immutable live source component.
+
+The event workspace keeps a minimum 200px view surface and scrolls as a whole
+when toolbars, persistent diagnostics and the inline editor exceed the available
+dock height. Its child controls do not shrink over the command viewport; list
+rows retain normal pointer and keyboard access while errors remain visible.

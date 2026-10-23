@@ -13,6 +13,9 @@ import { ActorLanes } from './ActorLanes';
 import { CommandList } from './CommandList';
 import { MapDiagnostics } from './MapDiagnostics';
 import { actorName, eventName, instructionPhrase, reachableInstructionPcs, formatPc, type FieldGraph, type EventStructure, type MapLanes, type NameTable, type Selection } from './model';
+import { useFieldDraft } from './useFieldDraft';
+import { DraftEditor } from './DraftEditor';
+import type { DraftSnapshot } from '../backend/drafts';
 import './events.scss';
 import './workspace.scss';
 
@@ -42,9 +45,12 @@ async function paintedView(view: View): Promise<void> {
 }
 
 function useStudio(backend: Backend | null, folder: FilesAdapter | null, report: (error: unknown) => void, log: (kind: string, text: string) => void) {
+  const draft = useFieldDraft(backend, folder, report, log);
+  const [baseGraph, setBaseGraph] = useState<FieldGraph | null>(null);
   const [discs, setDiscs] = useState<OpenDisc[]>([]);
   const discsRef = useRef(discs); discsRef.current = discs;
   const [activeDisc, setActiveDisc] = useState<number | null>(null);
+  const activeDiscRef = useRef(activeDisc); activeDiscRef.current = activeDisc;
   const [map, setMap] = useState<number | null>(null);
   const [graph, setGraph] = useState<FieldGraph | null>(null);
   const [componentBytes, setComponentBytes] = useState<number[] | null>(null);
@@ -118,30 +124,36 @@ function useStudio(backend: Backend | null, folder: FilesAdapter | null, report:
   }, [source, backend, context]);
 
   const select = useCallback((next: Selection, remember = false) => {
+    if ((next.pc !== selection.pc || next.actor !== selection.actor || next.event !== selection.event) && !draft.guard()) return false;
     if (remember) {
       const current = navigation.current;
       if (current.at < 0) current.items.push(selection);
       else current.items = current.items.slice(0, current.at + 1);
       current.items.push(next); current.at = current.items.length - 1;
     }
-    setSelection(next);
-  }, [selection]);
-  const install = useCallback(async (bytes: number[], declared_size: number, number: number) => {
+    setSelection(next); return true;
+  }, [selection, draft.guard]);
+  const install = useCallback(async (bytes: number[], declared_size: number, number: number, discId?: number) => {
+    if (!draft.guard(true)) throw new Error('The source map cannot change while authored fields or project operations are pending');
     const started = performance.now();
     renderTimes.current = [];
     setViewState('list');
     const decoded = call<FieldGraph>('field.decode', { bytes, declared_size });
+    draft.open(decoded); setBaseGraph(decoded);
+    if (discId !== undefined) setActiveDisc(discId);
     const first = decoded.entries[0];
     structures.current.clear(); navigation.current = { items: [], at: -1 };
     setMap(number); setGraph(decoded); setComponentBytes(bytes.slice()); setLanes(null); setStructure(null);
     setSelection(first ? { actor: first.actor, event: first.event, pc: first.pc } : { actor: 0, event: 0, pc: null });
     await paintedView('list');
     renderTimes.current.push({ view: 'list', ms: performance.now() - started, actor: first?.actor ?? 0, event: first?.event ?? 0, map: number, instructions: decoded.instructions.length });
-  }, [call]);
+  }, [call, draft.open, draft.guard]);
   const selectDisc = useCallback((id: number) => {
+    if (!draft.clear()) return;
+    setComponentBytes(null);
     ++revision.current; structures.current.clear(); navigation.current = { items: [], at: -1 };
-    setBusy(''); setActiveDisc(id); setMap(null); setGraph(null); setStructure(null); setLanes(null);
-  }, []);
+    setBusy(''); setActiveDisc(id); setMap(null); setGraph(null); setBaseGraph(null); setStructure(null); setLanes(null);
+  }, [draft.clear]);
   const openReader = useCallback(async (reader: DiscByteReader) => {
     if (!backend) { await reader.close(); throw new Error('The backend is not ready'); }
     setBusy(`Opening ${reader.name}`);
@@ -181,24 +193,35 @@ function useStudio(backend: Backend | null, folder: FilesAdapter | null, report:
     await openReader(await openServerDiscReader(backend, file, catalogue));
   }, [backend, openReader]);
   const loadMap = useCallback(async (discId: number, number: number) => {
+    if (!draft.guard(true)) return;
     const disc = discsRef.current.find(disc => disc.session.id === discId);
     if (!disc) throw new Error(`Disc session ${discId} is not open`);
     const token = ++revision.current;
+    const draftToken = draft.capture();
     setBusy(`Loading map ${number}`);
     try {
       const result = await disc.session.mapEvents(number);
       if (token !== revision.current) return;
-      setActiveDisc(discId);
-      if (!result.component) { setMap(number); setGraph(null); setStructure(null); setLanes(null); return; }
-      await install(result.component.bytes, result.component.declared_size, number);
+      draft.assertUnchanged(draftToken);
+      if (!draft.guard(true)) throw new Error('Authored work changed while the map was loading; the current draft is preserved');
+      if (!result.component) {
+        if (!draft.clear()) throw new Error('Source draft changed before opening the placeholder');
+        setActiveDisc(discId); setMap(number); setGraph(null); setBaseGraph(null); setComponentBytes(null); setStructure(null); setLanes(null); setSelection({actor:0,event:0,pc:null}); return;
+      }
+      await install(result.component.bytes, result.component.declared_size, number,discId);
     } finally { if (token === revision.current) setBusy(''); }
-  }, [install]);
+  }, [install, draft.guard, draft.capture, draft.assertUnchanged]);
   const closeDisc = async (id: number) => {
     const disc = discsRef.current.find(item => item.session.id === id);
     if (!disc) return;
-    await disc.session.close();
+    if (activeDiscRef.current === id) {
+      if (!draft.clear()) return;
+      setBusy(''); ++revision.current; setActiveDisc(null); setGraph(null); setBaseGraph(null); setComponentBytes(null); setMap(null); setLanes(null); setStructure(null); setSelection({actor:0,event:0,pc:null});
+    }
+    // Remove the exact closing source before awaiting its queued I/O. A later
+    // source selection must never be cleared by this old close completion.
     setDiscs(current => current.filter(item => item !== disc));
-    if (activeDisc === id) { setBusy(''); ++revision.current; setActiveDisc(null); setGraph(null); setMap(null); setLanes(null); setStructure(null); }
+    await disc.session.close();
   };
   useEffect(() => () => { for (const disc of discsRef.current) void disc.session.close().catch(report); }, [report]);
   useEffect(() => {
@@ -250,21 +273,41 @@ function useStudio(backend: Backend | null, folder: FilesAdapter | null, report:
       if (!editing && !interactive && event.target instanceof HTMLElement && event.target.closest('.event-view-surface') && event.key === 'Enter' && selection.pc !== null) { event.preventDefault(); follow(selection.pc); }
       if (event.altKey && ['ArrowLeft','ArrowRight'].includes(event.key)) {
         event.preventDefault(); const nav = navigation.current; const at = nav.at + (event.key === 'ArrowLeft' ? -1 : 1);
-        if (at >= 0 && at < nav.items.length) { nav.at = at; setSelection(nav.items[at]); }
+        if (at >= 0 && at < nav.items.length && draft.guard()) { if (select(nav.items[at])) nav.at = at; }
       }
     };
     window.addEventListener('keydown', key); return () => window.removeEventListener('keydown', key);
-  }, [graph, selection, setView, follow]);
-  const state = { backend, componentBytes, discs, activeDisc, setActiveDisc: selectDisc, map, graph, selection, select, structure, lanes, view, setView, busy, filter, setFilter, find, setFind, rename, setRename, history, sidecarReady, sidecarError, filterRef, findRef, openFiles, openNativePath, openServerDisc, loadMap, closeDisc, follow, navigate, install, report, renderTimes };
+  }, [graph, selection, setView, follow, draft.guard, select]);
+  const applySnapshot = (next: DraftSnapshot | null) => {
+    if (!next) return;
+    const oldId = selection.pc === null ? null : Object.entries(draft.snapshot?.bindings ?? {}).find(([,pc]) => pc === selection.pc)?.[0];
+    structures.current.clear(); setGraph(next.graph); setStructure(null); setLanes(null);
+    const entry = next.graph.entries.find(entry => entry.actor === selection.actor && entry.event === selection.event);
+    setSelection({ ...selection, pc: oldId && next.bindings[oldId] !== undefined ? next.bindings[oldId] : entry?.pc ?? null });
+  };
+  useEffect(() => {
+    const key = (event: KeyboardEvent) => {
+      if (!event.defaultPrevented && event.key === 'Insert' && event.target instanceof HTMLElement && event.target.closest('[data-studio-panel="events"]') && !event.target.closest('input,textarea,select,[contenteditable=true]')) { event.preventDefault(); draft.begin('insert'); return; }
+      if (event.defaultPrevented || !(event.ctrlKey || event.metaKey) || event.altKey || document.querySelector('[aria-modal=true]')) return;
+      const target = event.target instanceof HTMLElement ? event.target : null;
+      if (!target?.closest('[data-studio-panel="events"]')) return;
+      const typing = Boolean(target.closest('input,textarea,select,[contenteditable=true]'));
+      if (event.key.toLowerCase() === 's') { event.preventDefault(); if (map !== null && graph && draft.snapshot) void draft.save(map, discs.find(item => item.session.id === activeDisc)?.session.status.identity?.disc ?? null, history.value).catch(report); }
+      if (!typing && event.key.toLowerCase() === 'z') { event.preventDefault(); try { applySnapshot(draft.history(event.shiftKey ? 'redo' : 'undo')); } catch (error) { report(error); } }
+    };
+    window.addEventListener('keydown', key); return () => window.removeEventListener('keydown', key);
+  });
+  const state = { draft, baseGraph, applySnapshot, folder, context, backend, componentBytes, discs, activeDisc, setActiveDisc: selectDisc, map, graph, selection, select, structure, lanes, view, setView, busy, filter, setFilter, find, setFind, rename, setRename, history, sidecarReady, sidecarError, filterRef, findRef, openFiles, openNativePath, openServerDisc, loadMap, closeDisc, follow, navigate, install, report, renderTimes };
   const latest = useRef(state); latest.current = state;
   useEffect(() => {
     if (import.meta.env.VITE_XEM_STUDIO_TEST !== '1' || !backend) return;
     const hook = {
+      command: (json: string) => backend.command(json),
       loadComponent: async (bytes: number[], declared_size: number, number = 0) => { await latest.current.install(bytes, declared_size, number); },
       openNativePath: (path: string) => latest.current.openNativePath(path),
       selectMap: (discId: number, number: number) => latest.current.loadMap(discId, number),
       setView: (next: View) => latest.current.setView(next),
-      snapshot: () => { const s = latest.current; return { view: s.view, selection: s.selection, map: s.map, instructions: s.graph?.instructions.length ?? 0, discs: s.discs.map(disc => ({ id: disc.session.id, disc: disc.session.status.identity?.disc, mapCount: disc.maps.length, placeholders: disc.maps.filter(map => map.placeholder).length })), renderTimes: [...s.renderTimes.current] }; },
+      snapshot: () => { const s = latest.current; return { view: s.view, selection: s.selection, map: s.map, instructions: s.graph?.instructions.length ?? 0, draft: s.draft.snapshot ? { revision: s.draft.snapshot.revision, bindings: s.draft.snapshot.bindings, graph: s.draft.snapshot.graph, bytes: s.draft.inspect()?.bytes ?? [] } : null, discs: s.discs.map(disc => ({ id: disc.session.id, disc: disc.session.status.identity?.disc, mapCount: disc.maps.length, placeholders: disc.maps.filter(map => map.placeholder).length })), renderTimes: [...s.renderTimes.current] }; },
     };
     (window as unknown as { __xemStudioTest: typeof hook }).__xemStudioTest = hook;
     if (nativeHost?.App.argv.some(argument => argument.startsWith('--studio-events-test='))) void import('./test-driver').then(driver => driver.runEventsTest(hook)).catch(report);
@@ -284,13 +327,16 @@ export function useEventNavigation() {
   const latest = useRef(state); latest.current = state;
   const disc = state.discs.find(item => item.session.id === state.activeDisc)?.session.status.identity?.disc ?? null;
   return {
-    disc, map: state.map, graph: state.graph, bytes: state.graph ? state.componentBytes : null,
+    disc, map: state.map, graph: state.baseGraph, bytes: state.baseGraph ? state.componentBytes : null,
     reveal(selection: Selection) {
       const current = latest.current;
-      if (current.graph !== state.graph || current.activeDisc !== state.activeDisc || current.map !== state.map) throw new Error('The loaded map changed during live PC resolution');
-      const entry = current.graph?.entries.find(entry => entry.actor === selection.actor && entry.event === selection.event);
-      if (!state.graph || !entry || selection.pc === null || !state.graph.instructions.some(item => item.pc === selection.pc) || !reachableInstructionPcs(state.graph, entry.pc).has(selection.pc)) throw new Error('Live selection is not an exact instruction owned by this actor/event');
-      current.select(selection, true);
+      if (current.baseGraph !== state.baseGraph || current.activeDisc !== state.activeDisc || current.map !== state.map) throw new Error('The immutable source map changed during live PC resolution');
+      const base = current.baseGraph;
+      const entry = base?.entries.find(entry => entry.actor === selection.actor && entry.event === selection.event);
+      if (!base || !entry || selection.pc === null || !base.instructions.some(item => item.pc === selection.pc) || !reachableInstructionPcs(base, entry.pc).has(selection.pc)) throw new Error('Live selection is not an exact source instruction owned by this actor/event');
+      const authoredPc = current.draft.snapshot?.bindings[`pc:${selection.pc}`];
+      if (authoredPc === undefined || !current.graph?.instructions.some(item => item.pc === authoredPc)) throw new Error('The live source instruction is no longer reachable in the authored draft');
+      if (!current.select({ ...selection, pc: authoredPc }, true)) throw new Error('Apply or Cancel inline instruction fields before live navigation');
     },
   };
 }
@@ -346,6 +392,9 @@ export function DiscBrowser() {
 
 export function EventViews() {
   const s = useEvents();
+  const [discardArmed, setDiscardArmed] = useState(false);
+  const activeDisc = s.discs.find(item => item.session.id === s.activeDisc);
+  const discNumber = activeDisc?.session.status.identity?.disc ?? null;
   const names = s.history.value;
   const [markerSelection, setMarkerSelection] = useState<string | null>(null);
   useEffect(() => setMarkerSelection(null), [s.graph, s.selection.pc]);
@@ -375,14 +424,30 @@ export function EventViews() {
   const graphEdges = useMemo(() => s.graph?.edges.filter(edge => reachable.has(edge.from_pc)).map((edge, index) => ({ id: `${index}`, from: String(edge.from_pc), to: reachable.has(edge.to_pc) ? String(edge.to_pc) : `target:${edge.to_pc}:${edge.status}`, kind: edge.kind, status: edge.status, fromPort: edge.kind === 'branch' || edge.kind === 'table_entry' ? 'right' as const : 'bottom' as const })) ?? [], [s.graph, reachable]);
   return <section className="event-workspace" aria-label="Field events" data-studio-panel="events" tabIndex={-1}>
     <header className="event-view-toolbar"><div role="tablist" aria-label="Event views">{(['list','graph','lanes'] as View[]).map((view, index) => <button className="editor-button" role="tab" aria-selected={s.view === view} key={view} onClick={() => void s.setView(view)} title={`Ctrl+${index + 1}`}>{['Command list','Flow graph','Actor lanes'][index]}</button>)}</div><button className="editor-button" disabled={!s.graph} onClick={() => s.setRename(true)} title="Rename (F2)">Rename…</button></header>
+    {s.graph && s.draft.snapshot && <div className="event-draft-toolbar" aria-label="Authored draft controls">
+      <button className="editor-button editor-button--compact" disabled={(s.draft.pending || Boolean(s.busy)) || s.selection.pc === null} onClick={() => s.draft.begin('insert')}>Insert node</button>
+      <button className="editor-button editor-button--compact" disabled={(s.draft.pending || Boolean(s.busy))} onClick={() => s.draft.begin('event')}>New event</button>
+      <button className="editor-button editor-button--compact" disabled={s.draft.inlineDirty || (s.draft.pending || Boolean(s.busy)) || !s.draft.snapshot.can_undo} onClick={() => s.applySnapshot(s.draft.history('undo'))} title="Ctrl+Z">Undo</button>
+      <button className="editor-button editor-button--compact" disabled={s.draft.inlineDirty || (s.draft.pending || Boolean(s.busy)) || !s.draft.snapshot.can_redo} onClick={() => s.applySnapshot(s.draft.history('redo'))} title="Ctrl+Shift+Z">Redo</button>
+      <button className="editor-button editor-button--compact" disabled={s.draft.inlineDirty || (s.draft.pending || Boolean(s.busy))} onClick={s.draft.validate}>Validate</button>
+      <button className="editor-button editor-button--compact" disabled={s.draft.inlineDirty || (s.draft.pending || Boolean(s.busy)) || !s.folder} onClick={() => s.draft.save(s.map!, discNumber, names).catch(s.report)} title="Ctrl+S">Save project</button>
+      <button className="editor-button editor-button--compact" disabled={s.draft.inlineDirty || (s.draft.pending || Boolean(s.busy)) || !s.folder} onClick={() => s.draft.load(s.map!, discNumber, s.context).then(result => { if (result) { s.history.reset(result.names); s.applySnapshot(result.snapshot); } }).catch(s.report)}>Load project</button>
+      <button className="editor-button editor-button--compact" disabled={(s.draft.pending || Boolean(s.busy))} onClick={() => { if (discardArmed) { s.applySnapshot(s.draft.discard()); setDiscardArmed(false); } else setDiscardArmed(true); }}>{discardArmed ? 'Confirm discard draft' : 'Discard draft…'}</button>
+      <button className="editor-button editor-button--compact" disabled={s.draft.inlineDirty || (s.draft.pending || Boolean(s.busy)) || !s.folder || !activeDisc} onClick={() => s.draft.build(s.map!, activeDisc!.session).catch(s.report)}>Build package</button>
+      <button className="editor-button editor-button--compact" disabled={s.draft.inlineDirty || (s.draft.pending || Boolean(s.busy)) || !s.draft.canPlay || s.draft.lastBuild?.revision !== s.draft.snapshot.revision || s.draft.lastBuild?.draft !== s.draft.snapshot.draft} onClick={() => s.draft.play().catch(s.report)}>Play</button>
+      <span className="editor-text editor-text--caption">Authored draft · {s.draft.inlineDirty ? 'Unapplied fields · build blocked' : !s.draft.hasSavedProject && !s.draft.snapshot.modified ? 'Unmodified source' : s.draft.snapshot.revision === s.draft.savedRevision ? 'Saved' : 'Unsaved'} · Live runtime separate</span>
+    </div>}
     <label className="editor-field editor-field-label event-find"><span>Find within map</span><input ref={s.findRef} className="editor-control editor-control--text" value={s.find} onChange={event => s.setFind(event.target.value)} placeholder="Mnemonic, name or PC" onKeyDown={event => { if (event.key === 'Enter' && s.graph) { const text = s.find.toLowerCase(); const found = s.graph.instructions.find(instruction => `${instructionPhrase(instruction, names, s.map ?? 0)} ${formatPc(instruction.pc)}`.toLowerCase().includes(text)); if (found) { const entry = s.graph.entries.find(entry => reachableInstructionPcs(s.graph!, entry.pc).has(found.pc)); s.select({ actor: entry?.actor ?? s.selection.actor, event: entry?.event ?? s.selection.event, pc: found.pc }, true); } } }} /></label>
-    {s.graph && s.map !== null ? <><p className="editor-text event-caption">Map {s.map} · {actorName(names, s.map, s.selection.actor)} · {eventName(names, s.map, s.selection.actor, s.selection.event)} · {s.graph.instructions.length} map instructions · Read-only game data</p>
+    {s.graph && s.map !== null ? <><p className="editor-text event-caption">Map {s.map} · {actorName(names, s.map, s.selection.actor)} · {eventName(names, s.map, s.selection.actor, s.selection.event)} · {s.graph.instructions.length} map instructions · Authored view; original image stays read-only</p>
       <div className="event-view-surface" role="tabpanel" aria-label={s.view === 'list' ? 'Command list' : s.view === 'graph' ? 'Flow graph' : 'Actor lanes'}>
         {s.view === 'list' && s.graph.actors.length === 0 && <div className="event-command-view"><DockerList><DockerListEmpty>This component has no actor/event entries.</DockerListEmpty></DockerList></div>}
         {s.view === 'list' && s.structure && <CommandList graph={s.graph} structure={s.structure} names={names} map={s.map} selectedPc={s.selection.pc} onSelect={pc => s.select({ ...s.selection, pc })} onFollow={s.navigate} />}
         {s.view === 'graph' && <GraphCanvas nodes={graphNodes} edges={graphEdges} selectedId={markerSelection ?? (s.selection.pc === null ? null : String(s.selection.pc))} onSelect={id => { if (id.startsWith('target:')) setMarkerSelection(id); else { setMarkerSelection(null); s.select({ ...s.selection, pc: Number(id) }); } }} onActivate={id => { if (!id.startsWith('target:')) s.follow(Number(id)); }} ariaLabel="Event flow graph" />}
         {s.view === 'lanes' && s.lanes && <ActorLanes lanes={s.lanes} names={names} map={s.map} selection={s.selection} onSelect={next => s.select(next, true)} />}
       </div>{s.view !== 'list' && <MapDiagnostics graph={s.graph} onNavigate={s.navigate} />}</> : <p className="editor-text editor-text--secondary">{s.map !== null ? `Map ${s.map} is a placeholder.` : 'Open a disc and select a map to inspect its events.'}</p>}
+    {s.draft.snapshot && s.graph && s.backend && s.map !== null && <DraftEditor disabled={s.draft.pending || Boolean(s.busy)} key={s.draft.editorKey} backend={s.backend} snapshot={s.draft.snapshot} pc={s.selection.pc} actor={s.selection.actor} event={s.selection.event} map={s.map} names={names} mode={s.draft.mode} onDirty={s.draft.dirty} onCancel={s.draft.cancel} onError={s.report} onApply={action => { const id = s.selection.pc === null ? null : s.draft.nodeAt(s.selection.pc); const next = s.draft.edit(action); s.applySnapshot(next); if (id && next.bindings[id] !== undefined) s.select({ ...s.selection, pc: next.bindings[id] }); }} />}
+    {s.draft.error && <pre className="editor-text editor-text--danger event-draft-diagnostic" role="alert">{s.draft.error.stack ?? s.draft.error.message}</pre>}
+    {s.draft.lastBuild && <p className="editor-text editor-text--caption">Last successful build: {s.draft.lastBuild.file} · {s.draft.lastBuild.identity} · revision {s.draft.lastBuild.revision}{s.draft.inlineDirty ? ' · retained while fields are unapplied' : ''}</p>}
     {s.rename && <NameEditor onClose={() => s.setRename(false)} />}
   </section>;
 }
@@ -417,4 +482,9 @@ function NameEditor({ onClose }: { onClose(): void }) {
     <label className="editor-field editor-field-label"><span>Name</span><input ref={input} className="editor-control editor-control--text" disabled={!s.sidecarReady || s.history.pending} value={name} onChange={event => setName(event.target.value)} /></label>
     <div className="studio-toolbar"><button className="editor-button editor-button--primary" disabled={!s.sidecarReady || s.history.pending || !s.history.dirty} onClick={() => s.history.commit().catch(s.report)}>Save name</button><button className="editor-button" disabled={!s.history.canUndo} onClick={() => s.history.undo().catch(s.report)}>Undo name</button><button className="editor-button" disabled={!s.history.canRedo} onClick={() => s.history.redo().catch(s.report)}>Redo name</button><button className="editor-button" disabled={s.history.pending} onClick={() => { if (s.history.dirty) s.history.cancelDraft(); onClose(); }}>Close names</button></div>
   </section></EditorDialogShell>;
+}
+
+export function useEventPackagePlay() {
+  const { draft } = useEvents();
+  return { register: draft.registerPlay };
 }

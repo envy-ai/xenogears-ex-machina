@@ -10,7 +10,7 @@ import { NumberField } from '../editor/NumberField';
 import { RecordSelect } from '../editor/RecordSelect';
 import { EditorDialogShell } from '../editor/EditorDialogShell';
 import { DockerList, DockerListBody, DockerListRow, DockerListEmpty } from '../editor/DockerList';
-import { useEventNavigation } from '../events/EventStudio';
+import { useEventNavigation, useEventPackagePlay } from '../events/EventStudio';
 import './live-game.scss';
 
 const Context = createContext<GameController | null>(null);
@@ -30,6 +30,7 @@ function errorText(error: unknown) { return error instanceof Error ? error.stack
 export function LiveControls({ report }: { report(error: unknown): void }) {
   const { controller, state } = useGame();
   const navigation = useEventNavigation();
+  const eventPackage = useEventPackagePlay();
   const [url, setUrl] = useState('/runtime/');
   const target = useRef<Window | null>(null);
   const testStarted = useRef(false);
@@ -79,6 +80,31 @@ export function LiveControls({ report }: { report(error: unknown): void }) {
       }
     } finally { setAttaching(false); }
   };
+  useEffect(() => {
+    eventPackage.register(async build => {
+      if (busy) throw new Error('Wait for the current game operation before launching a package');
+      setAttaching(true);
+      try {
+        if (nativeHost) {
+          if (!build.nativePath) throw new Error('Build this package in a native project folder before native playback');
+          await controller.disconnect();
+          await controller.connect(launchNativeGame({ ...launch, packages: build.nativePath }, nativeHost.require('node:child_process').spawn, nativeHost.require('node:process').env));
+        } else {
+          const game = target.current;
+          if (!game || game.closed || game.location.origin !== location.origin) throw new Error('Open the same-origin game using Live game, import its original disc and boot it before package playback');
+          const api = (game as unknown as GameWindow).xem;
+          if (!api?.packages || !api.boot) throw new Error('This game page does not expose package staging and fresh boot');
+          api.setRunning(false);
+          await controller.disconnect();
+          api.packages.stage(build.bytes, { enabled: true });
+          await api.boot({ run: false, rewind: false });
+          await controller.connect(await browserGameTransport(game as unknown as GameWindow, location.origin));
+        }
+        await controller.setRunning(true);
+      } finally { setAttaching(false); }
+    });
+    return () => eventPackage.register(null);
+  }, [eventPackage.register, controller, launch, busy]);
   const jump = async () => {
     const loaded = { disc: navigation.disc, map: navigation.map, graph: navigation.graph, bytes: navigation.bytes };
     try {
