@@ -1,0 +1,269 @@
+{
+  "generator": "tools/studio/model_formats.py",
+  "override_codes": [
+    196,
+    200
+  ],
+  "schema_version": 1,
+  "sources": {
+    "src/decomp/src/resident/model_renderer.c": "4076337b4c8c13f2566278b831ec27b00463642e93309435de365ff27a1e5a80",
+    "tools/analysis/dispatch_tables.py": "74ae899b6380e5c805b283b26f878395a4222c1215dd4b3c292be208dd4f47bd"
+  },
+  "types": [
+    {
+      "aux_stride": 4,
+      "draw": [
+        "model_draw_f3_avg",
+        "model_draw_f3_lit",
+        "model_draw_f3_far",
+        "model_draw_f3_near",
+        "model_draw_f3_avg",
+        "model_draw_f3_avg"
+      ],
+      "overrides": false,
+      "packet_size": 20,
+      "prepare": "model_prepare_f3_lit",
+      "stride": 8
+    },
+    {
+      "aux_stride": 8,
+      "draw": [
+        "model_draw_ft3_avg",
+        "model_draw_ft3_lit",
+        "model_draw_ft3_far",
+        "model_draw_ft3_near",
+        "model_draw_ft3_cued",
+        "model_draw_ft3_cued_far"
+      ],
+      "overrides": true,
+      "packet_size": 32,
+      "prepare": "model_prepare_ft3_lit",
+      "stride": 8
+    },
+    {
+      "aux_stride": 4,
+      "draw": [
+        "model_draw_g3_avg",
+        "model_draw_g3_lit",
+        "model_draw_g3_far",
+        "model_draw_g3_near",
+        "model_draw_g3_avg",
+        "model_draw_g3_avg"
+      ],
+      "overrides": false,
+      "packet_size": 28,
+      "prepare": "model_prepare_g3_lit",
+      "stride": 8
+    },
+    {
+      "aux_stride": 8,
+      "draw": [
+        "model_draw_gt3_avg",
+        "model_draw_gt3_lit",
+        "model_draw_gt3_far",
+        "model_draw_gt3_near",
+        "model_draw_gt3_avg",
+        "model_draw_gt3_avg"
+      ],
+      "overrides": true,
+      "packet_size": 40,
+      "prepare": "model_prepare_gt3_lit",
+      "stride": 8
+    },
+    {
+      "aux_stride": 4,
+      "draw": [
+        "model_draw_f3_avg",
+        "model_draw_f3_avg",
+        "model_draw_f3_far",
+        "model_draw_f3_near",
+        "model_draw_f3_avg",
+        "model_draw_f3_avg"
+      ],
+      "overrides": false,
+      "packet_size": 20,
+      "prepare": "model_prepare_f3_plain",
+      "stride": 8
+    },
+    {
+      "aux_stride": 8,
+      "draw": [
+        "model_draw_ft3_avg",
+        "model_draw_ft3_avg",
+        "model_draw_ft3_far",
+        "model_draw_ft3_near",
+        "model_draw_ft3_cued",
+        "model_draw_ft3_cued_far"
+      ],
+      "overrides": true,
+      "packet_size": 32,
+      "prepare": "model_prepare_ft3_plain",
+      "stride": 8
+    },
+    {
+      "aux_stride": 4,
+      "draw": [
+        "model_draw_g3_avg",
+        "model_draw_g3_avg",
+        "model_draw_g3_far",
+        "model_draw_g3_near",
+        "model_draw_g3_avg",
+        "model_draw_g3_avg"
+      ],
+      "overrides": false,
+      "packet_size": 28,
+      "prepare": "model_prepare_g3_lit_uncached",
+      "stride": 8
+    },
+    {
+      "aux_stride": 8,
+      "draw": [
+        "model_draw_gt3_avg",
+        "model_draw_gt3_avg",
+        "model_draw_gt3_far",
+        "model_draw_gt3_near",
+        "model_draw_gt3_avg",
+        "model_draw_gt3_avg"
+      ],
+      "overrides": true,
+      "packet_size": 40,
+      "prepare": "model_prepare_gt3_lit",
+      "stride": 8
+    },
+    {
+      "aux_stride": 4,
+      "draw": [
+        "model_draw_f4_avg",
+        "model_draw_f4_lit",
+        "model_draw_f4_far",
+        "model_draw_f4_near",
+        "model_draw_f4_avg",
+        "model_draw_f4_avg"
+      ],
+      "overrides": false,
+      "packet_size": 24,
+      "prepare": "model_prepare_f4_lit",
+      "stride": 8
+    },
+    {
+      "aux_stride": 12,
+      "draw": [
+        "model_draw_ft4_avg",
+        "model_draw_ft4_lit",
+        "model_draw_ft4_far",
+        "model_draw_ft4_near",
+        "model_draw_ft4_cued",
+        "model_draw_ft4_cued_far"
+      ],
+      "overrides": true,
+      "packet_size": 40,
+      "prepare": "model_prepare_ft4_lit",
+      "stride": 8
+    },
+    {
+      "aux_stride": 4,
+      "draw": [
+        "model_draw_g4_avg",
+        "model_draw_g4_avg",
+        "model_draw_g4_far",
+        "model_draw_g4_near",
+        "model_draw_g4_avg",
+        "model_draw_g4_avg"
+      ],
+      "overrides": false,
+      "packet_size": 36,
+      "prepare": "model_prepare_g4_lit",
+      "stride": 8
+    },
+    {
+      "aux_stride": 12,
+      "draw": [
+        "model_draw_gt4_avg",
+        "model_draw_gt4_avg",
+        "model_draw_gt4_far",
+        "model_draw_gt4_near",
+        "model_draw_gt4_avg",
+        "model_draw_gt4_avg"
+      ],
+      "overrides": true,
+      "packet_size": 52,
+      "prepare": "model_prepare_gt4_lit",
+      "stride": 8
+    },
+    {
+      "aux_stride": 4,
+      "draw": [
+        "model_draw_f4_avg",
+        "model_draw_f4_avg",
+        "model_draw_f4_far",
+        "model_draw_f4_near",
+        "model_draw_f4_avg",
+        "model_draw_f4_avg"
+      ],
+      "overrides": false,
+      "packet_size": 24,
+      "prepare": "model_prepare_f4_plain",
+      "stride": 8
+    },
+    {
+      "aux_stride": 12,
+      "draw": [
+        "model_draw_ft4_avg",
+        "model_draw_ft4_avg",
+        "model_draw_ft4_far",
+        "model_draw_ft4_near",
+        "model_draw_ft4_cued",
+        "model_draw_ft4_cued_far"
+      ],
+      "overrides": true,
+      "packet_size": 40,
+      "prepare": "model_prepare_ft4_plain",
+      "stride": 8
+    },
+    {
+      "aux_stride": 4,
+      "draw": [
+        "model_draw_g4_avg",
+        "model_draw_g4_avg",
+        "model_draw_g4_far",
+        "model_draw_g4_near",
+        "model_draw_g4_avg",
+        "model_draw_g4_avg"
+      ],
+      "overrides": false,
+      "packet_size": 36,
+      "prepare": "model_prepare_g4_lit",
+      "stride": 8
+    },
+    {
+      "aux_stride": 12,
+      "draw": [
+        "model_draw_gt4_avg",
+        "model_draw_gt4_avg",
+        "model_draw_gt4_far",
+        "model_draw_gt4_near",
+        "model_draw_gt4_avg",
+        "model_draw_gt4_avg"
+      ],
+      "overrides": true,
+      "packet_size": 52,
+      "prepare": "model_prepare_gt4_lit",
+      "stride": 8
+    },
+    {
+      "aux_stride": 4,
+      "draw": [
+        "model_draw_ft3_envmap",
+        "model_draw_ft3_envmap",
+        "model_draw_ft3_envmap",
+        "model_draw_ft3_envmap",
+        "model_draw_ft3_envmap",
+        "model_draw_ft3_envmap"
+      ],
+      "overrides": false,
+      "packet_size": 32,
+      "prepare": "model_prepare_ft3_envmap",
+      "stride": 8
+    }
+  ]
+}

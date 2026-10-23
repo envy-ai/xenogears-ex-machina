@@ -158,6 +158,7 @@ docs/studio-milestone-5-implementation.md
 docs/studio-milestone-5.md
 docs/studio-milestone-6-implementation.md
 docs/studio-milestone-6.md
+docs/studio-milestone-7.md
 docs/verification/phase0-agent.json
 docs/verification/phase0-authoring.json
 docs/verification/phase0-gaps.json
@@ -934,6 +935,7 @@ src/runtime/crates/xem-storage/src/lib.rs
 src/runtime/crates/xem-studio/Cargo.toml
 src/runtime/crates/xem-studio/data/README.md
 src/runtime/crates/xem-studio/data/field-access.json
+src/runtime/crates/xem-studio/data/field-models.json
 src/runtime/crates/xem-studio/data/field-opcodes.json
 src/runtime/crates/xem-studio/src/bin/xem-package.rs
 src/runtime/crates/xem-studio/src/disc.rs
@@ -950,6 +952,13 @@ src/runtime/crates/xem-studio/src/names.rs
 src/runtime/crates/xem-studio/src/package_fixture_overlay.rs
 src/runtime/crates/xem-studio/src/packages.rs
 src/runtime/crates/xem-studio/src/packed.rs
+src/runtime/crates/xem-studio/src/scene/bundle.rs
+src/runtime/crates/xem-studio/src/scene/collision.rs
+src/runtime/crates/xem-studio/src/scene/entrances.rs
+src/runtime/crates/xem-studio/src/scene/formats.rs
+src/runtime/crates/xem-studio/src/scene/geometry.rs
+src/runtime/crates/xem-studio/src/scene/mod.rs
+src/runtime/crates/xem-studio/src/scene/textures.rs
 src/runtime/crates/xem-studio/tests/command.rs
 src/runtime/crates/xem-studio/tests/disc.rs
 src/runtime/crates/xem-studio/tests/field.rs
@@ -963,7 +972,16 @@ src/runtime/crates/xem-studio/tests/lanes.rs
 src/runtime/crates/xem-studio/tests/names.rs
 src/runtime/crates/xem-studio/tests/packages.rs
 src/runtime/crates/xem-studio/tests/packed.rs
+src/runtime/crates/xem-studio/tests/scene_bundle.rs
+src/runtime/crates/xem-studio/tests/scene_collision.rs
+src/runtime/crates/xem-studio/tests/scene_command.rs
+src/runtime/crates/xem-studio/tests/scene_entrances.rs
+src/runtime/crates/xem-studio/tests/scene_formats.rs
+src/runtime/crates/xem-studio/tests/scene_geometry.rs
+src/runtime/crates/xem-studio/tests/scene_real_formats.rs
+src/runtime/crates/xem-studio/tests/scene_textures.rs
 src/runtime/crates/xem-studio/tests/structure.rs
+src/runtime/crates/xem-studio/tests/support/scene_bundle.rs
 src/runtime/crates/xem-studio/tests/support/synthetic_disc.rs
 src/runtime/crates/xem-ui/Cargo.toml
 src/runtime/crates/xem-ui/build.rs
@@ -1119,6 +1137,7 @@ tests/test_sprite_vm.py
 tests/test_staff_roll.py
 tests/test_stat_items.py
 tests/test_studio_field_opcodes.py
+tests/test_studio_model_formats.py
 tests/test_sweep_math.py
 tests/test_sweep_trace.py
 tests/test_text_control.py
@@ -1258,6 +1277,7 @@ tools/studio/docs/widgets.md
 tools/studio/field_access.py
 tools/studio/field_opcodes.py
 tools/studio/index.html
+tools/studio/model_formats.py
 tools/studio/nw-binary.json
 tools/studio/package-lock.json
 tools/studio/package.json
@@ -1350,6 +1370,7 @@ tools/studio/tests/e2e/field-disc-lifecycle.spec.ts
 tools/studio/tests/e2e/field-draft-parity.spec.ts
 tools/studio/tests/e2e/field-edit.spec.ts
 tools/studio/tests/e2e/field-real-playback.mjs
+tools/studio/tests/e2e/field-scene-parity.spec.ts
 tools/studio/tests/e2e/field-source-context.mjs
 tools/studio/tests/e2e/field.spec.ts
 tools/studio/tests/e2e/graph-qol.spec.ts
@@ -1371,6 +1392,7 @@ tools/studio/tests/e2e/ui-real.ts
 tools/studio/tests/e2e/wasm-disc-parity.mjs
 tools/studio/tests/e2e/wasm-overlay-parity.mjs
 tools/studio/tests/field_oracle.py
+tools/studio/tests/scene_oracle.py
 tools/studio/tests/unit/disc-server.test.ts
 tools/studio/tests/unit/discs.test.ts
 tools/studio/tests/unit/event-search.test.ts

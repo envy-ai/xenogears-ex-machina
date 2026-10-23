@@ -8,6 +8,7 @@ pub mod field;
 pub mod names;
 pub mod packages;
 pub mod packed;
+pub mod scene;
 
 #[cfg(feature = "test-fixtures")]
 mod package_fixture_overlay;
@@ -42,6 +43,7 @@ const OPERATIONS: &[&str] = &[
     "version",
     "echo",
     "field.decode",
+    "field.scene.decode",
     "field.encode",
     "disc.open",
     "disc.poll",
@@ -105,6 +107,8 @@ enum Command {
     DraftSnapshot(DraftArgs),
     #[serde(rename = "field.draft.repack")]
     DraftRepack(DraftRepackArgs),
+    #[serde(rename = "field.scene.decode")]
+    SceneDecode(Box<scene::DecodeArgs>),
     #[serde(rename = "field.decode")]
     FieldDecode(FieldDecodeArgs),
     #[serde(rename = "field.encode")]
@@ -336,6 +340,7 @@ impl Command {
                 operations: OPERATIONS,
             },
             Self::Echo(value) => CommandResult::Echo(value),
+            Self::SceneDecode(args) => CommandResult::Json(json!(scene::decode(*args)?)),
             Self::FieldDecode(args) => {
                 CommandResult::FieldGraph(Box::new(field::decode(&args.bytes, args.declared_size)?))
             }

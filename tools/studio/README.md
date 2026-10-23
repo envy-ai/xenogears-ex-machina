@@ -779,3 +779,49 @@ NW modes passed: dev retains only the approved localhost origin/public anchor;
 the built app uses the unchanged packaged manifest with neither development
 grant. The earlier built-fixture timeout remains historical evidence. Actual
 commands, inputs, exits and caveats are in the ignored M6 verification index.
+
+### Field scene inspection (milestone seven backend checkpoint)
+
+`field.scene.decode` accepts `{input:{bundle,context,source,module_sha256},
+entrances:[]}` through the existing command envelope. `bundle` is the indexed
+source file's bytes, not an event component. Optional fields are null for a pure
+synthetic/unbound asset decode. A selected original `source` identity can be
+validated on its own; measured `context` additionally requires that exact source
+and `module_sha256`. It verifies all nine complete original outputs and consumed
+tail bytes. Missing reads return `source_context_required`; sector padding and
+zero fills are never substituted for original RAM. This operation does not open
+or identify an image: obtain real source bytes/identity through the existing
+verified disc session and `field.map_bundle`.
+
+The result includes source identity/hash, raw source header/view/descriptors,
+all nine component summaries, original geometry groups/meshes/faces, collision
+referenced vertex prefixes/triangles/attributes, zone corners/tail, palette/TIM
+and sprite-image upload words, the canonical M2 event graph, actor source IDs,
+explicitly selected entrance records and unresolved-dependency diagnostics.
+Input/output and project data derived from original discs remain private/local.
+No game bytes are part of public metadata or test fixtures.
+
+`entrances` contains explicitly established u16 selectors, not a record count
+inferred from the ff prefix. Raw ff angle bytes still select variables 8/6.
+Same-index entrance patching in the backend preserves executable decoding;
+deleting/renumbering needs stronger cross-map/variable/saved-state reference
+closure. Collision has no stored complete vertex count; unused storage is opaque,
+not inferred from the independently addressed attribute table. Source positions
+are the original raw descriptor words (actor initialization also uses signed low
+halfwords). Actor event scripts/floor initialization can override placement;
+these source markers are not claimed to be evaluated or live runtime poses.
+The view words contain lights/background, not a static game camera eye/target.
+
+Shared image slots report inherited-VRAM requirements explicitly. Texture-page/
+CLUT control words are source declarations, not guessed runtime override state;
+environment-map UVs and morph poses remain runtime-dependent. Decoder work
+budgets are service limits, not original actor/geometry maxima: 4096 texture
+uploads / 8 Mi words; 4096 expanded models and 262144 expanded vertices, faces
+or primitive groups / 1048576 control words; 32 MiB indexed bundle and original
+logical+16 component allocation within 2 MiB. The 32 sprite slots and 32 event
+slots per actor do not establish an actor-count maximum.
+
+Scene UI, domain transactions/history and packaged M7 playback are still pending
+at this checkpoint. M7 mockups require separate actual human approval; the
+existing approved M6 editor/inline inspector are unchanged. See
+`docs/studio-milestone-7.md` for the implementation/acceptance sequence.

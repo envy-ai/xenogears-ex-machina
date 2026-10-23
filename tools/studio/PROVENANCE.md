@@ -155,3 +155,15 @@ runtime only from `xem-studio/data/field-opcodes.json`, whose public analysis-fa
 provenance and deterministic generator remain the milestone-two source of truth.
 Project drafts, package outputs and real-disc verification artifacts contain
 private source-derived data and remain local, outside the source allowlist.
+
+## Milestone-seven backend additions
+
+The scene format readers, domain/compiler code and future scene UI are newly
+authored for this repository unless an exact extraction is separately recorded.
+The initial backend reuses original matching source structures and the existing
+authored analysis reader, without modifying `src/decomp/` or extracting further
+RPG Creator code. `field-models.json` contains only public dispatch facts exported
+from those authored sources; its generator and exact source hashes are recorded
+in the JSON and `xem-studio/data/README.md`. Private geometry, textures, source
+contexts and scene/project verification payloads remain local ignored artifacts.
+The prior bounded widget grant is not extended by M7 planning authorization.

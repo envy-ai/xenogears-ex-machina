@@ -33,7 +33,7 @@ fn version_reports_package_version_and_supported_operations() {
     let expected = json!({
         "version": "0.5.0",
         "operations": [
-            "version", "echo", "field.decode", "field.encode", "disc.open",
+            "version", "echo", "field.decode", "field.scene.decode", "field.encode", "disc.open",
             "disc.poll", "disc.missing", "disc.close", "disc.maps", "field.map_events",
             "field.map_bundle", "field.structure", "names.validate", "field.lanes", "disc.cue",
             "package.build", "package.inspect", "package.bundle", "field.draft.open",

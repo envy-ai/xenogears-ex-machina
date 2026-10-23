@@ -113,7 +113,7 @@ try {
   assert.deepEqual(result.version, {
     version: '0.5.0',
     operations: [
-      'version', 'echo', 'field.decode', 'field.encode', 'disc.open', 'disc.poll',
+      'version', 'echo', 'field.decode', 'field.scene.decode', 'field.encode', 'disc.open', 'disc.poll',
       'disc.missing', 'disc.close', 'disc.maps', 'field.map_events', 'field.map_bundle',
       'field.structure', 'names.validate', 'field.lanes', 'disc.cue', 'package.build',
       'package.inspect', 'package.bundle', 'field.draft.open', 'field.templates', 'field.instruction',
