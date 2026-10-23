@@ -88,6 +88,9 @@ No automatic rebinding of an existing raw card to mods. Validate before both
 insertion and persistent storage, including browser `Cards.replace` and boot.
 Pending browser card writes retain their originating binding and settle before
 session replacement; they are never encoded under a later active package set.
+An unavailable store with no queued card writes retains its visible read error
+and permits the existing volatile-session behavior. Failed pending writes still
+prevent session replacement until an explicit retry succeeds.
 Wrapper incompatibility is a fatal preflight, before `Card::attach_storage`
 (which otherwise records load errors and leaves empty slots).
 Modded exports use the wrapper; raw export must not silently discard metadata.

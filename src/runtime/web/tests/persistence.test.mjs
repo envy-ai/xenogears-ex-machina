@@ -332,17 +332,31 @@ describe('browser storage, rewind, pause and interchange', { concurrency: 1 }, (
         try { await x.runFrames(3); } catch (e) { cardError = String(e); }
         const pending = x.status().page.cards;
         const backup = Array.from(x.cards.image(0));
+        const generationBeforeBlockedBoot = x.status().page.sessionGeneration;
+        const snapshotBeforeBlockedBoot = Array.from(x.exportSnapshot());
+        let blockedBootError;
+        try { await x.boot({ executable: false }); } catch (e) { blockedBootError = String(e); }
+        const generationAfterBlockedBoot = x.status().page.sessionGeneration;
+        const snapshotAfterBlockedBoot = Array.from(x.exportSnapshot());
         window.storageFault = null;
         await x.cards.retry();
+        await x.boot({ executable: false });
+        const recoveredCards = x.status().page.cards;
         const stored = Array.from(await x.cards.stored(0));
         window.storageFault = 'interrupt';
         try { await x.save('errors'); } catch (e) { interrupted = String(e); }
         const afterInterrupt = await x.load('errors');
         return { first, quota, interrupted, cardError, pending, backup, stored,
+          blockedBootError, generationBeforeBlockedBoot, generationAfterBlockedBoot,
+          snapshotBeforeBlockedBoot, snapshotAfterBlockedBoot, recoveredCards,
           afterQuota: afterQuota.sha256, afterInterrupt: afterInterrupt.sha256, cards: x.status().page.cards };
       });
       assert.match(result.quota, /quota/i); assert.match(result.cardError, /quota/i);
       assert.match(result.interrupted, /interrupted/i);
+      assert.match(result.blockedBootError, /quota/i);
+      assert.equal(result.generationAfterBlockedBoot, result.generationBeforeBlockedBoot);
+      assert.deepEqual(result.snapshotAfterBlockedBoot, result.snapshotBeforeBlockedBoot);
+      assert.equal(result.recoveredCards.pending, 0); assert.equal(result.recoveredCards.error, null);
       assert.equal(result.afterQuota, result.first.sha256);
       assert.equal(result.afterInterrupt, result.first.sha256);
       assert.equal(result.pending.pending, 1); assert.match(result.pending.error, /quota/i);
@@ -366,7 +380,14 @@ describe('browser storage, rewind, pause and interchange', { concurrency: 1 }, (
         const rejected = x.settings.apply({ MasterVolume: 20 });
         let saveError;
         try { await x.save('denied'); } catch (e) { saveError = String(e); }
-        return { before, after: x.settings.get(), rejected, saveError, status: x.status() };
+        const generationBeforeIdleBoot = x.status().page.sessionGeneration;
+        let idleBootError;
+        try { await x.boot({ executable: false }); } catch (e) { idleBootError = String(e); }
+        const afterIdleBoot = x.status();
+        await x.runFrames(1);
+        return { before, after: x.settings.get(), rejected, saveError, status: x.status(),
+          idleBootError, generationBeforeIdleBoot, generationAfterIdleBoot: afterIdleBoot.page.sessionGeneration,
+          cardsAfterIdleBoot: afterIdleBoot.page.cards, framesAfterIdleBoot: x.status().renderer.frames };
       });
       assert.equal(result.rejected.ok, false); assert.equal(result.rejected.rejected, 'storage');
       assert.deepEqual(result.before.settings, result.after.settings);
@@ -374,6 +395,11 @@ describe('browser storage, rewind, pause and interchange', { concurrency: 1 }, (
       assert.match(result.saveError, /denied/i);
       assert.match(result.status.page.cards.error, /denied/i);
       assert.equal(result.status.page.biosNotice, null, 'storage that cannot be read is the cards\' error, not a BIOS image\'s');
+      assert.equal(result.idleBootError, undefined, 'a sticky storage-read error with no queued writes must not block reboot');
+      assert.equal(result.generationAfterIdleBoot, result.generationBeforeIdleBoot + 1);
+      assert.equal(result.cardsAfterIdleBoot.pending, 0);
+      assert.match(result.cardsAfterIdleBoot.error, /denied/i, 'the visible storage error remains available for retry/status');
+      assert.ok(result.framesAfterIdleBoot >= 1, 'the retained page can still advance the fixture after reboot');
       assert.ok(result.status.renderer.frames >= 0);
       assert.deepEqual(page.errors, []);
     } finally { await browser.close(); }

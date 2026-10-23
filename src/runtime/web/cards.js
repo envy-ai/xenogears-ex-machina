@@ -56,7 +56,9 @@ export class Cards {
     this.collect();
     if (retry) this.error = null;
     if (this.writing) return this.writing;
-    if (this.error) return Promise.reject(new Error(this.error));
+    // A startup read error remains visible, but an empty queue has no writes
+    // to settle. Failed pending images must still block session replacement.
+    if (this.error && this.images.size) return Promise.reject(new Error(this.error));
     this.writing = (async () => {
       while (this.images.size) {
         const [slot, image] = this.images.entries().next().value;
