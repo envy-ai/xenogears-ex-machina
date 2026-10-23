@@ -7,6 +7,7 @@ use std::collections::BTreeMap;
 mod relocate;
 const MAX_HISTORY: usize = 128;
 const MAX_DRAFTS: usize = 16;
+pub(crate) const MAX_EVENT_NODES: usize = 1024;
 
 pub(super) fn error(message: impl Into<String>) -> FieldError {
     FieldError::new("invalid_edit", message)
@@ -452,7 +453,7 @@ impl Draft {
                         "new event requires an explicitly selected absent or terminal-only slot",
                     ));
                 }
-                if nodes.is_empty() || nodes.len() > 1024 {
+                if nodes.is_empty() || nodes.len() > MAX_EVENT_NODES {
                     return Err(error("new event requires 1..1024 instructions"));
                 }
                 let ids = nodes

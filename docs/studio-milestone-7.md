@@ -361,3 +361,17 @@ document; incomplete/old scene exports are rejected explicitly. Source-relative
 remains a separate revision/generation check. Tests for source mismatch, moved
 zone references, export/import and portable malformed subdocuments accompany the
 integration before new UI or further actor/script operations.
+
+## Qualified independent event-copy primitive
+
+`scene::clone_event::prepare` produces M6 `NodeInput` templates from a qualified
+event, with address operands bound to monotonically allocated authored IDs.
+Literal selectors retain their original meanings; no literal is guessed to mean
+self. It refuses paired/inline/fixed-relative/pinned/wrapped storage, layouts whose
+entry is not the first copied unit, party-owner initialization, and every implicit
+continuation outside the copied set. The subsequent M6 transaction validates
+the destination slot and final u16 layout. This is not domain actor CRUD or a
+claim of arbitrary script purity. Five focused cases passed at checkpoint33; its
+terminal-case assertion and manifest-order failures remain recorded. The corrected
+terminal case and gated strict lint/archive checks passed at checkpoint34. No
+new UI, original-disc playback or host acceptance is claimed for this primitive.

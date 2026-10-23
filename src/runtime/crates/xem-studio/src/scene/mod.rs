@@ -5,6 +5,7 @@
 pub mod actor_rows;
 pub mod bindings;
 pub mod bundle;
+pub mod clone_event;
 pub mod collision;
 pub mod command;
 pub mod domain;

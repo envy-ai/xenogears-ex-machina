@@ -956,6 +956,7 @@ src/runtime/crates/xem-studio/src/packed.rs
 src/runtime/crates/xem-studio/src/scene/actor_rows.rs
 src/runtime/crates/xem-studio/src/scene/bindings.rs
 src/runtime/crates/xem-studio/src/scene/bundle.rs
+src/runtime/crates/xem-studio/src/scene/clone_event.rs
 src/runtime/crates/xem-studio/src/scene/collision.rs
 src/runtime/crates/xem-studio/src/scene/command.rs
 src/runtime/crates/xem-studio/src/scene/domain.rs
@@ -983,6 +984,7 @@ src/runtime/crates/xem-studio/tests/packed.rs
 src/runtime/crates/xem-studio/tests/scene_actor_rows.rs
 src/runtime/crates/xem-studio/tests/scene_bindings.rs
 src/runtime/crates/xem-studio/tests/scene_bundle.rs
+src/runtime/crates/xem-studio/tests/scene_clone_event.rs
 src/runtime/crates/xem-studio/tests/scene_collision.rs
 src/runtime/crates/xem-studio/tests/scene_command.rs
 src/runtime/crates/xem-studio/tests/scene_domain.rs
