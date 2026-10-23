@@ -547,6 +547,24 @@ impl Draft {
     fn compile_state(&self, state: &State) -> Result<Compiled, FieldError> {
         let descriptor_ids = entity_ids(&state.descriptors);
         let zone_ids = entity_ids(&state.zones);
+        // field_event_begin_effect reads iv@1 as a raw effect owner, stores it
+        // in field_effect_launch.actor and emitter.unk52, then field_effect.c
+        // indexes descriptors with it. It is not an actor-selector byte. Keep
+        // this source-proven indirect dependency explicit until its variable /
+        // 0xff dual semantics have qualified stable bindings.
+        if descriptor_ids != entity_ids(&self.base.initial.descriptors)
+            && self
+                .base
+                .events
+                .instructions
+                .iter()
+                .any(|i| i.spec.handler == "field_event_begin_effect")
+        {
+            return Err(FieldError::new(
+                "unsupported_scene_reference",
+                "field_event_begin_effect has raw/variable effect-owner descriptor indices; structural descriptor edits require qualified effect reference closure",
+            ));
+        }
         let patches = self
             .base
             .references

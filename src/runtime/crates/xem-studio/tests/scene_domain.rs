@@ -32,6 +32,9 @@ fn source_bundle(mode: EventReference, sprite_template: bool) -> Vec<u8> {
             }
             set_event_code(&mut components[5], &[0x0a, 1, 19, 0, 0]);
         }
+        EventReference::RawEffectOwner => {
+            set_event_code(&mut components[5], &canonical_raw_effect_code());
+        }
     }
     let original = fixture::bundle(&components);
     let source = bundle::Source::load(input(original)).expect("load coherent fixture");
@@ -51,6 +54,69 @@ enum EventReference {
     None,
     Actor,
     Zone,
+    RawEffectOwner,
+}
+
+fn canonical_raw_effect_code() -> Vec<u8> {
+    let metadata: serde_json::Value =
+        serde_json::from_str(include_str!("../data/field-opcodes.json"))
+            .expect("canonical generated opcode metadata");
+    let mut selected = None;
+    for table in ["primary", "extended"] {
+        let entries = metadata[table].as_object().expect("canonical opcode table");
+        if let Some((opcode, form)) = entries
+            .iter()
+            .flat_map(|(opcode, forms)| {
+                forms
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .map(move |form| (opcode.clone(), form.clone()))
+            })
+            .find(|(_, form)| form["handler"] == "field_event_begin_effect")
+        {
+            selected = Some((table, opcode, form));
+            break;
+        }
+    }
+    let (table, opcode, form) =
+        selected.expect("canonical metadata contains the indirect effect-owner reader");
+    assert!(
+        form["select"].is_null(),
+        "fixture uses the metadata's unselected instruction form"
+    );
+    let prefix_size = if table == "extended" { 1 } else { 0 };
+    let prefix = if prefix_size == 1 {
+        u8::try_from(metadata["prefix"].as_u64().expect("extended prefix"))
+            .expect("prefix fits byte")
+    } else {
+        0
+    };
+    let opcode = opcode.parse::<u8>().expect("canonical decimal opcode key");
+    let size = usize::try_from(form["size"].as_u64().expect("instruction size"))
+        .expect("instruction size fits usize");
+    let widths = metadata["widths"].as_object().expect("operand widths");
+    let operands = form["operands"].as_array().expect("operand descriptions");
+    let mut bytes = vec![0_u8; size + prefix_size];
+    if prefix_size == 1 {
+        bytes[0] = prefix;
+    }
+    bytes[prefix_size] = opcode;
+    for operand in operands {
+        let offset = usize::try_from(operand["offset"].as_u64().expect("operand offset"))
+            .expect("offset fits usize");
+        let width = usize::try_from(
+            widths[operand["kind"].as_str().unwrap()]
+                .as_u64()
+                .expect("canonical operand width"),
+        )
+        .expect("width fits usize");
+        assert!(
+            offset >= 1 && offset + width <= size,
+            "metadata operand lies inside instruction"
+        );
+    }
+    bytes
 }
 
 fn set_event_code(component: &mut Vec<u8>, code: &[u8]) {
@@ -850,4 +916,81 @@ fn structural_collision_edit_refuses_conditional_source_semantics_atomically() {
         before
     );
     assert_eq!(draft.compile().unwrap().bundle, compiled);
+}
+
+#[test]
+fn raw_effect_owner_blocks_descriptor_reindexing_but_allows_same_namespace_transform() {
+    let (original, proof_draft) = open(EventReference::RawEffectOwner, false);
+    assert!(
+        proof_draft
+            .compile()
+            .unwrap()
+            .events
+            .graph
+            .instructions
+            .iter()
+            .any(|instruction| instruction.spec.handler == "field_event_begin_effect")
+    );
+
+    let (_, mut transformed) = open(EventReference::RawEffectOwner, false);
+    transformed
+        .edit(
+            0,
+            Action::SetDescriptor {
+                id: "descriptor:1".into(),
+                position: [1, 2, 3],
+                rotation: [0, 0, 0],
+            },
+        )
+        .unwrap();
+    assert!(
+        transformed.compile().is_ok(),
+        "a transform preserving the descriptor namespace does not shift the indirect raw owner"
+    );
+
+    let actions = [
+        Action::AddInstance {
+            template: "descriptor:1".into(),
+            model: 0,
+            position: [4, 5, 6],
+            rotation: [0, 0, 0],
+        },
+        Action::DuplicateInstance {
+            id: "descriptor:1".into(),
+        },
+        Action::DeleteInstance {
+            id: "descriptor:1".into(),
+        },
+    ];
+    for action in actions {
+        let (_, mut draft) = open(EventReference::RawEffectOwner, false);
+        let before_revision = draft.revision();
+        let before_source = draft.compile().unwrap().bundle;
+        let before_snapshot = serde_json::to_value(draft.snapshot().unwrap()).unwrap();
+        let before_document = serde_json::to_value(draft.document()).unwrap();
+        let error = draft.edit(before_revision, action).expect_err(
+            "structural descriptor reindexing leaves an indirect effect owner unproven",
+        );
+        assert_eq!(error.kind, "unsupported_scene_reference");
+        assert_eq!(
+            serde_json::to_value(draft.snapshot().unwrap()).unwrap(),
+            before_snapshot,
+            "refused structural edit leaves the complete draft snapshot unchanged"
+        );
+        assert_eq!(
+            serde_json::to_value(draft.document()).unwrap(),
+            before_document,
+            "refused structural edit does not consume stable IDs or alter history"
+        );
+        assert_eq!(draft.revision(), before_revision);
+        assert_eq!(
+            before_source, original,
+            "failed structural compile leaves the source bundle byte-exact"
+        );
+        assert_eq!(
+            draft.compile().unwrap().bundle,
+            original,
+            "failed structural edit leaves the original candidate compilable"
+        );
+    }
 }

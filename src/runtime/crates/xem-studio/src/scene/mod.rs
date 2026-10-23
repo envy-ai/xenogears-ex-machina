@@ -2,6 +2,7 @@
 //!
 //! Format readers are pure and shared by native and WASM. Runtime poses are not
 //! authored placements; see docs/studio-milestone-7.md.
+pub mod actor_rows;
 pub mod bindings;
 pub mod bundle;
 pub mod collision;

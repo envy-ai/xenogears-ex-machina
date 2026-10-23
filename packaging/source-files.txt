@@ -953,6 +953,7 @@ src/runtime/crates/xem-studio/src/names.rs
 src/runtime/crates/xem-studio/src/package_fixture_overlay.rs
 src/runtime/crates/xem-studio/src/packages.rs
 src/runtime/crates/xem-studio/src/packed.rs
+src/runtime/crates/xem-studio/src/scene/actor_rows.rs
 src/runtime/crates/xem-studio/src/scene/bindings.rs
 src/runtime/crates/xem-studio/src/scene/bundle.rs
 src/runtime/crates/xem-studio/src/scene/collision.rs
@@ -978,6 +979,7 @@ src/runtime/crates/xem-studio/tests/lanes.rs
 src/runtime/crates/xem-studio/tests/names.rs
 src/runtime/crates/xem-studio/tests/packages.rs
 src/runtime/crates/xem-studio/tests/packed.rs
+src/runtime/crates/xem-studio/tests/scene_actor_rows.rs
 src/runtime/crates/xem-studio/tests/scene_bindings.rs
 src/runtime/crates/xem-studio/tests/scene_bundle.rs
 src/runtime/crates/xem-studio/tests/scene_collision.rs
@@ -988,6 +990,7 @@ src/runtime/crates/xem-studio/tests/scene_entrances.rs
 src/runtime/crates/xem-studio/tests/scene_formats.rs
 src/runtime/crates/xem-studio/tests/scene_geometry.rs
 src/runtime/crates/xem-studio/tests/scene_real_formats.rs
+src/runtime/crates/xem-studio/tests/scene_real_preflight.rs
 src/runtime/crates/xem-studio/tests/scene_textures.rs
 src/runtime/crates/xem-studio/tests/scene_topology.rs
 src/runtime/crates/xem-studio/tests/structure.rs

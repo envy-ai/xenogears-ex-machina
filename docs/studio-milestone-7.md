@@ -311,3 +311,40 @@ scene handles have a four-document residency budget, distinct from event drafts.
 The original M6 source-memory context is retained in export/import. New UI, guarded
 frontend persistence and actual M7 authored gameplay remain acceptance work after
 the human mockup gate. Existing M6 visual limitations remain historical caveats.
+
+## Original-source and actor-row checkpoint
+
+The gated original Disc 1 / map 23 preflight identifies the actual image through the
+production disc session, verifies its indexed bundle and historical measured
+context, then exercises the public scene decode/document commands. It proves
+byte-identical no-edit compilation; a static descriptor 25 transform preserves
+all nine complete component outputs and every unrelated indexed byte. Its only
+suffix is the exact five-byte measured source guard. Export/import reproduces
+the candidate SHA-256 `3f1120edd015a016b2c7d414bbb176f4f61aa0197089020b710a49769da1f89d`.
+This is offline asset/transaction proof, not a package/gameplay or UI pass.
+The failed initial length assumption and failed synthetic fixture attempts are
+retained separately in ignored checkpoints26–28.
+
+The pure actor-row container primitive preserves full original bytecode/PCs and
+logical-versus-stored tails while rebinding source entry rows, with synthetic
+56-row coverage. Actor 0 retains its original identity/index because engine
+callbacks invoke its events 2/3. A template row shares 32 source entry PCs with a
+new current-actor context; this is not an independent script clone or proof of
+unchanged global initialization effects. Domain actor CRUD is still unfinished.
+
+Further source review identified references outside the canonical actor-byte
+operands: `field_event_begin_effect` reads raw/variable iv@1, which reaches emitter
+`unk52` and descriptor reads in `field_effect.c`. Until those bindings are qualified,
+structural descriptor changes in such sources return an atomic explicit refusal;
+same-namespace transforms remain supported. Party registration is another relevant
+constraint: event0 runs for every actor in row order, and `become_party_slot` /
+`become_party_character` publish current-actor ownership. Actor duplication must
+qualify those initializers rather than infer safety from copied entry pointers.
+
+The next integration checkpoint composes the existing M6 authored-event document
+with scene actions under one source-qualified project. Existing authored script
+edits must survive a scene transform/build/save/reload. Reuse M6 compilation and
+stable bindings; do not make its compiled bytes the new original source or create
+another event encoder. Then add qualified script-placement/actor transactions,
+with explicit shared/dynamic/global-effect refusals where closure is not proven.
+M7 UI approval remains pending and no new scene UI has been implemented.

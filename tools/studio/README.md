@@ -895,3 +895,21 @@ and exact pre-table storage; conditional `triangle[-1]` plane dependencies retur
 Same-layout vertex edits retain the original storage and reference identities.
 Actor-row CRUD/script placement, destructive entrance renumbering, scene UI and
 actual edited M7 native/browser gameplay are not claimed by this backend surface.
+
+The pure `scene::actor_rows` primitive can rebind source event rows without moving
+or normalizing code storage. Synthetic56-row checks do not imply a32-actor maximum.
+It keeps original actor 0 fixed for engine callbacks. Source row templates share
+entry PCs; independent code cloning and safe party/global initialization require
+additional domain proofs before actor CRUD is enabled. Structural descriptor edits
+also refuse the unqualified raw/variable effect-owner path in
+`field_event_begin_effect`; an ordinary actor-selector-byte registry alone does
+not close this dependency.
+
+A local gated original-source preflight is available as the ignored Rust target
+`scene_real_preflight::original_disc_scene_formats_context_and_static_transform_preflight`.
+Set `XEM_STUDIO_M7_DISC1`, `XEM_STUDIO_M7_CONTEXT` and a fresh ignored
+`XEM_STUDIO_M7_PREFLIGHT_OUTPUT` explicitly, using the documented pinned shell
+and 16 GiB/no-swap scope. It reads the existing original image in place, verifies
+source/context identities and complete outputs, and emits only numeric/hash
+summary data. Missing inputs or unavailable static templates are explicit; this
+target never claims runtime playback or generates editor screenshots.
