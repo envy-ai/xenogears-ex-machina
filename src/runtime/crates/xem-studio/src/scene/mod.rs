@@ -2,12 +2,15 @@
 //!
 //! Format readers are pure and shared by native and WASM. Runtime poses are not
 //! authored placements; see docs/studio-milestone-7.md.
+pub mod bindings;
 pub mod bundle;
 pub mod collision;
+pub mod domain;
 pub mod entrances;
 pub mod formats;
 pub mod geometry;
 pub mod textures;
+pub mod topology;
 
 // Two bounded slices avoid architecture-dependent at+size overflow diagnostics.
 fn span(data: &[u8], at: usize, size: usize) -> Option<&[u8]> {

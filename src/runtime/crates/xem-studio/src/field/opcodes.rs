@@ -28,7 +28,7 @@ pub struct OpcodeForm {
 
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
-pub(super) struct Metadata {
+pub(crate) struct Metadata {
     pub schema_version: u32,
     pub source: String,
     pub source_sha256: String,
@@ -45,7 +45,7 @@ pub(super) struct Metadata {
     pub extended: BTreeMap<u8, Vec<OpcodeForm>>,
 }
 
-pub(super) fn metadata() -> Result<&'static Metadata, FieldError> {
+pub(crate) fn metadata() -> Result<&'static Metadata, FieldError> {
     static VALUE: OnceLock<Result<Metadata, String>> = OnceLock::new();
     match VALUE.get_or_init(|| {
         let metadata: Metadata =

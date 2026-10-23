@@ -248,3 +248,48 @@ Domain transactions/history, stable structural reference repair, project ownersh
 new UI and M7 native/browser edited playback remain unfinished. Human M7 UI
 approval remains pending. No M7 full runtime suite has been run: these changes
 are standalone Studio code/tests, with game module/host inputs unchanged.
+
+## Domain implementation contract
+
+The decoder checkpoint is local commit `f1c57f14`; subsequent work adds a separate
+revisioned scene document over that immutable input. Scene entity IDs are source-
+qualified; new IDs and allocation watermarks survive undo/alternate history and
+export/import. Batch validation and compilation happen on a candidate state
+before adoption. No failed edit/import may replace current state or last-good
+output. Project saved-state ownership includes measured context as in M6.
+
+References must use proven operand roles, preserving party/self selectors and
+exposing unresolved cases. Source-proven actor/zone binding metadata is generated
+from canonical opcode descriptors and exact C-reader/macro proofs, rather than
+a second registry. Actor selector bytes that overlap another operand (such as a
+variable address) cannot be automatically renumbered if that changes the other
+meaning. Raw-plus-normalized selector reads require both interpretations to
+agree. Unknown code/data aliases block affected structural edits precisely.
+
+An internal virtual actor-row namespace can retain deleted actors' source code
+and authored-node identities while final compilation emits only active rows and
+a corresponding descriptor order. Existing PCs stay bytecode-relative; typed
+literal references map through stable entity IDs to final indices. Unreachable
+source storage remains intact. Source-aware script edits reuse the M6 Draft
+compiler and its tail-activation checks; stripping/reordering actor rows must
+not activate new code or silently redirect script bindings.
+
+Collision topology changes append validated tables, retaining original opaque
+storage and exact pre-table sentinel bytes. There is no invented full vertex
+count. Header/table pointers and known references change together. Static model
+instances reuse decoded source groups; editing an unknown mesh/morph encoding
+is unsupported. Actor placement is either an explicit header source or a proven
+script binding; floor-derived Y and transient runtime pose remain distinct.
+Entrance record counts/reference closure remain unresolved where source facts do
+not establish them; same-selector edits do not authorize destructive renumbering.
+
+The first domain checkpoint deliberately implements a bounded subset while the
+remaining accepted operations are developed. It is not an M7 completion claim.
+Current actions use source descriptor transforms, copies of proven static model
+instances, zone CRUD, same-layout collision vertices and explicit same-selector
+entrances. Candidate compilation reuses M6's instruction compiler and shared
+packing-tail activation refusal; its public event protocol is unchanged. A new
+static instance reuses a source model/template rather than inventing compatible
+morph/material flags. Actor event-row CRUD and reference-safe collision topology
+are separate subsequent checkpoints. The public scene command remains decode
+only until the transaction contract is coherent and parity-tested.

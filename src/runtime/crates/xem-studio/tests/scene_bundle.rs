@@ -280,6 +280,38 @@ fn component_replacement_repacks_one_zone_stream_and_preserves_all_other_outputs
 }
 
 #[test]
+fn replacement_padding_cannot_activate_an_unresolved_event_destination() {
+    let original = bundle_fixture(1, false);
+    let source = bundle::Source::load(input(original.clone())).expect("load source");
+
+    // A branch at bytecode PC 0 targets PC 10 while the authored stream ends at
+    // PC 8. Literal packing rounds the component from 140 to 144 bytes, making
+    // that target reachable through the zero-filled packing tail unless refused.
+    let mut component = vec![0_u8; 196];
+    component[128..132].copy_from_slice(&1_u32.to_le_bytes());
+    component.extend_from_slice(&[0x02, 0, 0, 0, 0, 0, 10, 0]);
+    let logical_size = component.len();
+    let mut replacements = BTreeMap::new();
+    replacements.insert(
+        5,
+        bundle::Replacement {
+            logical_size,
+            bytes: component,
+        },
+    );
+
+    let error = source
+        .repack(&source.header, &replacements)
+        .expect_err("packed padding must not activate an outside branch target");
+    assert_eq!(error.kind, "unsupported_relocation");
+    assert_eq!(
+        source.input().bundle,
+        original,
+        "rejection leaves source unchanged"
+    );
+}
+
+#[test]
 fn replacement_bounds_and_indices_fail_atomically() {
     let original = bundle_fixture(1, false);
     let source = bundle::Source::load(input(original.clone())).expect("load source");

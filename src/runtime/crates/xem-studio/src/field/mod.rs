@@ -13,6 +13,7 @@ use std::fmt;
 
 pub use decode::{decode, decode_instruction};
 pub use graph::encode;
+pub(crate) use opcodes::metadata as opcode_metadata;
 pub use opcodes::{OpcodeForm, OperandSpec};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -122,4 +123,29 @@ pub(super) fn source_hash(bytes: &[u8]) -> String {
         .iter()
         .map(|byte| format!("{byte:02x}"))
         .collect()
+}
+
+/// Packing can extend the complete output beyond an authored logical stream.
+/// Retain the M6 rule: those bytes must not activate unresolved destinations or
+/// change any reachable instruction/diagnostic. Shared by event and scene packs.
+pub(crate) fn validate_packing_tail(graph: &FieldGraph, output: &[u8]) -> Result<(), FieldError> {
+    let padded = decode(output, Some(graph.declared_size))?;
+    if graph
+        .diagnostics
+        .outside
+        .iter()
+        .chain(&graph.diagnostics.inner)
+        .any(|[_, target]| {
+            *target >= graph.stream_size - graph.bytecode_offset
+                && *target < output.len() - graph.bytecode_offset
+        })
+        || padded.instructions != graph.instructions
+        || padded.diagnostics != graph.diagnostics
+    {
+        return Err(FieldError::new(
+            "unsupported_relocation",
+            "packing tail would activate an unresolved destination or change decoded execution",
+        ));
+    }
+    Ok(())
 }

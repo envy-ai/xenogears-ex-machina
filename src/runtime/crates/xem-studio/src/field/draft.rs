@@ -173,7 +173,70 @@ impl Draft {
         })
     }
     pub fn compile(&self) -> Result<Compiled, FieldError> {
-        relocate::compile(self, &self.history[self.cursor])
+        relocate::compile(self, &self.history[self.cursor], self.base.actors.len())
+    }
+    /// Scene compilation repairs only source-proven literal references. Reuse
+    /// this compiler's writable spans, form validation and stable address repair;
+    /// this private adapter does not add a second instruction encoder or a public
+    /// relaxation of the M6 actor-table bound. A descriptor-only original object
+    /// may have a transform without an event actor row.
+    pub(crate) fn compile_with_scene_operands(
+        &self,
+        patches: &[(String, usize, u8)],
+        descriptor_count: usize,
+    ) -> Result<Compiled, FieldError> {
+        if descriptor_count < self.base.actors.len() || descriptor_count > usize::from(u16::MAX) {
+            return Err(error(
+                "scene descriptor count cannot contain event actor rows",
+            ));
+        }
+        if patches.is_empty() {
+            return self.compile();
+        }
+        let compiled = self.compile()?;
+        let mut state = self.history[self.cursor].clone();
+        let mut seen = std::collections::BTreeSet::new();
+        for (id, operand, value) in patches {
+            if !seen.insert((id, operand)) {
+                return Err(error("duplicate scene operand repair"));
+            }
+            let pc = compiled
+                .bindings
+                .get(id)
+                .ok_or_else(|| error("scene repair names an unknown node"))?;
+            let ins = compiled
+                .graph
+                .instructions
+                .iter()
+                .find(|ins| ins.pc == *pc)
+                .ok_or_else(|| error("scene repair node is not reachable"))?;
+            let descriptor = ins
+                .spec
+                .operands
+                .get(*operand)
+                .ok_or_else(|| error("scene repair operand outside instruction"))?;
+            if !["actor", "u8"].contains(&descriptor.kind.as_str()) {
+                return Err(error("scene reference repair requires a byte selector"));
+            }
+            let selected = state
+                .nodes
+                .get_mut(id)
+                .ok_or_else(|| error("scene repair node missing"))?;
+            if let Some(pc) = selected.source_pc {
+                self.writable(pc)?;
+            }
+            write_operand(
+                &mut selected.bytes,
+                &mut selected.targets,
+                ins,
+                *operand,
+                &OperandValue::Literal {
+                    value: u32::from(*value),
+                    immediate: None,
+                },
+            )?;
+        }
+        relocate::compile(self, &state, descriptor_count)
     }
     pub fn document(&self) -> Document {
         Document {
@@ -400,7 +463,7 @@ impl Draft {
                 state.events.insert((*actor, *event), ids);
             }
         }
-        relocate::compile(self, &state)?; // Candidate validation happens before publishing any state or ID.
+        relocate::compile(self, &state, self.base.actors.len())?; // Candidate validation happens before publishing any state or ID.
         self.history.truncate(self.cursor + 1);
         self.actions.truncate(self.cursor);
         self.allocation_starts.truncate(self.cursor);

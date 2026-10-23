@@ -822,25 +822,7 @@ fn replace_events_inner(
         ));
     }
     // The event decoder includes the explicit packing tail in u16 PC bounds.
-    let padded_graph = crate::field::decode(&decoded.data, Some(compiled.declared_size))?;
-    if compiled
-        .graph
-        .diagnostics
-        .outside
-        .iter()
-        .chain(&compiled.graph.diagnostics.inner)
-        .any(|[_, target]| {
-            *target >= compiled.graph.stream_size - compiled.graph.bytecode_offset
-                && *target < decoded.data.len() - compiled.graph.bytecode_offset
-        })
-        || padded_graph.instructions != compiled.graph.instructions
-        || padded_graph.diagnostics != compiled.graph.diagnostics
-    {
-        return Err(StudioError::new(
-            "unsupported_relocation",
-            "packing tail would activate an unresolved destination or change decoded execution",
-        ));
-    }
+    crate::field::validate_packing_tail(&compiled.graph, &decoded.data)?;
     let start = measured
         .len()
         .checked_add(3)

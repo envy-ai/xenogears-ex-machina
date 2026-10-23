@@ -208,6 +208,21 @@ pub struct MapLanes {
     pub variable_dependencies: Vec<VariableDependency>,
 }
 
+/// Source-qualified symbolic forms shared with scene reference repair. Literal
+/// 0xfc is deliberately not a party/self selector.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum SymbolicActor {
+    SelfActor,
+    Party(u8),
+}
+pub(crate) fn symbolic_actor(raw: u8) -> Option<SymbolicActor> {
+    match raw {
+        0xfd..=0xff => Some(SymbolicActor::Party(0xff - raw)),
+        0xfb => Some(SymbolicActor::SelfActor),
+        _ => None,
+    }
+}
+
 fn selector(raw: u8, source_actor: usize, actor_count: usize) -> ActorSelector {
     let mut value = ActorSelector {
         raw,
@@ -217,17 +232,17 @@ fn selector(raw: u8, source_actor: usize, actor_count: usize) -> ActorSelector {
         resolved_actor: None,
         unresolved: None,
     };
-    match raw {
-        0xfd..=0xff => {
+    match symbolic_actor(raw) {
+        Some(SymbolicActor::Party(slot)) => {
             value.kind = "party".to_owned();
-            value.party_slot = Some(0xff - raw);
+            value.party_slot = Some(slot);
             value.unresolved = Some("Party actor binding requires runtime state.".to_owned());
         }
-        0xfb => {
+        Some(SymbolicActor::SelfActor) => {
             value.kind = "self".to_owned();
             value.resolved_actor = Some(source_actor);
         }
-        _ => {
+        None => {
             value.direct_actor = Some(usize::from(raw));
             if usize::from(raw) < actor_count {
                 value.resolved_actor = Some(usize::from(raw));

@@ -98,7 +98,11 @@ fn changed(draft: &Draft, state: &State, pc: usize) -> bool {
     node.bytes != original.bytes || node.targets != original.targets
 }
 
-pub(super) fn compile(draft: &Draft, state: &State) -> Result<Compiled, FieldError> {
+pub(super) fn compile(
+    draft: &Draft,
+    state: &State,
+    actor_limit: usize,
+) -> Result<Compiled, FieldError> {
     let base = &draft.base;
     let offset = base.bytecode_offset;
     let original = &draft.bytes[offset..];
@@ -455,7 +459,7 @@ pub(super) fn compile(draft: &Draft, state: &State) -> Result<Compiled, FieldErr
         if node.source_pc.is_none() || modified.contains(id) {
             let ins = instruction(&code, pc)?;
             for index in 0..ins.operands.len() {
-                validate_operand(&ins, index, base.actors.len())?;
+                validate_operand(&ins, index, actor_limit)?;
             }
         }
     }

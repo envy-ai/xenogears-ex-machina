@@ -1,0 +1,1021 @@
+{
+  "actor_reader_sha256": "989e1dc76dc44885ffaf1c89694cae6a83802697d8e1daff5baa91001df356d7",
+  "actor_readers": {
+    "field_event_read_actor_index": "989e1dc76dc44885ffaf1c89694cae6a83802697d8e1daff5baa91001df356d7",
+    "field_event_read_actor_index_or_leader": "8dd74c79b3539ca946bd7329da6d07e93f7e075eda180019d7b78b4e6798d600"
+  },
+  "actors": [
+    {
+      "aliases": [],
+      "handler": "field_event_actor_face_actor",
+      "operand": {
+        "bit": null,
+        "flags": null,
+        "kind": "actor",
+        "offset": 1
+      },
+      "provenance": [
+        {
+          "function": "field_event_actor_face_actor",
+          "function_sha256": "0b9fb3bd80ae234baea6490c0615729703e56e16fe6b12495fafa264463fd7f5",
+          "helper": "field_event_read_actor_index",
+          "source": "src/decomp/src/field/field_event.c"
+        }
+      ],
+      "reason": null,
+      "role": "actor_selector"
+    },
+    {
+      "aliases": [],
+      "handler": "field_event_actor_face_actor",
+      "operand": {
+        "bit": null,
+        "flags": null,
+        "kind": "actor",
+        "offset": 2
+      },
+      "provenance": [
+        {
+          "function": "field_event_actor_face_actor",
+          "function_sha256": "0b9fb3bd80ae234baea6490c0615729703e56e16fe6b12495fafa264463fd7f5",
+          "helper": "field_event_read_actor_index",
+          "source": "src/decomp/src/field/field_event.c"
+        }
+      ],
+      "reason": null,
+      "role": "actor_selector"
+    },
+    {
+      "aliases": [],
+      "handler": "field_event_actor_face_direction",
+      "operand": {
+        "bit": null,
+        "flags": null,
+        "kind": "actor",
+        "offset": 1
+      },
+      "provenance": [],
+      "reason": "No exact current-PC actor reader in the handler or an approved delegation.",
+      "role": "unknown"
+    },
+    {
+      "aliases": [],
+      "handler": "field_event_actor_face_view_direction",
+      "operand": {
+        "bit": null,
+        "flags": null,
+        "kind": "actor",
+        "offset": 1
+      },
+      "provenance": [],
+      "reason": "No exact current-PC actor reader in the handler or an approved delegation.",
+      "role": "unknown"
+    },
+    {
+      "aliases": [],
+      "handler": "field_event_begin_effect_actor",
+      "operand": {
+        "bit": null,
+        "flags": null,
+        "kind": "actor",
+        "offset": 1
+      },
+      "provenance": [
+        {
+          "function": "field_event_begin_effect_actor",
+          "function_sha256": "325f066590040c47b548bc2c176059c071b4dae4ee5cf57f1d898647ad7b960c",
+          "helper": "field_event_read_actor_index",
+          "source": "src/decomp/src/field/field_event.c"
+        }
+      ],
+      "reason": null,
+      "role": "actor_selector"
+    },
+    {
+      "aliases": [],
+      "handler": "field_event_branch_unless_actor_flags0",
+      "operand": {
+        "bit": null,
+        "flags": null,
+        "kind": "actor",
+        "offset": 3
+      },
+      "provenance": [
+        {
+          "function": "field_event_branch_unless_actor_flags0",
+          "function_sha256": "d796349f4d120424dafc7db9fae3b28c0fbcfafa3c8a8ccb6d91e1743ef52e2a",
+          "helper": "field_event_read_actor_index",
+          "source": "src/decomp/src/field/field_event.c"
+        }
+      ],
+      "reason": null,
+      "role": "actor_selector"
+    },
+    {
+      "aliases": [],
+      "handler": "field_event_branch_unless_actor_flags1",
+      "operand": {
+        "bit": null,
+        "flags": null,
+        "kind": "actor",
+        "offset": 3
+      },
+      "provenance": [
+        {
+          "function": "field_event_branch_unless_actor_flags1",
+          "function_sha256": "e4ebfee1c3ed2b811963c264e57de6b74f36ba96da532ed484638c205fdadf55",
+          "helper": "field_event_read_actor_index",
+          "source": "src/decomp/src/field/field_event.c"
+        }
+      ],
+      "reason": null,
+      "role": "actor_selector"
+    },
+    {
+      "aliases": [],
+      "handler": "field_event_branch_unless_actor_flags2",
+      "operand": {
+        "bit": null,
+        "flags": null,
+        "kind": "actor",
+        "offset": 3
+      },
+      "provenance": [
+        {
+          "function": "field_event_branch_unless_actor_flags2",
+          "function_sha256": "d4fe69870e9030a7ee7fcdbfcc1b4d5e2c4b77c37bf32af8af14d730d796cc36",
+          "helper": "field_event_read_actor_index",
+          "source": "src/decomp/src/field/field_event.c"
+        }
+      ],
+      "reason": null,
+      "role": "actor_selector"
+    },
+    {
+      "aliases": [],
+      "handler": "field_event_branch_unless_actor_flags3",
+      "operand": {
+        "bit": null,
+        "flags": null,
+        "kind": "actor",
+        "offset": 3
+      },
+      "provenance": [
+        {
+          "function": "field_event_branch_unless_actor_flags3",
+          "function_sha256": "65648533007fedc7284acf985bf962cf1d3da27486f73c3b0afaa268002e109b",
+          "helper": "field_event_read_actor_index",
+          "source": "src/decomp/src/field/field_event.c"
+        }
+      ],
+      "reason": null,
+      "role": "actor_selector"
+    },
+    {
+      "aliases": [],
+      "handler": "field_event_branch_unless_near",
+      "operand": {
+        "bit": null,
+        "flags": null,
+        "kind": "actor",
+        "offset": 1
+      },
+      "provenance": [
+        {
+          "function": "field_event_branch_unless_near",
+          "function_sha256": "24ac920c7faec97c208866b668cd82197bbbd1c6b71c8451bad8843425f415f3",
+          "helper": "field_event_read_actor_index",
+          "source": "src/decomp/src/field/field_event.c"
+        }
+      ],
+      "reason": null,
+      "role": "actor_selector"
+    },
+    {
+      "aliases": [],
+      "handler": "field_event_branch_unless_on_attribute",
+      "operand": {
+        "bit": null,
+        "flags": null,
+        "kind": "actor",
+        "offset": 1
+      },
+      "provenance": [
+        {
+          "function": "field_event_branch_unless_on_attribute",
+          "function_sha256": "76b55fc3477eb9471ab52b37377c5a323953667c89bcd07baa5e447c7b97c258",
+          "helper": "field_event_read_actor_index",
+          "source": "src/decomp/src/field/field_event.c"
+        }
+      ],
+      "reason": null,
+      "role": "actor_selector"
+    },
+    {
+      "aliases": [],
+      "handler": "field_event_branch_unless_on_layer",
+      "operand": {
+        "bit": null,
+        "flags": null,
+        "kind": "actor",
+        "offset": 1
+      },
+      "provenance": [
+        {
+          "function": "field_event_branch_unless_on_layer",
+          "function_sha256": "0cde79b4dcf32f81a6c2594c479951c4b15451992f19b22c3501cf9539a05f6a",
+          "helper": "field_event_read_actor_index",
+          "source": "src/decomp/src/field/field_event.c"
+        }
+      ],
+      "reason": null,
+      "role": "actor_selector"
+    },
+    {
+      "aliases": [],
+      "handler": "field_event_branch_unless_on_screen",
+      "operand": {
+        "bit": null,
+        "flags": null,
+        "kind": "actor",
+        "offset": 1
+      },
+      "provenance": [],
+      "reason": "No exact current-PC actor reader in the handler or an approved delegation.",
+      "role": "unknown"
+    },
+    {
+      "aliases": [],
+      "handler": "field_event_branch_unless_well_on_screen",
+      "operand": {
+        "bit": null,
+        "flags": null,
+        "kind": "actor",
+        "offset": 1
+      },
+      "provenance": [],
+      "reason": "No exact current-PC actor reader in the handler or an approved delegation.",
+      "role": "unknown"
+    },
+    {
+      "aliases": [],
+      "handler": "field_event_disable_actor",
+      "operand": {
+        "bit": null,
+        "flags": null,
+        "kind": "actor",
+        "offset": 1
+      },
+      "provenance": [
+        {
+          "function": "field_event_disable_actor",
+          "function_sha256": "8cb3aede1a49f4c073f9097ff46ea06ea0d751f3890e375208e17163eb1ffd32",
+          "helper": "field_event_read_actor_index",
+          "source": "src/decomp/src/field/field_event.c"
+        }
+      ],
+      "reason": null,
+      "role": "actor_selector"
+    },
+    {
+      "aliases": [],
+      "handler": "field_event_enable_actor",
+      "operand": {
+        "bit": null,
+        "flags": null,
+        "kind": "actor",
+        "offset": 1
+      },
+      "provenance": [
+        {
+          "function": "field_event_enable_actor",
+          "function_sha256": "1d9ecaac0b3a149854b79d0441b2ae668383988c903f917d68573cd783f3c4a6",
+          "helper": "field_event_read_actor_index",
+          "source": "src/decomp/src/field/field_event.c"
+        }
+      ],
+      "reason": null,
+      "role": "actor_selector"
+    },
+    {
+      "aliases": [],
+      "handler": "field_event_face_actor",
+      "operand": {
+        "bit": null,
+        "flags": null,
+        "kind": "actor",
+        "offset": 1
+      },
+      "provenance": [
+        {
+          "function": "field_event_face_actor",
+          "function_sha256": "11995e3a9efd309c135f4dcd03e743ae5f7ddf931f760c6872a0ce3b9ea948d7",
+          "helper": "field_event_read_actor_index",
+          "source": "src/decomp/src/field/field_event.c"
+        }
+      ],
+      "reason": null,
+      "role": "actor_selector"
+    },
+    {
+      "aliases": [],
+      "handler": "field_event_hide_actor_sprite_and_shadow",
+      "operand": {
+        "bit": null,
+        "flags": null,
+        "kind": "actor",
+        "offset": 1
+      },
+      "provenance": [
+        {
+          "function": "field_event_hide_actor_sprite_and_shadow",
+          "function_sha256": "29f7d1dc8e3ec0f9cc3d3d1e8816b111086aaca5af075ab5166267f6d5eddae1",
+          "helper": "field_event_read_actor_index",
+          "source": "src/decomp/src/field/field_event.c"
+        }
+      ],
+      "reason": null,
+      "role": "actor_selector"
+    },
+    {
+      "aliases": [],
+      "handler": "field_event_message_actor",
+      "operand": {
+        "bit": null,
+        "flags": null,
+        "kind": "actor",
+        "offset": 1
+      },
+      "provenance": [
+        {
+          "function": "field_event_message_actor",
+          "function_sha256": "a6bb289d927c0a300efd8bb26a43dbbfba94c55f983f4f19fb788312e2b9bf2a",
+          "helper": "field_event_read_actor_index",
+          "source": "src/decomp/src/field/field_event.c"
+        }
+      ],
+      "reason": null,
+      "role": "actor_selector"
+    },
+    {
+      "aliases": [],
+      "handler": "field_event_message_as_actor",
+      "operand": {
+        "bit": null,
+        "flags": null,
+        "kind": "actor",
+        "offset": 1
+      },
+      "provenance": [
+        {
+          "function": "field_event_message_as_actor",
+          "function_sha256": "683812dca7e95b8bd241276da239f5c2888847b9f7614dbd61cfb269ad4b4a8f",
+          "helper": "field_event_read_actor_index",
+          "source": "src/decomp/src/field/field_event.c"
+        }
+      ],
+      "reason": null,
+      "role": "actor_selector"
+    },
+    {
+      "aliases": [],
+      "handler": "field_event_move_to_actor",
+      "operand": {
+        "bit": null,
+        "flags": null,
+        "kind": "actor",
+        "offset": 1
+      },
+      "provenance": [
+        {
+          "function": "field_event_move",
+          "function_sha256": "99a1ac55ac204361bb5e37a85b7805f931c5a0bd731e670a9defb52bd910a6d0",
+          "helper": "field_event_read_actor_index",
+          "source": "src/decomp/src/field/field_event.c"
+        }
+      ],
+      "reason": null,
+      "role": "raw_and_actor_selector"
+    },
+    {
+      "aliases": [],
+      "handler": "field_event_move_to_actor_limited",
+      "operand": {
+        "bit": null,
+        "flags": null,
+        "kind": "actor",
+        "offset": 1
+      },
+      "provenance": [
+        {
+          "function": "field_event_move",
+          "function_sha256": "99a1ac55ac204361bb5e37a85b7805f931c5a0bd731e670a9defb52bd910a6d0",
+          "helper": "field_event_read_actor_index",
+          "source": "src/decomp/src/field/field_event.c"
+        }
+      ],
+      "reason": null,
+      "role": "raw_and_actor_selector"
+    },
+    {
+      "aliases": [],
+      "handler": "field_event_place_emitter",
+      "operand": {
+        "bit": null,
+        "flags": null,
+        "kind": "actor",
+        "offset": 10
+      },
+      "provenance": [
+        {
+          "function": "field_event_place_emitter",
+          "function_sha256": "f8d29a68d84d4c328a1cbaaf2bc5473f8711cc60f6c1546df971238e3a70ae5e",
+          "helper": "field_event_read_actor_index",
+          "source": "src/decomp/src/field/field_event.c"
+        }
+      ],
+      "reason": null,
+      "role": "actor_selector"
+    },
+    {
+      "aliases": [],
+      "handler": "field_event_point_a_at_actor",
+      "operand": {
+        "bit": null,
+        "flags": null,
+        "kind": "actor",
+        "offset": 1
+      },
+      "provenance": [
+        {
+          "function": "field_event_point_a_at_actor",
+          "function_sha256": "f9913f16466a54041a1d477335d3e76f4b99a3c9c3a4177111cf2e519f5e5cb8",
+          "helper": "field_event_read_actor_index_or_leader",
+          "source": "src/decomp/src/field/field_event.c"
+        }
+      ],
+      "reason": null,
+      "role": "actor_selector"
+    },
+    {
+      "aliases": [],
+      "handler": "field_event_point_b_at_actor",
+      "operand": {
+        "bit": null,
+        "flags": null,
+        "kind": "actor",
+        "offset": 1
+      },
+      "provenance": [
+        {
+          "function": "field_event_point_b_at_actor",
+          "function_sha256": "01f6e42d9b0c3811a0b160cae7643c31c5c1d2cd0dbb061705d036c9a22edbc6",
+          "helper": "field_event_read_actor_index_or_leader",
+          "source": "src/decomp/src/field/field_event.c"
+        }
+      ],
+      "reason": null,
+      "role": "actor_selector"
+    },
+    {
+      "aliases": [],
+      "handler": "field_event_remove_actor",
+      "operand": {
+        "bit": null,
+        "flags": null,
+        "kind": "actor",
+        "offset": 1
+      },
+      "provenance": [
+        {
+          "function": "field_event_remove_actor",
+          "function_sha256": "9927c62fd1b2ef9625a5a06e1da1b3496a8d8e3b9dacad62417a5beb53cafc1a",
+          "helper": "field_event_read_actor_index",
+          "source": "src/decomp/src/field/field_event.c"
+        }
+      ],
+      "reason": null,
+      "role": "actor_selector"
+    },
+    {
+      "aliases": [],
+      "handler": "field_event_request_event",
+      "operand": {
+        "bit": null,
+        "flags": null,
+        "kind": "actor",
+        "offset": 1
+      },
+      "provenance": [
+        {
+          "function": "field_event_request_event",
+          "function_sha256": "f21caa3d874b8b4407b859e9ad0483c9a41b0d6de26b1233d4e19922d126f5b0",
+          "helper": "field_event_read_actor_index",
+          "source": "src/decomp/src/field/field_event.c"
+        }
+      ],
+      "reason": null,
+      "role": "actor_selector"
+    },
+    {
+      "aliases": [],
+      "handler": "field_event_request_event_finished",
+      "operand": {
+        "bit": null,
+        "flags": null,
+        "kind": "actor",
+        "offset": 1
+      },
+      "provenance": [
+        {
+          "function": "field_event_request_event_finished",
+          "function_sha256": "cf9b385926627866a0302237e6ec4e2238457c14ee31ec6027011873f544aadc",
+          "helper": "field_event_read_actor_index",
+          "source": "src/decomp/src/field/field_event.c"
+        }
+      ],
+      "reason": null,
+      "role": "actor_selector"
+    },
+    {
+      "aliases": [],
+      "handler": "field_event_request_event_started",
+      "operand": {
+        "bit": null,
+        "flags": null,
+        "kind": "actor",
+        "offset": 1
+      },
+      "provenance": [
+        {
+          "function": "field_event_request_event_started",
+          "function_sha256": "f825aba5cdab5bbf1eec7788585df64016fd2fb6f7bb92dd963c92002326ca6d",
+          "helper": "field_event_read_actor_index",
+          "source": "src/decomp/src/field/field_event.c"
+        }
+      ],
+      "reason": null,
+      "role": "actor_selector"
+    },
+    {
+      "aliases": [],
+      "handler": "field_event_rotate_actor",
+      "operand": {
+        "bit": null,
+        "flags": null,
+        "kind": "actor",
+        "offset": 2
+      },
+      "provenance": [
+        {
+          "function": "field_event_rotate_actor",
+          "function_sha256": "2ae2ea49af1cf271e34e67225da25201ca6d4e2dc7ac21fb9b75cc5abcd65e90",
+          "helper": "field_event_read_actor_index",
+          "source": "src/decomp/src/field/field_event.c"
+        }
+      ],
+      "reason": null,
+      "role": "actor_selector"
+    },
+    {
+      "aliases": [],
+      "handler": "field_event_set_actor_colors",
+      "operand": {
+        "bit": null,
+        "flags": null,
+        "kind": "actor",
+        "offset": 2
+      },
+      "provenance": [
+        {
+          "function": "field_event_set_actor_colors",
+          "function_sha256": "c9f0381a42043f0ecc839d46109ecae1239d4735d6ffa505265fc7e792e869c7",
+          "helper": "field_event_read_actor_index",
+          "source": "src/decomp/src/field/field_event.c"
+        }
+      ],
+      "reason": null,
+      "role": "actor_selector"
+    },
+    {
+      "aliases": [],
+      "handler": "field_event_set_actor_sprite_draw_mode",
+      "operand": {
+        "bit": null,
+        "flags": null,
+        "kind": "actor",
+        "offset": 1
+      },
+      "provenance": [
+        {
+          "function": "field_event_set_actor_sprite_draw_mode",
+          "function_sha256": "13df5e8edf4431a1cbd579237f38a88ddcfcdfa3bfa104a66235d11c1daab3b5",
+          "helper": "field_event_read_actor_index",
+          "source": "src/decomp/src/field/field_event.c"
+        }
+      ],
+      "reason": null,
+      "role": "actor_selector"
+    },
+    {
+      "aliases": [],
+      "handler": "field_event_set_camera_actor",
+      "operand": {
+        "bit": null,
+        "flags": null,
+        "kind": "actor",
+        "offset": 1
+      },
+      "provenance": [
+        {
+          "function": "field_event_set_camera_actor",
+          "function_sha256": "19c15597592ad6a89652f961100d2d6bb2e6d113edcf20b463e7f4e4d71afe24",
+          "helper": "field_event_read_actor_index",
+          "source": "src/decomp/src/field/field_event.c"
+        }
+      ],
+      "reason": null,
+      "role": "actor_selector"
+    },
+    {
+      "aliases": [],
+      "handler": "field_event_set_controlled",
+      "operand": {
+        "bit": null,
+        "flags": null,
+        "kind": "actor",
+        "offset": 1
+      },
+      "provenance": [
+        {
+          "function": "field_event_set_controlled",
+          "function_sha256": "9dfa552ed285a3ad25c2ed86353436e38ba612212b37b0445115a72f5edefe43",
+          "helper": "field_event_read_actor_index",
+          "source": "src/decomp/src/field/field_event.c"
+        }
+      ],
+      "reason": null,
+      "role": "actor_selector"
+    },
+    {
+      "aliases": [],
+      "handler": "field_event_set_link_actor",
+      "operand": {
+        "bit": null,
+        "flags": null,
+        "kind": "actor",
+        "offset": 1
+      },
+      "provenance": [
+        {
+          "function": "field_event_set_link_actor",
+          "function_sha256": "27cf23d86d8a7f42a4c504f8334a2f9ff8c0f4fd03696cd7959a1a21eefda4e6",
+          "helper": "field_event_read_actor_index",
+          "source": "src/decomp/src/field/field_event.c"
+        }
+      ],
+      "reason": null,
+      "role": "actor_selector"
+    },
+    {
+      "aliases": [],
+      "handler": "field_event_show_actor",
+      "operand": {
+        "bit": null,
+        "flags": null,
+        "kind": "actor",
+        "offset": 1
+      },
+      "provenance": [
+        {
+          "function": "field_event_show_actor",
+          "function_sha256": "86c76821d8e8c6f79bacceae3ab44edea2bd62c772f1079c6b8d00d95d844b0f",
+          "helper": "field_event_read_actor_index",
+          "source": "src/decomp/src/field/field_event.c"
+        }
+      ],
+      "reason": null,
+      "role": "actor_selector"
+    },
+    {
+      "aliases": [],
+      "handler": "field_event_stop_hide_actor",
+      "operand": {
+        "bit": null,
+        "flags": null,
+        "kind": "actor",
+        "offset": 1
+      },
+      "provenance": [
+        {
+          "function": "field_event_stop_hide_actor",
+          "function_sha256": "f1b2b6a654fdac6db5485c2c5146e94104486b7d8fba4e0ecc9cebe25a50da37",
+          "helper": "field_event_read_actor_index",
+          "source": "src/decomp/src/field/field_event.c"
+        }
+      ],
+      "reason": null,
+      "role": "actor_selector"
+    },
+    {
+      "aliases": [],
+      "handler": "field_event_store_actor_distance",
+      "operand": {
+        "bit": null,
+        "flags": null,
+        "kind": "actor",
+        "offset": 3
+      },
+      "provenance": [
+        {
+          "function": "field_event_store_actor_distance",
+          "function_sha256": "4f33216c8269245d46faa22fec88b71a51d07e6ff0b7a32abc434b18048f33bc",
+          "helper": "field_event_read_actor_index",
+          "source": "src/decomp/src/field/field_event.c"
+        }
+      ],
+      "reason": null,
+      "role": "actor_selector"
+    },
+    {
+      "aliases": [],
+      "handler": "field_event_store_actor_distance",
+      "operand": {
+        "bit": null,
+        "flags": null,
+        "kind": "actor",
+        "offset": 4
+      },
+      "provenance": [
+        {
+          "function": "field_event_store_actor_distance",
+          "function_sha256": "4f33216c8269245d46faa22fec88b71a51d07e6ff0b7a32abc434b18048f33bc",
+          "helper": "field_event_read_actor_index",
+          "source": "src/decomp/src/field/field_event.c"
+        }
+      ],
+      "reason": null,
+      "role": "actor_selector"
+    },
+    {
+      "aliases": [],
+      "handler": "field_event_store_actor_facing",
+      "operand": {
+        "bit": null,
+        "flags": null,
+        "kind": "actor",
+        "offset": 1
+      },
+      "provenance": [
+        {
+          "function": "field_event_store_actor_facing",
+          "function_sha256": "8e4db0884a71a8a1ead4859433d616c4f365e24079f61c838caddf2780a5d3fe",
+          "helper": "field_event_read_actor_index",
+          "source": "src/decomp/src/field/field_event.c"
+        }
+      ],
+      "reason": null,
+      "role": "actor_selector"
+    },
+    {
+      "aliases": [
+        {
+          "bit": null,
+          "flags": null,
+          "kind": "var",
+          "offset": 1
+        }
+      ],
+      "handler": "field_event_store_actor_flags",
+      "operand": {
+        "bit": null,
+        "flags": null,
+        "kind": "actor",
+        "offset": 1
+      },
+      "provenance": [
+        {
+          "function": "field_event_store_actor_flags",
+          "function_sha256": "a3ac0abf6289a36cd80bc2f7ff8c8d4a917c4152d3346f719a502e4379e2a3e6",
+          "helper": "field_event_read_actor_index",
+          "source": "src/decomp/src/field/field_event.c"
+        }
+      ],
+      "reason": null,
+      "role": "actor_selector"
+    },
+    {
+      "aliases": [
+        {
+          "bit": null,
+          "flags": null,
+          "kind": "var",
+          "offset": 1
+        }
+      ],
+      "handler": "field_event_store_actor_flags1",
+      "operand": {
+        "bit": null,
+        "flags": null,
+        "kind": "actor",
+        "offset": 1
+      },
+      "provenance": [
+        {
+          "function": "field_event_store_actor_flags1",
+          "function_sha256": "826ab08b5d096e486b98b6aa292da5b611fb610f1a2707652956c10513a1a8e2",
+          "helper": "field_event_read_actor_index",
+          "source": "src/decomp/src/field/field_event.c"
+        }
+      ],
+      "reason": null,
+      "role": "actor_selector"
+    },
+    {
+      "aliases": [
+        {
+          "bit": null,
+          "flags": null,
+          "kind": "var",
+          "offset": 1
+        }
+      ],
+      "handler": "field_event_store_actor_flags3",
+      "operand": {
+        "bit": null,
+        "flags": null,
+        "kind": "actor",
+        "offset": 1
+      },
+      "provenance": [
+        {
+          "function": "field_event_store_actor_flags3",
+          "function_sha256": "c31ee885cfdbb1cec462a9ee27ae77f8dc39d5494da217c0912fd9e48c7be1d9",
+          "helper": "field_event_read_actor_index",
+          "source": "src/decomp/src/field/field_event.c"
+        }
+      ],
+      "reason": null,
+      "role": "actor_selector"
+    },
+    {
+      "aliases": [
+        {
+          "bit": null,
+          "flags": null,
+          "kind": "var",
+          "offset": 1
+        }
+      ],
+      "handler": "field_event_store_actor_layer_flags",
+      "operand": {
+        "bit": null,
+        "flags": null,
+        "kind": "actor",
+        "offset": 1
+      },
+      "provenance": [
+        {
+          "function": "field_event_store_actor_layer_flags",
+          "function_sha256": "cb1a727cb78e829e9e73d5713138375ee0b1a2e86f623bae80dc25441824d443",
+          "helper": "field_event_read_actor_index",
+          "source": "src/decomp/src/field/field_event.c"
+        }
+      ],
+      "reason": null,
+      "role": "actor_selector"
+    },
+    {
+      "aliases": [],
+      "handler": "field_event_store_actor_position",
+      "operand": {
+        "bit": null,
+        "flags": null,
+        "kind": "actor",
+        "offset": 1
+      },
+      "provenance": [
+        {
+          "function": "field_event_store_actor_position",
+          "function_sha256": "051e05591d6898558c21cfb27b706210782afd17d6ce9f12171a45b6dd239ffe",
+          "helper": "field_event_read_actor_index",
+          "source": "src/decomp/src/field/field_event.c"
+        }
+      ],
+      "reason": null,
+      "role": "actor_selector"
+    },
+    {
+      "aliases": [],
+      "handler": "field_event_turn_move_to_actor",
+      "operand": {
+        "bit": null,
+        "flags": null,
+        "kind": "actor",
+        "offset": 1
+      },
+      "provenance": [],
+      "reason": "No exact current-PC actor reader in the handler or an approved delegation.",
+      "role": "unknown"
+    },
+    {
+      "aliases": [],
+      "handler": "field_event_turn_move_to_actor_limited",
+      "operand": {
+        "bit": null,
+        "flags": null,
+        "kind": "actor",
+        "offset": 1
+      },
+      "provenance": [],
+      "reason": "No exact current-PC actor reader in the handler or an approved delegation.",
+      "role": "unknown"
+    }
+  ],
+  "generator": "tools/studio/scene_bindings.py",
+  "schema_version": 1,
+  "scope": "Literal field references only; party/self remain symbolic. No runtime variable or incoming-entrance closure is inferred.",
+  "sources": {
+    "src/decomp/src/field/field_event.c": "5ad42edd061120b04a9fa0e2a1c4c53e1ff34c3c7c6daa8dac2f1ff3b224fa06",
+    "tools/analysis/event_access.py": "1837f3123c67e411d23fb3f36a94f83ca6ca02916aa84f7c6783459975644f66",
+    "tools/analysis/events.py": "18b46148a2986261c05c13defa2851dbb4d2a0d1224ed64b4e037bb20579d80b"
+  },
+  "zones": [
+    {
+      "handler": "field_event_branch_unless_in_zone",
+      "macro_sha256": "be11c7fc2b45c047ef09f102c46b769e8fa53068587e9f34342dbcbbeb87eccb",
+      "operand": {
+        "bit": null,
+        "flags": null,
+        "kind": "u8",
+        "offset": 1
+      },
+      "provenance": [
+        {
+          "function": "field_event_branch_unless_in_zone",
+          "function_sha256": "9d85d7b199b0fcdc6a5cc827ac362b53cb25b238cc416937423de5ada7709f58",
+          "helper": "EVENT_ZONE/CODE_ZONE",
+          "source": "src/decomp/src/field/field_event.c"
+        }
+      ],
+      "role": "zone_index"
+    },
+    {
+      "handler": "field_event_branch_unless_in_zone_height",
+      "macro_sha256": "be11c7fc2b45c047ef09f102c46b769e8fa53068587e9f34342dbcbbeb87eccb",
+      "operand": {
+        "bit": null,
+        "flags": null,
+        "kind": "u8",
+        "offset": 1
+      },
+      "provenance": [
+        {
+          "function": "field_event_branch_unless_in_zone_height",
+          "function_sha256": "53a5bc02ed99f61e884df5abfe5519a5baecc36f194165b65b1f4432546740a6",
+          "helper": "EVENT_ZONE/CODE_ZONE",
+          "source": "src/decomp/src/field/field_event.c"
+        }
+      ],
+      "role": "zone_index"
+    },
+    {
+      "handler": "field_event_call_in_zone",
+      "macro_sha256": "be11c7fc2b45c047ef09f102c46b769e8fa53068587e9f34342dbcbbeb87eccb",
+      "operand": {
+        "bit": null,
+        "flags": null,
+        "kind": "u8",
+        "offset": 1
+      },
+      "provenance": [
+        {
+          "function": "field_event_call_in_zone",
+          "function_sha256": "00099b30848d5ecb9b350921dc16e216df272209a7c4be955b1ae768ed74c190",
+          "helper": "EVENT_ZONE/CODE_ZONE",
+          "source": "src/decomp/src/field/field_event.c"
+        }
+      ],
+      "role": "zone_index"
+    },
+    {
+      "handler": "field_event_call_in_zone_height",
+      "macro_sha256": "be11c7fc2b45c047ef09f102c46b769e8fa53068587e9f34342dbcbbeb87eccb",
+      "operand": {
+        "bit": null,
+        "flags": null,
+        "kind": "u8",
+        "offset": 1
+      },
+      "provenance": [
+        {
+          "function": "field_event_call_in_zone_height",
+          "function_sha256": "1dd470b2284ed6dfdecd687ca6b94fa8b60a43cee32f440a4ba3ac766df0f8ea",
+          "helper": "EVENT_ZONE/CODE_ZONE",
+          "source": "src/decomp/src/field/field_event.c"
+        }
+      ],
+      "role": "zone_index"
+    }
+  ]
+}

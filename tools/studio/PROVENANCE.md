@@ -167,3 +167,9 @@ from those authored sources; its generator and exact source hashes are recorded
 in the JSON and `xem-studio/data/README.md`. Private geometry, textures, source
 contexts and scene/project verification payloads remain local ignored artifacts.
 The prior bounded widget grant is not extended by M7 planning authorization.
+
+The scene reference generator joins the existing canonical event forms with
+exact actor-reader and trigger-zone macro proofs from the matching authored C
+source. `field-scene-bindings.json` is public source-analysis metadata under the
+repository MIT licence. It records full source/function identities and unknown
+roles; it contains no extracted game bytes or copied external opcode registry.

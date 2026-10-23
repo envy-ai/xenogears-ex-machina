@@ -217,6 +217,10 @@ impl Source {
                     "component {index}: authored packing exceeds allocation or changes requested bytes"
                 )));
             }
+            if index == 5 {
+                let graph = crate::field::decode(&value.bytes, Some(value.logical_size))?;
+                crate::field::validate_packing_tail(&graph, &block.data)?;
+            }
             let start = result
                 .len()
                 .checked_add(3)

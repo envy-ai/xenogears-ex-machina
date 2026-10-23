@@ -825,3 +825,28 @@ Scene UI, domain transactions/history and packaged M7 playback are still pending
 at this checkpoint. M7 mockups require separate actual human approval; the
 existing approved M6 editor/inline inspector are unchanged. See
 `docs/studio-milestone-7.md` for the implementation/acceptance sequence.
+
+The next backend layer is `scene::bindings`: source-owned canonical captures,
+stable literal target repair, symbolic self/party preservation and explicit
+unknown/aliased/dangling-reference refusal. Captures bind to a complete source
+graph hash; the scene domain derives its namespaces from that source rather
+than accepting a separately supplied mutable identity registry. The service
+namespace budget is 65535 stable entities, not a claimed original zone/actor
+maximum. Literal actor selector indices that collide with reserved self/party
+bytes are refused; 0xfc remains an ordinary literal index.
+
+`scene::domain` is an in-progress Rust transaction API, not yet a new JSON/UI
+surface. It owns the immutable bundle/context, action history, source-qualified
+entities and monotonic allocation watermark; it validates/compiles a candidate
+before adoption. Current implemented actions cover source descriptor transforms,
+static-instance copy/add/delete using a proven model/template, zone CRUD,
+same-layout collision vertices and explicitly bound same-selector entrances.
+Actor-row CRUD, collision topology integration, script-placement authoring and
+M7 project/UI/playback acceptance remain unfinished. Static-instance actions do
+not replace an actor event-row transaction, and a header source position is not
+a claim that later script/floor initialization leaves it unchanged.
+
+Event-selector repairs reuse the existing M6 compiler through a private adapter;
+public M6 actor-table bounds are unchanged. Scene packing now shares M6's exact
+packing-tail activation refusal. Complete unrelated component outputs and the
+original measured source guard are verified before container adoption.
