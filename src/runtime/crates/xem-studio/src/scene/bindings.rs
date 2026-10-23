@@ -329,10 +329,51 @@ impl References {
                 "reference capture belongs to a different source graph",
             ));
         }
+        self.remap_entries(self.entries.iter(), descriptors, zones)
+    }
+    /// Private scene history adapter. Captures retain immutable namespaces, but
+    /// only currently reachable stable nodes participate in a compilation.
+    pub(crate) fn remap_selected(
+        &self,
+        selected: &[usize],
+        descriptors: &[String],
+        zones: &[String],
+    ) -> Result<Vec<(String, usize, u8)>, FieldError> {
+        let entries = selected
+            .iter()
+            .map(|&i| {
+                self.entries
+                    .get(i)
+                    .ok_or_else(|| invalid("captured scene reference is missing"))
+            })
+            .collect::<Result<Vec<_>, _>>()?;
+        let nodes: BTreeMap<_, _> = entries
+            .iter()
+            .map(|r| ((r.pc, r.operand), r.node.clone()))
+            .collect();
+        self.remap_entries(entries.into_iter(), descriptors, zones)?
+            .into_iter()
+            .map(|p| {
+                let node = nodes
+                    .get(&(p.pc, p.operand))
+                    .cloned()
+                    .ok_or_else(|| invalid("repaired scene reference lost its stable node"))?;
+                let value = u8::try_from(p.value)
+                    .map_err(|_| invalid("scene repair exceeds a selector byte"))?;
+                Ok((node, p.operand, value))
+            })
+            .collect()
+    }
+    fn remap_entries<'a>(
+        &self,
+        entries: impl Iterator<Item = &'a Reference>,
+        descriptors: &[String],
+        zones: &[String],
+    ) -> Result<Vec<ReferencePatch>, FieldError> {
         let descriptor_map = ids(descriptors, "descriptor")?;
         let zone_map = ids(zones, "zone")?;
         let mut patches = Vec::new();
-        for reference in &self.entries {
+        for reference in entries {
             let (before, after, indices) = if reference.role == "zone_index" {
                 (&self.zones, zones, &zone_map)
             } else {

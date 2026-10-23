@@ -173,6 +173,24 @@ impl Draft {
             next_id: 1,
         })
     }
+    pub(crate) fn revision(&self) -> u32 {
+        self.revision
+    }
+    pub(crate) fn next_node_id(&self) -> u32 {
+        self.next_id
+    }
+    /// Scene history may have allocated IDs on an undone branch. Reserve its
+    /// retained watermark before the next M6 transaction without replaying old
+    /// actions under new identities.
+    pub(crate) fn advance_allocator(&mut self, next: u32) -> Result<(), FieldError> {
+        if next == 0 || next < self.next_id {
+            return Err(error(
+                "scene event allocation watermark reuses node identities",
+            ));
+        }
+        self.next_id = next;
+        Ok(())
+    }
     pub fn compile(&self) -> Result<Compiled, FieldError> {
         relocate::compile(self, &self.history[self.cursor], self.base.actors.len())
     }

@@ -919,7 +919,7 @@ Scene open also accepts an optional `event_document` in the existing M6 schema1.
 Its base must exactly match the complete original event component and declared
 boundary from the selected bundle. The scene retains this authored history and
 M6 stable bindings; source bytes remain the immutable original bundle. Scene
-export schema2 includes the initial `event_document` as a required field; incomplete
+export schema3 includes the initial `event_document` as a required field; incomplete
 or older scene documents are explicitly rejected. M6's own document/protocol is
 unchanged. A scene transform must not reset prior authored event changes, and a
 zone-selector repair must follow an M6 node through its existing relocation.
@@ -929,3 +929,27 @@ portable u32 wire ranges before host-sized deserialization. `modified` indicates
 authored history relative to the original source, including an initial M6 edit;
 it is not a saved-project dirty flag. Frontend saved-state ownership must still
 compare the saved revision and active project/source/context generations.
+
+Ongoing event edits use the same scene revision/history, for example:
+
+```json
+{"op":"field.scene.draft","args":{"kind":"edit","scene":1,"revision":0,"action":{"kind":"event","action":{"kind":"insert_after","after":"pc:15","bytes":[14],"targets":{}}}}}
+```
+
+The selected stable node must actually exist and be writable; the sample PC is
+illustrative. Nested event actions are the existing M6 typed actions and are
+compiled against their immutable source. Scene schema3 additionally requires
+`event_allocation_starts` and `next_event_id`; undo and alternate history cannot
+reuse authored event IDs. Snapshot's `events` is the current compiled graph,
+bytes and stable bindings, including scene selector/entrance repairs. Its
+`next_event_id` is the retained global watermark. Initial M6 redo history remains
+inspectable in the required original event subdocument.
+
+Selector bindings are captured against the scene namespace when an instruction
+is authored or its overlapping operand bytes are explicitly edited. Untouched
+references keep stable entity targets across code relocation and scene
+renumbering; setting the same numeric selector explicitly can select a different
+current entity. Unreachable bindings are retained, and restoring a dangling one
+is an atomic error. New or explicitly edited unresolved scene selectors are
+refused with their original reason. All changes, both allocators and captures
+are adopted together only after candidate bundle validation.

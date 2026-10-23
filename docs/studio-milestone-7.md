@@ -350,8 +350,8 @@ with explicit shared/dynamic/global-effect refusals where closure is not proven.
 M7 UI approval remains pending and no new scene UI has been implemented.
 
 
-The M6 composition implementation keeps its schema1 event document as a required
-subdocument of scene export schema2. Scene open can receive an existing event
+The first M6 composition checkpoint kept its schema1 event document as a required
+subdocument of scene export schema2 (superseded by schema3 below). Scene open can receive an existing event
 document and validates its base against the complete original component before
 replaying it. Reference repair maps the initial compiled PC back to the M6 stable
 node ID, then reuses that existing compiler/state. This is distinct from adopting
@@ -375,3 +375,28 @@ claim of arbitrary script purity. Five focused cases passed at checkpoint33; its
 terminal-case assertion and manifest-order failures remain recorded. The corrected
 terminal case and gated strict lint/archive checks passed at checkpoint34. No
 new UI, original-disc playback or host acceptance is claimed for this primitive.
+
+## Ongoing scene-owned event transactions
+
+The next backend checkpoint advances unreleased scene exports to schema3 with
+required per-action `event_allocation_starts` and global `next_event_id`. M6's
+own schema1 stays unchanged. `Action::Event` reuses M6 transactions inside the
+same scene history. Undo/redo replays original actions with recorded allocation
+starts; alternate edits reserve the retained watermark before allocating.
+There is no second event bytecode encoder or adopted compiled-source graph.
+
+A cache binds stable M6 node/operand identities to source-qualified scene entity
+IDs. New or explicitly edited selector bytes (including overlapping operands)
+are captured against current scene namespaces. Untouched references retain
+their identities across relocation/renumbering. Unreachable bindings are kept
+for later reachability restoration; dangling or unresolved new bindings reject
+the candidate. Captures share namespace storage per edit instead of allocating
+a full namespace for each operand. Scene snapshot/build use the same compiled
+event stream, including entrance repairs. Event state is shared immutably across
+non-event actions; only a private candidate is cloned for a script edit.
+
+These backend operations passed the focused history/reference checks and
+71-step native/default-WASM exact raw-protocol replay in checkpoints35–40.
+Earlier failed compile/launch/lint attempts are retained separately. Actor-row structural integration, qualified
+script placements/entrance CRUD, project UI and original-map package/gameplay
+acceptance remain unfinished. Human M7 mockup approval is still required.

@@ -1,9 +1,10 @@
 //! Source-owned, revisioned scene transactions. The immutable container is never
 //! replaced by a compiled result. History replays actions, not opaque byte blobs.
 use super::{
-    bindings, bundle, collision, entities, entrances, event_document, formats, geometry, topology,
+    bundle, collision, entities, entrances, event_document, event_state, formats, geometry,
+    topology,
 };
-use crate::field::{self, FieldError, FieldGraph, draft};
+use crate::field::{self, FieldError, draft};
 use serde::{Deserialize, Serialize};
 use std::{collections::BTreeMap, sync::Arc};
 use xem_disc::field_context::hash;
@@ -20,6 +21,10 @@ fn unsupported(message: impl Into<String>) -> FieldError {
 pub enum Action {
     Batch {
         actions: Vec<Action>,
+    },
+    Event {
+        #[serde(deserialize_with = "event_document::action_from_json")]
+        action: Box<draft::Action>,
     },
     SetDescriptor {
         id: String,
@@ -93,6 +98,8 @@ pub struct Document {
     pub allocation_starts: Vec<u32>,
     pub cursor: u32,
     pub next_id: u32,
+    pub event_allocation_starts: Vec<u32>,
+    pub next_event_id: u32,
 }
 #[derive(Clone, Debug, Serialize)]
 pub struct Entity<T> {
@@ -105,15 +112,13 @@ struct State {
     zones: Vec<Entity<formats::Zone>>,
     collision: entities::Collision,
     entrances: Vec<entrances::Entrance>,
+    events: Arc<event_state::Events>,
 }
 struct Base {
     source: bundle::Source,
     collision: collision::Collision,
-    events: FieldGraph,
-    event_draft: draft::Draft,
+    event_actor_count: usize,
     event_modified: bool,
-    event_nodes: BTreeMap<usize, String>,
-    references: bindings::References,
     model_count: usize,
     zones_tail: Vec<u8>,
     initial: State,
@@ -128,6 +133,8 @@ pub struct Draft {
     cursor: usize,
     next_id: u32,
     revision: u32,
+    event_allocation_starts: Vec<u32>,
+    next_event_id: u32,
 }
 #[derive(Clone, Debug, Serialize)]
 pub struct Snapshot {
@@ -141,6 +148,8 @@ pub struct Snapshot {
     pub collision_entities: entities::Collision,
     pub entrances: Vec<entrances::Entrance>,
     pub source_sha256: String,
+    pub events: draft::Compiled,
+    pub next_event_id: u32,
 }
 #[derive(Clone, Debug, Serialize)]
 pub struct Compiled {
@@ -184,14 +193,8 @@ impl Draft {
         let original_events = field::decode(&c[5].bytes, Some(c[5].logical_size))?;
         let event_draft = event_document::open(&original_events, event_document)?;
         let event_modified = event_draft.document().cursor > 0;
-        let compiled_events = event_draft.compile()?;
-        let events = compiled_events.graph;
-        let mut event_nodes = BTreeMap::new();
-        // Preserve the same deterministic first stable binding as a sorted-ID
-        // lookup, without scanning every node for every reference repair.
-        for (id, pc) in compiled_events.bindings {
-            event_nodes.entry(pc).or_insert(id);
-        }
+        let events = event_draft.compile()?.graph;
+        let next_event_id = event_draft.next_node_id();
         if events.actors.len() > source.header.descriptors.len() {
             return Err(invalid("event actors exceed source descriptors"));
         }
@@ -205,6 +208,17 @@ impl Draft {
         }
         let collision = collision::decode_collision(&c[1].bytes, c[1].logical_size)?;
         let zones = formats::decode_zones(&c[8].bytes, c[8].logical_size)?;
+        let descriptor_ids: Vec<_> = (0..source.header.descriptors.len())
+            .map(|i| format!("descriptor:{i}"))
+            .collect();
+        let zone_ids: Vec<_> = (0..zones.zones.len())
+            .map(|i| format!("zone:{i}"))
+            .collect();
+        let authored_events = Arc::new(event_state::Events::open(
+            event_draft,
+            &descriptor_ids,
+            &zone_ids,
+        )?);
         let entrance_records = if entrance_selectors.is_empty() {
             Vec::new()
         } else {
@@ -238,21 +252,14 @@ impl Draft {
                 .collect(),
             collision: entities::Collision::from_source(&collision),
             entrances: entrance_records,
+            events: authored_events,
         };
-        let references = bindings::capture(
-            &events,
-            &entity_ids(&initial.descriptors),
-            &entity_ids(&initial.zones),
-        )?;
         Ok(Self {
             base: Arc::new(Base {
                 source,
                 collision,
-                events,
-                event_draft,
+                event_actor_count: events.actors.len(),
                 event_modified,
-                event_nodes,
-                references,
                 model_count,
                 zones_tail: zones.tail,
                 initial: initial.clone(),
@@ -264,6 +271,8 @@ impl Draft {
             cursor: 0,
             next_id: 1,
             revision: 0,
+            event_allocation_starts: Vec::new(),
+            next_event_id,
         })
     }
     pub fn revision(&self) -> u32 {
@@ -281,27 +290,33 @@ impl Draft {
             collision_entities: self.state.collision.clone(),
             entrances: self.state.entrances.clone(),
             source_sha256: self.base.source.header.source_sha256.clone(),
+            events: self.compile_events(&self.state)?,
+            next_event_id: self.next_event_id,
         })
     }
     pub fn document(&self) -> Document {
         Document {
-            schema_version: 2,
+            schema_version: 3,
             input: self.base.source.input().clone(),
-            event_document: Box::new(self.base.event_draft.document()),
+            event_document: Box::new(self.base.initial.events.draft.document()),
             entrance_selectors: self.base.entrance_selectors.clone(),
             actions: self.actions.clone(),
             allocation_starts: self.allocation_starts.clone(),
             cursor: self.cursor as u32,
             next_id: self.next_id,
+            event_allocation_starts: self.event_allocation_starts.clone(),
+            next_event_id: self.next_event_id,
         }
     }
     pub fn import(document: Document) -> Result<Self, FieldError> {
         let cursor = document.cursor as usize;
-        if document.schema_version != 2
+        if document.schema_version != 3
             || document.actions.len() > HISTORY_LIMIT
             || cursor > document.actions.len()
             || document.actions.len() != document.allocation_starts.len()
             || document.next_id == 0
+            || document.actions.len() != document.event_allocation_starts.len()
+            || document.next_event_id == 0
         {
             return Err(invalid("invalid scene document schema/history"));
         }
@@ -310,17 +325,24 @@ impl Draft {
             document.entrance_selectors,
             Some(document.event_document),
         )?;
-        for (action, start) in document.actions.into_iter().zip(document.allocation_starts) {
-            if start < result.next_id {
+        for ((action, start), event_start) in document
+            .actions
+            .into_iter()
+            .zip(document.allocation_starts)
+            .zip(document.event_allocation_starts)
+        {
+            if start < result.next_id || event_start < result.next_event_id {
                 return Err(invalid("scene history reuses allocated identities"));
             }
             result.next_id = start;
+            result.next_event_id = event_start;
             result.edit(result.revision, action)?;
         }
-        if document.next_id < result.next_id {
+        if document.next_id < result.next_id || document.next_event_id < result.next_event_id {
             return Err(invalid("scene watermark reuses allocated identities"));
         }
         result.next_id = document.next_id;
+        result.next_event_id = document.next_event_id;
         result.state = result.replay(cursor)?;
         result.cursor = cursor;
         result.revision = 0;
@@ -347,27 +369,33 @@ impl Draft {
         }
         let mut candidate = self.state.clone();
         let mut next_id = self.next_id;
-        self.apply(&mut candidate, &action, &mut next_id)?;
+        let mut next_event_id = self.next_event_id;
+        self.apply(&mut candidate, &action, &mut next_id, &mut next_event_id)?;
         self.compile_state(&candidate)?;
         // No state, history, revision or allocator mutation precedes validation.
         self.actions.truncate(self.cursor);
         self.allocation_starts.truncate(self.cursor);
+        self.event_allocation_starts.truncate(self.cursor);
         self.actions.push(action);
         self.allocation_starts.push(self.next_id);
+        self.event_allocation_starts.push(self.next_event_id);
         self.state = candidate;
         self.next_id = next_id;
+        self.next_event_id = next_event_id;
         self.cursor += 1;
         self.revision = next_revision;
         Ok(())
     }
     fn replay(&self, cursor: usize) -> Result<State, FieldError> {
         let mut state = self.base.initial.clone();
-        for (action, start) in self.actions[..cursor]
+        for ((action, start), event_start) in self.actions[..cursor]
             .iter()
             .zip(&self.allocation_starts[..cursor])
+            .zip(&self.event_allocation_starts[..cursor])
         {
             let mut next = *start;
-            self.apply(&mut state, action, &mut next)?;
+            let mut next_event = *event_start;
+            self.apply(&mut state, action, &mut next, &mut next_event)?;
         }
         self.compile_state(&state)?;
         Ok(state)
@@ -396,14 +424,20 @@ impl Draft {
     }
     fn static_instance(&self, state: &State, id: &str) -> Result<usize, FieldError> {
         let at = index(&state.descriptors, id)?;
-        if at < self.base.events.actors.len() || state.descriptors[at].value.flags & 0x40 != 0 {
+        if at < self.base.event_actor_count || state.descriptors[at].value.flags & 0x40 != 0 {
             return Err(unsupported(
                 "actor CRUD requires a reference-safe event-row transaction, not instance CRUD",
             ));
         }
         Ok(at)
     }
-    fn apply(&self, state: &mut State, action: &Action, next: &mut u32) -> Result<(), FieldError> {
+    fn apply(
+        &self,
+        state: &mut State,
+        action: &Action,
+        next: &mut u32,
+        next_event: &mut u32,
+    ) -> Result<(), FieldError> {
         match action {
             Action::Batch { actions } => {
                 if actions.is_empty()
@@ -413,8 +447,16 @@ impl Draft {
                     return Err(invalid("scene batch requires 1..32 non-batch actions"));
                 }
                 for action in actions {
-                    self.apply(state, action, next)?;
+                    self.apply(state, action, next, next_event)?;
                 }
+            }
+            Action::Event { action } => {
+                let descriptors = entity_ids(&state.descriptors);
+                let zones = entity_ids(&state.zones);
+                let events = Arc::make_mut(&mut state.events);
+                events.draft.advance_allocator(*next_event)?;
+                events.edit((**action).clone(), &descriptors, &zones)?;
+                *next_event = events.draft.next_node_id();
             }
             Action::SetDescriptor {
                 id,
@@ -576,7 +618,7 @@ impl Draft {
     pub fn compile(&self) -> Result<Compiled, FieldError> {
         self.compile_state(&self.state)
     }
-    fn compile_state(&self, state: &State) -> Result<Compiled, FieldError> {
+    fn compile_events(&self, state: &State) -> Result<draft::Compiled, FieldError> {
         let descriptor_ids = entity_ids(&state.descriptors);
         let zone_ids = entity_ids(&state.zones);
         // field_event_begin_effect reads iv@1 as a raw effect owner, stores it
@@ -585,9 +627,11 @@ impl Draft {
         // this source-proven indirect dependency explicit until its variable /
         // 0xff dual semantics have qualified stable bindings.
         if descriptor_ids != entity_ids(&self.base.initial.descriptors)
-            && self
-                .base
+            && state
                 .events
+                .draft
+                .compile()?
+                .graph
                 .instructions
                 .iter()
                 .any(|i| i.spec.handler == "field_event_begin_effect")
@@ -597,18 +641,7 @@ impl Draft {
                 "field_event_begin_effect has raw/variable effect-owner descriptor indices; structural descriptor edits require qualified effect reference closure",
             ));
         }
-        let patches = self
-            .base
-            .references
-            .remap(&self.base.events, &descriptor_ids, &zone_ids)?;
-        let rewrites = patches.iter().map(|p| {
-            let node = self.base.event_nodes.get(&p.pc).cloned().ok_or_else(|| unsupported("scene reference belongs to compiler storage without a stable authored node"))?;
-            Ok((node,p.operand,p.value as u8))
-        }).collect::<Result<Vec<_>,FieldError>>()?;
-        let mut events = self
-            .base
-            .event_draft
-            .compile_with_scene_operands(&rewrites, descriptor_ids.len())?;
+        let mut events = state.events.compile(&descriptor_ids, &zone_ids)?;
         if !state.entrances.is_empty() {
             events.bytes = entrances::encode_entrances(
                 &events.graph,
@@ -617,6 +650,12 @@ impl Draft {
             )?;
             events.graph = field::decode(&events.bytes, Some(events.declared_size))?;
         }
+        Ok(events)
+    }
+    fn compile_state(&self, state: &State) -> Result<Compiled, FieldError> {
+        let descriptor_ids = entity_ids(&state.descriptors);
+        let zone_ids = entity_ids(&state.zones);
+        let events = self.compile_events(state)?;
         let mut header = self.base.source.header.clone();
         header.descriptors = state.descriptors.iter().map(|e| e.value.clone()).collect();
         let collision_value = state.collision.resolve(&self.base.collision)?;

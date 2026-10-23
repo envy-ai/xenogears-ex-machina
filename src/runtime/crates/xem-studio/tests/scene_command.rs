@@ -397,7 +397,7 @@ fn scene_handles_are_separate_from_legacy_event_draft_handles() {
         vanilla_bundle
     );
     let vanilla_document = scene_draft(&studio, json!({"kind":"export","scene":1}));
-    assert_eq!(vanilla_document["ok"]["schema_version"], 2);
+    assert_eq!(vanilla_document["ok"]["schema_version"], 3);
     assert_eq!(
         vanilla_document["ok"]["event_document"]["schema_version"],
         1
@@ -509,7 +509,7 @@ fn scene_m6_event_history_survives_zone_reference_repair_and_export_import() {
     assert!(bindings.contains_key("new:3"), "inserted node ID survives");
 
     let exported = scene_draft(&studio, json!({"kind":"export","scene":scene}));
-    assert_eq!(exported["ok"]["schema_version"], 2);
+    assert_eq!(exported["ok"]["schema_version"], 3);
     assert_eq!(exported["ok"]["event_document"], event_document);
     let imported = scene_draft(&studio, json!({"kind":"import","document":exported["ok"]}));
     assert!(
@@ -731,13 +731,17 @@ fn scene_import_rejects_portable_context_and_cursor_overflow_before_handle_adopt
             .contains("portable u32")
     );
 
-    let input = scene_bundle::scene_args(scene_bundle::valid_bundle())["input"].clone();
+    let seed = Studio::new();
+    let opened = scene_draft(&seed, scene_open_args(scene_bundle::valid_bundle()));
+    let mut cursor_document = scene_draft(
+        &seed,
+        json!({"kind":"export","scene":opened["ok"]["scene"]}),
+    )["ok"]
+        .clone();
+    cursor_document["cursor"] = json!(u64::MAX);
     let cursor_wire = json!({
         "op":"field.scene.draft",
-        "args":{"kind":"import","document":{
-            "schema_version":1,"input":input,"entrance_selectors":[0,1],
-            "actions":[],"allocation_starts":[],"cursor":4294967296_u64,"next_id":1
-        }}
+        "args":{"kind":"import","document":cursor_document}
     })
     .to_string();
     let cursor: Value = serde_json::from_str(&studio.command(&cursor_wire)).unwrap();
@@ -952,14 +956,17 @@ fn writes_native_scene_command_trace_for_wasm_replay_when_requested() {
     );
     let portable = record_wire(&studio, &mut trace, portable_request);
     assert_eq!(portable["error"]["kind"], "invalid_args");
+    let seed = Studio::new();
+    let opened = scene_draft(&seed, scene_open_args(scene_bundle::valid_bundle()));
+    let mut cursor_document = scene_draft(
+        &seed,
+        json!({"kind":"export","scene":opened["ok"]["scene"]}),
+    )["ok"]
+        .clone();
+    cursor_document["cursor"] = json!(u64::MAX);
     let cursor_request = json!({
         "op":"field.scene.draft",
-        "args":{"kind":"import","document":{
-            "schema_version":1,
-            "input":scene_bundle::scene_args(scene_bundle::valid_bundle())["input"],
-            "entrance_selectors":[0,1],"actions":[],"allocation_starts":[],
-            "cursor":4294967296_u64,"next_id":1
-        }}
+        "args":{"kind":"import","document":cursor_document}
     })
     .to_string();
     let cursor = record_wire(&studio, &mut trace, cursor_request);
@@ -1138,6 +1145,169 @@ fn writes_native_scene_command_trace_for_wasm_replay_when_requested() {
     .to_string();
     let bad_target = record_wire(&studio, &mut trace, bad_target_wire);
     assert_eq!(bad_target["error"]["kind"], "invalid_args");
+
+    // Scene-authored M6 operations use the same typed JSON command protocol.
+    // The alternate insertion retains the branch target to new:2 while the
+    // event allocator advances past the undone new:3 identity.
+    let event_bundle = scene_bundle::bundle(&scene_components_with_zone_event());
+    let event_opened = record(
+        &studio,
+        &mut trace,
+        "field.scene.draft",
+        scene_open_args(event_bundle),
+    );
+    let event_scene = event_opened["ok"]["scene"].as_u64().unwrap() as u32;
+    let new_event = record(
+        &studio,
+        &mut trace,
+        "field.scene.draft",
+        json!({"kind":"edit","scene":event_scene,"revision":0,
+        "action":{"kind":"event","action":{"kind":"new_event","actor":0,"event":1,
+            "nodes":[
+                {"bytes":[1,0,0],"targets":{"0":"new:2"}},
+                {"bytes":[0],"targets":{}}
+            ]}}}),
+    );
+    assert_eq!(new_event["ok"]["state"]["next_event_id"], 3);
+    let first_insert = record(
+        &studio,
+        &mut trace,
+        "field.scene.draft",
+        json!({"kind":"edit","scene":event_scene,"revision":1,
+            "action":{"kind":"event","action":{"kind":"insert_after","after":"pc:15",
+                "bytes":[14],"targets":{}}}}),
+    );
+    assert_eq!(first_insert["ok"]["state"]["next_event_id"], 4);
+    record(
+        &studio,
+        &mut trace,
+        "field.scene.draft",
+        json!({"kind":"undo","scene":event_scene,"revision":2}),
+    );
+    let alternate_insert = record(
+        &studio,
+        &mut trace,
+        "field.scene.draft",
+        json!({"kind":"edit","scene":event_scene,"revision":3,
+            "action":{"kind":"event","action":{"kind":"insert_after","after":"pc:15",
+                "bytes":[14],"targets":{}}}}),
+    );
+    assert_eq!(alternate_insert["ok"]["state"]["next_event_id"], 5);
+    let event_snapshot = record(
+        &studio,
+        &mut trace,
+        "field.scene.draft",
+        json!({"kind":"snapshot","scene":event_scene}),
+    );
+    let snapshot_bindings = event_snapshot["ok"]["state"]["events"]["bindings"]
+        .as_object()
+        .expect("snapshot exposes stable event bindings");
+    assert!(snapshot_bindings.contains_key("new:1"));
+    assert!(snapshot_bindings.contains_key("new:2"));
+    assert!(snapshot_bindings.contains_key("new:4"));
+    assert!(!snapshot_bindings.contains_key("new:3"));
+    assert_eq!(event_snapshot["ok"]["state"]["next_event_id"], 5);
+    let event_export = record(
+        &studio,
+        &mut trace,
+        "field.scene.draft",
+        json!({"kind":"export","scene":event_scene}),
+    );
+    assert_eq!(event_export["ok"]["schema_version"], 3);
+    assert_eq!(event_export["ok"]["event_allocation_starts"], json!([1, 4]));
+    assert_eq!(event_export["ok"]["next_event_id"], 5);
+    let event_compile = record(
+        &studio,
+        &mut trace,
+        "field.scene.draft",
+        json!({"kind":"compile","scene":event_scene}),
+    );
+    let event_bindings = &event_compile["ok"]["events"]["bindings"];
+    let branch_pc = event_bindings["new:1"].as_u64().unwrap() as usize;
+    let target_pc = event_bindings["new:2"].as_u64().unwrap();
+    let event_bytes = byte_array(&event_compile["ok"]["events"]["bytes"]);
+    assert_eq!(event_bytes[BYTECODE_OFFSET + branch_pc], 1);
+    assert_eq!(
+        u16::from_le_bytes([
+            event_bytes[BYTECODE_OFFSET + branch_pc + 1],
+            event_bytes[BYTECODE_OFFSET + branch_pc + 2]
+        ]) as u64,
+        target_pc
+    );
+    record(
+        &studio,
+        &mut trace,
+        "field.scene.draft",
+        json!({"kind":"close","scene":event_scene}),
+    );
+
+    let mut reused_event_start = event_export["ok"].clone();
+    reused_event_start["event_allocation_starts"][1] = json!(1);
+    let reused_start = record(
+        &studio,
+        &mut trace,
+        "field.scene.draft",
+        json!({"kind":"import","document":reused_event_start}),
+    );
+    assert_eq!(reused_start["error"]["kind"], "invalid_scene_edit");
+
+    let mut too_small_event_watermark = event_export["ok"].clone();
+    too_small_event_watermark["next_event_id"] = json!(4);
+    let reused_watermark = record(
+        &studio,
+        &mut trace,
+        "field.scene.draft",
+        json!({"kind":"import","document":too_small_event_watermark}),
+    );
+    assert_eq!(reused_watermark["error"]["kind"], "invalid_scene_edit");
+
+    let mut overflow_event_start = event_export["ok"].clone();
+    overflow_event_start["event_allocation_starts"][1] = json!(u64::MAX);
+    let overflow_start_wire = json!({
+        "op":"field.scene.draft",
+        "args":{"kind":"import","document":overflow_event_start}
+    })
+    .to_string();
+    let overflow_start = record_wire(&studio, &mut trace, overflow_start_wire);
+    assert_eq!(overflow_start["error"]["kind"], "invalid_args");
+
+    let mut overflow_event_watermark = event_export["ok"].clone();
+    overflow_event_watermark["next_event_id"] = json!(u64::MAX);
+    let overflow_watermark_wire = json!({
+        "op":"field.scene.draft",
+        "args":{"kind":"import","document":overflow_event_watermark}
+    })
+    .to_string();
+    let overflow_watermark = record_wire(&studio, &mut trace, overflow_watermark_wire);
+    assert_eq!(overflow_watermark["error"]["kind"], "invalid_args");
+
+    let event_imported = record(
+        &studio,
+        &mut trace,
+        "field.scene.draft",
+        json!({"kind":"import","document":event_export["ok"]}),
+    );
+    let imported_event_scene = event_imported["ok"]["scene"].as_u64().unwrap() as u32;
+    let event_recompiled = record(
+        &studio,
+        &mut trace,
+        "field.scene.draft",
+        json!({"kind":"compile","scene":imported_event_scene}),
+    );
+    assert_eq!(
+        event_recompiled["ok"]["bundle"],
+        event_compile["ok"]["bundle"]
+    );
+    assert_eq!(
+        event_recompiled["ok"]["events"]["bytes"],
+        event_compile["ok"]["events"]["bytes"]
+    );
+    record(
+        &studio,
+        &mut trace,
+        "field.scene.draft",
+        json!({"kind":"close","scene":imported_event_scene}),
+    );
 
     let fixture = json!({"schema_version":1,"synthetic_only":true,"trace":trace});
     let parent = path.parent().expect("fixture output has parent");

@@ -12,6 +12,7 @@ pub mod domain;
 pub mod entities;
 pub mod entrances;
 pub mod event_document;
+mod event_state;
 pub mod formats;
 pub mod geometry;
 pub mod textures;
