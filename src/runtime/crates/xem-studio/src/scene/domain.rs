@@ -2,7 +2,7 @@
 //! replaced by a compiled result. History replays actions, not opaque byte blobs.
 use super::{
     bundle, collision, entities, entrances, event_document, event_state, formats, geometry,
-    topology,
+    placements, topology,
 };
 use crate::field::{self, FieldError, draft};
 use serde::{Deserialize, Serialize};
@@ -25,6 +25,9 @@ pub enum Action {
     Event {
         #[serde(deserialize_with = "event_document::action_from_json")]
         action: Box<draft::Action>,
+    },
+    SetPlacement {
+        change: placements::Change,
     },
     SetDescriptor {
         id: String,
@@ -458,6 +461,25 @@ impl Draft {
                 events.edit((**action).clone(), &descriptors, &zones)?;
                 *next_event = events.draft.next_node_id();
             }
+            Action::SetPlacement { change } => {
+                let compiled = self.compile_events(state)?;
+                let actors = entity_ids(&state.descriptors[..self.base.event_actor_count]);
+                let action = placements::prepare(
+                    &compiled,
+                    &state.events.draft,
+                    &actors,
+                    state.collision.layers.len(),
+                    change,
+                )?;
+                self.apply(
+                    state,
+                    &Action::Event {
+                        action: Box::new(action),
+                    },
+                    next,
+                    next_event,
+                )?;
+            }
             Action::SetDescriptor {
                 id,
                 position,
@@ -614,6 +636,17 @@ impl Draft {
             }
         }
         Ok(())
+    }
+    pub fn placement(&self, node: &str) -> Result<placements::Binding, FieldError> {
+        let compiled = self.compile_events(&self.state)?;
+        let actors = entity_ids(&self.state.descriptors[..self.base.event_actor_count]);
+        placements::describe(
+            &compiled,
+            &self.state.events.draft,
+            node,
+            &actors,
+            self.state.collision.layers.len(),
+        )
     }
     pub fn compile(&self) -> Result<Compiled, FieldError> {
         self.compile_state(&self.state)

@@ -967,6 +967,7 @@ src/runtime/crates/xem-studio/src/scene/event_state.rs
 src/runtime/crates/xem-studio/src/scene/formats.rs
 src/runtime/crates/xem-studio/src/scene/geometry.rs
 src/runtime/crates/xem-studio/src/scene/mod.rs
+src/runtime/crates/xem-studio/src/scene/placements.rs
 src/runtime/crates/xem-studio/src/scene/textures.rs
 src/runtime/crates/xem-studio/src/scene/topology.rs
 src/runtime/crates/xem-studio/tests/command.rs
@@ -994,6 +995,7 @@ src/runtime/crates/xem-studio/tests/scene_entrances.rs
 src/runtime/crates/xem-studio/tests/scene_event_edits.rs
 src/runtime/crates/xem-studio/tests/scene_formats.rs
 src/runtime/crates/xem-studio/tests/scene_geometry.rs
+src/runtime/crates/xem-studio/tests/scene_placements.rs
 src/runtime/crates/xem-studio/tests/scene_real_formats.rs
 src/runtime/crates/xem-studio/tests/scene_real_preflight.rs
 src/runtime/crates/xem-studio/tests/scene_textures.rs

@@ -494,6 +494,18 @@ impl Draft {
         self.revision = next_revision;
         Ok(())
     }
+    /// Source-aware capability check for adapters. A compiled PC can have moved
+    /// out of the original pinned span; retain the stable node's actual owner.
+    pub(crate) fn check_writable_node(&self, id: &str) -> Result<(), FieldError> {
+        let node = self.history[self.cursor]
+            .nodes
+            .get(id)
+            .ok_or_else(|| error("unknown selected node"))?;
+        if let Some(pc) = node.source_pc {
+            self.writable(pc)?;
+        }
+        Ok(())
+    }
     pub(super) fn writable(&self, pc: usize) -> Result<(), FieldError> {
         let block = self
             .base

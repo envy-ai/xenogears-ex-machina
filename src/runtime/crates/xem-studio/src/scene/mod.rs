@@ -15,6 +15,7 @@ pub mod event_document;
 mod event_state;
 pub mod formats;
 pub mod geometry;
+pub mod placements;
 pub mod textures;
 pub mod topology;
 

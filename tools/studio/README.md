@@ -953,3 +953,18 @@ current entity. Unreachable bindings are retained, and restoring a dangling one
 is an atomic error. New or explicitly edited unresolved scene selectors are
 refused with their original reason. All changes, both allocators and captures
 are adopted together only after candidate bundle validation.
+
+To inspect and explicitly transform a qualified source placement instruction:
+
+```json
+{"op":"field.scene.draft","args":{"kind":"placement","scene":1,"node":"pc:15"}}
+{"op":"field.scene.draft","args":{"kind":"edit","scene":1,"revision":0,"action":{"kind":"set_placement","change":{"node":"pc:15","actor":"descriptor:0","event":0,"position":[120,null,80],"layer":null}}}}
+```
+
+The example requires that this actual stable node be one of the qualified place
+writers in actor0/event0. It is not a generic live actor teleport. Inspection
+returns signed immediate/variable/floor coordinates, all graph owner contexts,
+capability and persistent diagnostic strings. Unsupported, shared, pinned or
+variable-derived bindings fail explicitly. X/Z-only floor placement remains
+editable; an entered floor Y is rejected. Edits reuse M6 field transactions and
+therefore participate in the scene's atomic undo/save/build history.

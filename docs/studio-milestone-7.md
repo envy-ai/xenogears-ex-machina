@@ -400,3 +400,62 @@ These backend operations passed the focused history/reference checks and
 Earlier failed compile/launch/lint attempts are retained separately. Actor-row structural integration, qualified
 script placements/entrance CRUD, project UI and original-map package/gameplay
 acceptance remain unfinished. Human M7 mockup approval is still required.
+
+## Explicit script placement contract
+
+`field.scene.draft` kind `placement` inspects a stable node; `set_placement` is
+a revisioned scene action. Qualified source writers are `field_event_place`,
+`place_on_layer`, `place_at_height` and `set_position`. Canonical opcode metadata
+still owns their forms/operands/flags. The adapter exposes source/world xyz even
+though these handlers encode x,z,y. Signed immediate coordinates, variable
+references and collision-derived floor Y are distinct. Floor placement supports
+immediate X/Z changes while Y remains read-only; variable coordinates cannot
+be silently converted by a viewport gesture. A requested explicit layer must
+exist in the decoded 1..4 layer namespace.
+
+The shared graph index reverses only its existing followed edges, with a visited
+set, to enumerate every actor/event owner. A targeted single-actor transform is
+refused when the instruction has multiple actor contexts. The selected stable
+actor/event must actually own that instruction. Original M6 source writability
+and current pinned storage also constrain the reported capability; a relocated
+PC does not erase its source restriction. No first/last writer or runtime
+execution/floor result is inferred. In particular, `place_at_height` changes
+actor Y after floor placement; descriptor/model pose can differ.
+
+Preparation produces an existing M6 batch with only the selected fields, keeping
+unrelated instruction flags and code. Scene validation/undo/history/persistence
+remains the sole transaction boundary. This backend extension passed8 placement,5 structure and7 event-history cases,
+strict Studio lint/source checks, and94-step exact native/default-WASM protocol
+replay at checkpoints41–45. Checkpoint44's skipped downstream stages and misleading
+outer0 are explicitly retained as a harness failure. These are not UI or
+live-pose/gameplay acceptance.
+
+## Actor transaction implementation direction
+
+Consumer-derived runtime qualifications constrain supported actor creation: the
+sprite callback stores a signed16 index (`SpriteSequencer.actor`, `sprite.h:166`,
+`field.c:2487,2570`). Actor self selectors resolve0xfb to the current actor, but
+several consumers treat resolved0xff as absent (`field_event.c:8681–8695,9046,9434`).
+`ridden_actor` and linked-actor+75 are bytes with sentinel/truncation concerns
+(`actors.h:70`, `field_motion.c:3598,3654`, `field_event.c:3092`). Generic actor
+creation therefore needs indices0..254; this is a qualification of that operation,
+not a universal actor-count format limit. Existing wider original tables remain
+losslessly inspectable; no32-actor assumption is introduced.
+
+The next actor implementation must retain the original source bundle/M6 base and
+explicitly derive a private virtual event-row namespace, growing only metadata
+over identical original code. Original rows and actor0 stay fixed in that
+namespace; final runtime rows/descriptors are rebuilt together from stable active
+actor IDs. A proven original end-slot instruction seeds empty virtual rows.
+Existing M6 actions are replayed with the same IDs/allocation starts against that
+derivation; compiled bytes never become original input.
+
+Actor duplication should independently copy qualified event code through the M6
+NodeInput/target primitive, preserving explicit literal targets and symbolic self.
+Copies capture literal bindings against the pre-insertion namespace before
+static descriptors move. Paired/inline/relative/unclosed or party-owner scripts
+remain explicit atomic refusals until separately qualified. New scene event
+operations address stable actors rather than exposing transient virtual row
+indices. Final compilation includes only active rows for reachability/reference
+closure while retaining original storage, contexts and monotonic IDs/history.
+This direction is not implemented or accepted yet; new UI remains human-gated.

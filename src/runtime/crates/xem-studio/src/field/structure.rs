@@ -225,6 +225,37 @@ impl<'a> StructureIndex<'a> {
         Ok(Some(entry))
     }
 
+    /// Every source actor/event context that can reach a decoded instruction.
+    /// Reverse the same followed-edge graph used for folding; this avoids
+    /// re-walking each event and handles cycles/shared helpers conservatively.
+    pub fn instruction_owners(
+        &self,
+        pc: usize,
+    ) -> Result<Vec<super::lanes::EventLocation>, FieldError> {
+        let root = *self.by_pc.get(&pc).ok_or_else(|| {
+            FieldError::new(
+                "invalid_instruction",
+                "instruction PC is not decoded in this graph",
+            )
+        })?;
+        let mut ancestors = BTreeSet::new();
+        let mut pending = vec![root];
+        while let Some(vertex) = pending.pop() {
+            if ancestors.insert(vertex) {
+                pending.extend(self.previous[vertex].iter().copied());
+            }
+        }
+        let mut owners = Vec::new();
+        for (actor, entries) in self.entries.iter().enumerate() {
+            for (event, entry) in entries.iter().enumerate() {
+                if entry.is_some_and(|entry| ancestors.contains(&entry)) {
+                    owners.push(super::lanes::EventLocation { actor, event });
+                }
+            }
+        }
+        Ok(owners)
+    }
+
     /// Reachable instruction PCs in ascending order, independently of folding.
     pub fn reachable_pcs(&self, actor: usize, event: usize) -> Result<Vec<usize>, FieldError> {
         Ok(match self.entry(actor, event)? {

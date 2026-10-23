@@ -26,7 +26,51 @@ fn scene_open_args(bytes: Vec<u8>) -> Value {
     json!({"kind":"open","input":args["input"],"entrances":args["entrances"]})
 }
 
+fn placement_open_args(bytes: Vec<u8>) -> Value {
+    let args = scene_bundle::scene_args(bytes);
+    json!({"kind":"open","input":args["input"],"entrances":[]})
+}
+
 const BYTECODE_OFFSET: usize = 132 + 64;
+
+fn placement_scene_bundle(
+    actor_count: usize,
+    entries: &[(usize, usize, usize)],
+    code: &[u8],
+) -> Vec<u8> {
+    const HEADER: usize = 132;
+    const ROW: usize = 64;
+    let mut events = vec![0; HEADER + actor_count * ROW + code.len()];
+    events[128..132].copy_from_slice(&(actor_count as u32).to_le_bytes());
+    for &(actor, event, pc) in entries {
+        assert!(actor < actor_count && event < 32 && pc <= u16::MAX as usize);
+        let offset = HEADER + actor * ROW + event * 2;
+        events[offset..offset + 2].copy_from_slice(&(pc as u16).to_le_bytes());
+    }
+    let code_start = HEADER + actor_count * ROW;
+    events[code_start..].copy_from_slice(code);
+
+    let mut components = scene_bundle::components();
+    components[5] = events;
+    let original = scene_bundle::bundle(&components);
+    if actor_count == 1 {
+        return original;
+    }
+    let source = xem_studio::scene::bundle::Source::load(xem_studio::scene::bundle::Input {
+        bundle: original,
+        context: None,
+        source: None,
+        module_sha256: None,
+    })
+    .expect("load complete synthetic source bundle");
+    let mut header = source.header.clone();
+    while header.descriptors.len() < actor_count {
+        header.descriptors.push(header.descriptors[0].clone());
+    }
+    source
+        .repack(&header, &Default::default())
+        .expect("add source-backed descriptors for synthetic actor rows")
+}
 
 fn scene_components_with_zone_event() -> Vec<Vec<u8>> {
     let mut components = scene_bundle::components();
@@ -1307,6 +1351,237 @@ fn writes_native_scene_command_trace_for_wasm_replay_when_requested() {
         &mut trace,
         "field.scene.draft",
         json!({"kind":"close","scene":imported_event_scene}),
+    );
+
+    // Placement commands use the same typed scene protocol and remain bound
+    // to an explicit actor/event owner. The successful route edits floor X/Z
+    // while leaving the engine-derived Y untouched, then checks history and
+    // export/import through the exact native/WASM request stream.
+    let placement_bundle =
+        placement_scene_bundle(2, &[(0, 0, 1)], &[0xff, 0x19, 1, 0, 2, 0, 0xc0, 0x00]);
+    let placement_open = record(
+        &studio,
+        &mut trace,
+        "field.scene.draft",
+        placement_open_args(placement_bundle),
+    );
+    let placement_scene = placement_open["ok"]["scene"].as_u64().unwrap() as u32;
+    let described = record(
+        &studio,
+        &mut trace,
+        "field.scene.draft",
+        json!({"kind":"placement","scene":placement_scene,"node":"pc:1"}),
+    );
+    assert_eq!(described["ok"]["handler"], "field_event_place");
+    assert_eq!(
+        described["ok"]["owners"],
+        json!([{"actor":"descriptor:0","event":0}])
+    );
+    assert_eq!(described["ok"]["position"][1]["kind"], "floor");
+
+    let owner_mismatch = record(
+        &studio,
+        &mut trace,
+        "field.scene.draft",
+        json!({"kind":"edit","scene":placement_scene,"revision":0,
+        "action":{"kind":"set_placement","change":{
+            "node":"pc:1","actor":"descriptor:1","event":0,
+            "position":[9,null,null],"layer":null
+        }}}),
+    );
+    assert_eq!(
+        owner_mismatch["error"]["kind"],
+        "unsupported_scene_placement"
+    );
+    let floor_y = record(
+        &studio,
+        &mut trace,
+        "field.scene.draft",
+        json!({"kind":"edit","scene":placement_scene,"revision":0,
+        "action":{"kind":"set_placement","change":{
+            "node":"pc:1","actor":"descriptor:0","event":0,
+            "position":[null,99,null],"layer":null
+        }}}),
+    );
+    assert_eq!(floor_y["error"]["kind"], "unsupported_scene_placement");
+    let overflow = record_wire(
+        &studio,
+        &mut trace,
+        format!(
+            "{{\"op\":\"field.scene.draft\",\"args\":{{\"kind\":\"edit\",\"scene\":{placement_scene},\"revision\":0,\"action\":{{\"kind\":\"set_placement\",\"change\":{{\"node\":\"pc:1\",\"actor\":\"descriptor:0\",\"event\":0,\"position\":[32768,null,null],\"layer\":null}}}}}}}}"
+        ),
+    );
+    assert_eq!(overflow["error"]["kind"], "invalid_args");
+
+    let edited_placement = record(
+        &studio,
+        &mut trace,
+        "field.scene.draft",
+        json!({"kind":"edit","scene":placement_scene,"revision":0,
+        "action":{"kind":"set_placement","change":{
+            "node":"pc:1","actor":"descriptor:0","event":0,
+            "position":[-123,null,456],"layer":null
+        }}}),
+    );
+    assert_eq!(edited_placement["ok"]["state"]["revision"], 1);
+    let edited_binding = record(
+        &studio,
+        &mut trace,
+        "field.scene.draft",
+        json!({"kind":"placement","scene":placement_scene,"node":"pc:1"}),
+    );
+    assert_eq!(
+        edited_binding["ok"]["position"][0],
+        json!({"kind":"immediate","value":-123})
+    );
+    assert_eq!(edited_binding["ok"]["position"][1]["kind"], "floor");
+    assert_eq!(
+        edited_binding["ok"]["position"][2],
+        json!({"kind":"immediate","value":456})
+    );
+    record(
+        &studio,
+        &mut trace,
+        "field.scene.draft",
+        json!({"kind":"undo","scene":placement_scene,"revision":1}),
+    );
+    record(
+        &studio,
+        &mut trace,
+        "field.scene.draft",
+        json!({"kind":"redo","scene":placement_scene,"revision":2}),
+    );
+    let placement_compile = record(
+        &studio,
+        &mut trace,
+        "field.scene.draft",
+        json!({"kind":"compile","scene":placement_scene}),
+    );
+    let compiled_event_bytes = byte_array(&placement_compile["ok"]["events"]["bytes"]);
+    let placement_code_offset = 132 + 2 * 64;
+    assert_eq!(
+        i16::from_le_bytes([
+            compiled_event_bytes[placement_code_offset + 2],
+            compiled_event_bytes[placement_code_offset + 3]
+        ]),
+        -123
+    );
+    assert_eq!(
+        u16::from_le_bytes([
+            compiled_event_bytes[placement_code_offset + 4],
+            compiled_event_bytes[placement_code_offset + 5]
+        ]),
+        456
+    );
+    let placement_export = record(
+        &studio,
+        &mut trace,
+        "field.scene.draft",
+        json!({"kind":"export","scene":placement_scene}),
+    );
+    record(
+        &studio,
+        &mut trace,
+        "field.scene.draft",
+        json!({"kind":"close","scene":placement_scene}),
+    );
+
+    let variable_bundle =
+        placement_scene_bundle(1, &[(0, 0, 1)], &[0xff, 0x19, 5, 0, 9, 0, 0, 0x00]);
+    let variable_open = record(
+        &studio,
+        &mut trace,
+        "field.scene.draft",
+        placement_open_args(variable_bundle),
+    );
+    let variable_scene = variable_open["ok"]["scene"].as_u64().unwrap() as u32;
+    let variable_binding = record(
+        &studio,
+        &mut trace,
+        "field.scene.draft",
+        json!({"kind":"placement","scene":variable_scene,"node":"pc:1"}),
+    );
+    assert_eq!(variable_binding["ok"]["can_transform"], false);
+    let variable_edit = record(
+        &studio,
+        &mut trace,
+        "field.scene.draft",
+        json!({"kind":"edit","scene":variable_scene,"revision":0,
+        "action":{"kind":"set_placement","change":{
+            "node":"pc:1","actor":"descriptor:0","event":0,
+            "position":[100,null,null],"layer":null
+        }}}),
+    );
+    assert_eq!(
+        variable_edit["error"]["kind"],
+        "unsupported_scene_placement"
+    );
+    record(
+        &studio,
+        &mut trace,
+        "field.scene.draft",
+        json!({"kind":"close","scene":variable_scene}),
+    );
+
+    let pinned_bundle = placement_scene_bundle(
+        1,
+        &[(0, 0, 1), (0, 1, 3)],
+        &[0xff, 0x1d, 1, 1, 0x1d, 2, 0, 3, 0, 0, 0x00],
+    );
+    let pinned_open = record(
+        &studio,
+        &mut trace,
+        "field.scene.draft",
+        placement_open_args(pinned_bundle),
+    );
+    let pinned_scene = pinned_open["ok"]["scene"].as_u64().unwrap() as u32;
+    let pinned_binding = record(
+        &studio,
+        &mut trace,
+        "field.scene.draft",
+        json!({"kind":"placement","scene":pinned_scene,"node":"pc:1"}),
+    );
+    assert_eq!(pinned_binding["ok"]["can_transform"], false);
+    let pinned_edit = record(
+        &studio,
+        &mut trace,
+        "field.scene.draft",
+        json!({"kind":"edit","scene":pinned_scene,"revision":0,
+        "action":{"kind":"set_placement","change":{
+            "node":"pc:1","actor":"descriptor:0","event":0,
+            "position":[8,null,null],"layer":null
+        }}}),
+    );
+    assert_eq!(pinned_edit["error"]["kind"], "unsupported_scene_placement");
+    record(
+        &studio,
+        &mut trace,
+        "field.scene.draft",
+        json!({"kind":"close","scene":pinned_scene}),
+    );
+
+    let placement_imported = record(
+        &studio,
+        &mut trace,
+        "field.scene.draft",
+        json!({"kind":"import","document":placement_export["ok"]}),
+    );
+    let imported_placement_scene = placement_imported["ok"]["scene"].as_u64().unwrap() as u32;
+    let placement_recompiled = record(
+        &studio,
+        &mut trace,
+        "field.scene.draft",
+        json!({"kind":"compile","scene":imported_placement_scene}),
+    );
+    assert_eq!(
+        placement_recompiled["ok"]["bundle"],
+        placement_compile["ok"]["bundle"]
+    );
+    record(
+        &studio,
+        &mut trace,
+        "field.scene.draft",
+        json!({"kind":"close","scene":imported_placement_scene}),
     );
 
     let fixture = json!({"schema_version":1,"synthetic_only":true,"trace":trace});

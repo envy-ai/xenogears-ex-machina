@@ -40,6 +40,10 @@ pub enum Request {
     Snapshot {
         scene: u32,
     },
+    Placement {
+        scene: u32,
+        node: String,
+    },
     Compile {
         scene: u32,
     },
@@ -122,6 +126,7 @@ impl Scenes {
                 self.snapshot(scene)
             }
             Request::Snapshot { scene } => self.snapshot(scene),
+            Request::Placement { scene, node } => Ok(json!(self.get(scene)?.placement(&node)?)),
             Request::Compile { scene } => Ok(json!(self.get(scene)?.compile()?)),
             Request::Export { scene } => Ok(json!(self.get(scene)?.document())),
             Request::Close { scene } => {
