@@ -44,7 +44,7 @@ export const DEFAULT_WORKSPACE_LAYOUT: WorkspaceLayoutV2 = {
     left: { size: 300, stacks: [
       { id: 'project', panels: ['project'], activePanel: 'project', weight: 1 }
     ] },
-    right: { size: 420, stacks: [{ id: 'live', panels: ['live'], activePanel: 'live', weight: 1 }, { id: 'inspector', panels: ['inspector'], activePanel: 'inspector', weight: 1.3 }] },
+    right: { size: 420, stacks: [{ id: 'live', panels: ['live'], activePanel: 'live', weight: 1 }, { id: 'inspector', panels: ['inspector'], activePanel: 'inspector', weight: 3.5 }] },
     bottom: { size: 220, stacks: [
       { id: 'backend', panels: ['backend'], activePanel: 'backend', weight: 2 },
       { id: 'log', panels: ['log'], activePanel: 'log', weight: 1 }

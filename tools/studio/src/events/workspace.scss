@@ -32,3 +32,7 @@
 .event-disc-sources > summary {cursor:pointer;}
 .event-disc-sources[open] {display:flex;flex-direction:column;gap:6px;}
 .event-draft-diagnostic > summary {cursor:pointer;}
+
+// This list has a body and no header/footer; reuse the registered body-only grid.
+.event-map-list {grid-template-rows:minmax(0,1fr);}
+.event-disc-browser--scene > .event-map-list {flex:0 0 66px;min-height:66px;max-height:66px;overflow:hidden;}

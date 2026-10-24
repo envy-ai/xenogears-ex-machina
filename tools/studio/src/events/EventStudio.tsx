@@ -383,6 +383,8 @@ export function useEventNavigation() {
 export function DiscBrowser() {
   const s = useEvents();
   const [path, setPath] = useState('');
+  const browserRef=useRef<HTMLElement>(null);
+  useEffect(()=>{browserRef.current?.querySelector<HTMLElement>('[data-map][aria-pressed="true"]')?.scrollIntoView({block:'nearest'});},[s.map,s.activeDisc,s.view,s.filter]);
   const [catalogue, setCatalogue] = useState<ServerDiscs | null>(null);
   const [serverId, setServerId] = useState('');
   const [serverLoading, setServerLoading] = useState(false);
@@ -404,13 +406,14 @@ export function DiscBrowser() {
   };
   const disc = s.discs.find(disc => disc.session.id === s.activeDisc);
   const maps = disc?.maps.filter(map => `${map.map} ${map.placeholder ? 'placeholder' : ''}`.includes(s.filter.toLowerCase())) ?? [];
-  return <section className={`event-disc-browser${s.view==='scene'?' event-disc-browser--scene':''}`} aria-label="Disc and map browser" onKeyDown={event => {
+  return <section ref={browserRef} className={`event-disc-browser${s.view==='scene'?' event-disc-browser--scene':''}`} aria-label="Disc and map browser" onKeyDown={event => {
     if (!(event.target instanceof HTMLElement) || !event.target.matches('[data-map]')) return;
     const buttons = [...event.currentTarget.querySelectorAll<HTMLButtonElement>('[data-map]')]; const at = buttons.indexOf(event.target as HTMLButtonElement);
     const next = event.key === 'ArrowDown' ? at + 1 : event.key === 'ArrowUp' ? at - 1 : event.key === 'Home' ? 0 : event.key === 'End' ? buttons.length - 1 : -1;
     if (next >= 0 && next < buttons.length) { event.preventDefault(); buttons[next].focus(); }
   }}>
     <h2 className="editor-heading editor-heading--section">Discs</h2>
+    {s.map!==null&&<p className="editor-text editor-text--code" aria-label="Current map">Disc {disc?.session.status.identity?.disc??'test'} · Map {s.map}</p>}
     <details className="event-disc-sources" open={s.view!=='scene'}><summary className="editor-text">Open disc sources</summary>
     {nativeHost ? <form onSubmit={event => { event.preventDefault(); s.openNativePath(path).catch(s.report); }} className="editor-field-list"><label className="editor-field editor-field-label"><span>Disc image path</span><input className="editor-control editor-control--text" value={path} onChange={event => setPath(event.target.value)} /></label><button className="editor-button" disabled={!s.backend || Boolean(s.busy)} type="submit">Open disc path</button></form>
       : <label className="editor-field editor-field-label"><span>Open disc files</span><input className="editor-control editor-control--file" type="file" multiple accept=".chd,.bin,.cue" disabled={!s.backend || Boolean(s.busy)} onChange={event => { const files = [...event.target.files ?? []]; event.target.value = ''; s.openFiles(files).catch(s.report); }} /></label>}
@@ -422,11 +425,12 @@ export function DiscBrowser() {
       </select></label><button className="editor-button" disabled={!serverId || serverLoading || Boolean(s.busy)} onClick={() => openServer().catch(s.report)}>Open server disc</button></>}
       <p className="editor-text editor-text--secondary" role="status">{serverLoading ? 'Reading server discs…' : catalogue ? catalogue.enabled ? 'Server files · read only' : 'Server disc access is not configured.' : 'Open an image from the configured server folder.'}</p>
     </div>}
+    {s.discs.map(item => <div className="event-disc-row" key={item.session.id}><button className="editor-button" aria-pressed={s.activeDisc === item.session.id} onClick={() => s.setActiveDisc(item.session.id)}>Disc {item.session.status.identity?.disc ?? 'test'} · {item.maps.length} maps</button><button className="editor-button editor-button--compact" aria-label={`Close disc ${item.session.id}`} title="Close disc" onClick={() => s.closeDisc(item.session.id).catch(s.report)}>Close</button></div>)}
     </details>
     <p hidden={s.view==='scene'&&!s.busy} className="editor-text" role="status">{s.busy || (s.discs.length ? `${s.discs.length} recognized disc sessions` : 'Open your own CHD or BIN/CUE image.')}</p>
-    {s.discs.map(item => <div className="event-disc-row" key={item.session.id}><button className="editor-button" aria-pressed={s.activeDisc === item.session.id} onClick={() => s.setActiveDisc(item.session.id)}>Disc {item.session.status.identity?.disc ?? 'test'} · {item.maps.length} maps</button><button className="editor-button editor-button--compact" aria-label={`Close disc ${item.session.id}`} title="Close disc" onClick={() => s.closeDisc(item.session.id).catch(s.report)}>Close</button></div>)}
+
     <label className="editor-field editor-field-label"><span>Filter maps</span><input ref={s.filterRef} className="editor-control editor-control--text" value={s.filter} onChange={event => s.setFilter(event.target.value)} /></label>
-    <DockerList><DockerListBody>{maps.map(item => <DockerListRow key={item.map} intrinsicHeight columns="1fr"><button data-map={item.map} className="editor-button event-map-row" aria-pressed={s.map === item.map && s.activeDisc === disc?.session.id} onClick={() => disc && s.loadMap(disc.session.id, item.map).catch(s.report)}><span>Map {item.map}</span><span className="editor-text editor-text--secondary">{item.placeholder ? 'Placeholder' : `${item.actor_count} actors · ${item.script_size} bytes`}</span></button></DockerListRow>)}{!maps.length && <DockerListEmpty>{disc ? 'No matching maps.' : 'No disc open.'}</DockerListEmpty>}</DockerListBody></DockerList>
+    <DockerList className="event-map-list"><DockerListBody>{maps.map(item => <DockerListRow key={item.map} intrinsicHeight columns="1fr"><button data-map={item.map} className="editor-button event-map-row" aria-pressed={s.map === item.map && s.activeDisc === disc?.session.id} onClick={() => disc && s.loadMap(disc.session.id, item.map).catch(s.report)}><span>Map {item.map}</span><span className="editor-text editor-text--secondary">{item.placeholder ? 'Placeholder' : `${item.actor_count} actors · ${item.script_size} bytes`}</span></button></DockerListRow>)}{!maps.length && <DockerListEmpty>{disc ? 'No matching maps.' : 'No disc open.'}</DockerListEmpty>}</DockerListBody></DockerList>
     {s.view!=='scene' && s.graph && s.map !== null && <ActorTree graph={s.graph} names={s.displayNames} map={s.map} selection={s.selection} onSelect={s.select} />}
     {s.view==='scene'&&s.draft.sceneSnapshot&&<SceneHierarchy editor={s.sceneEditor}/>}
   </section>;

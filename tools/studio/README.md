@@ -1023,8 +1023,8 @@ and Apply/Cancel occupy a separate fixed region, so actions cannot intercept
 coordinate clicks. Invalid inputs have native aria-invalid and aria-describedby
 links to the visible reason. Invalid/unapplied fields keep the last accepted
 scene while blocking new build/play. Technical stacks remain expandable locally
-or in Log. Runtime observations are read-only; the live pose overlay is not yet
-finished in this increment.
+or in Log. Runtime observations are read-only; the locked pose overlay is qualified by
+source, module, package and stable actor order.
 
 Scene promotion shares the script history, including imported undo/redo state.
 Save uses the existing field-map-N.json name with outer schema2 and strict Scene
@@ -1048,7 +1048,8 @@ Live game. Refresh reads signed16.16 actor XYZ and signed heading only after
 module/family/map/component and stable actor/package-order qualification. Binding
 vanilla source context reimports the same authored history and marks provenance
 unsaved. The orange observation marker is read-only. Seven reader/PC unit tests
-and source review pass, but actual runtime observations/playback remain pending.
+and source review pass; original-map browser observation and exact-package
+native/browser playback now pass as recorded below.
 
 Scene project browser checks now cover imported redo/allocator state, shared
 history/save/reload and stale folder I/O. The actual actor/zone CRUD buttons and
@@ -1057,3 +1058,26 @@ auto-selection and referenced-vertex refusal. Actor-order changes reset temporar
 numeric navigation; persisted source bindings/history remain stable. These are
 standalone editor checks, separate from real native/browser M7 gameplay and NW
 acceptance.
+
+
+M7 checkpoints86/89/90 now verify original Disc1map23 inline authored X29→61,
+actual project save/reload, exact deterministic package Build/Play and same-set
+native/browser gameplay. The authored placement exists at normal field entry
+before Cross; absent/disabled controls stay29. Full map22 bytes/index and Disc2
+pass-through are checked separately. Disc2 runtime coverage is title entry, not
+full story. The saved project reloads under a new owner, rebuilds the exact set
+and normal Frame selection centers the selected marker with surrounding decoded
+collision geometry. Authored and read-only observed coordinates remain visible
+together at1440×900. Sprite VM poses/runtime lighting are not reproduced in the
+editor. SourceY marked floor is disabled and empty; it is not a literal zero.
+
+Overview framing uses visible static source geometry, excluding unresolved actor
+markers/vertex handles/live overlays. F or Frame selection uses the current
+selected object after project/renderer replacement. View→Reset workspace layout
+adopts the new default inspector proportions without replacing saved user layouts.
+Three's exact MIT notice accompanies builds at licenses/three/LICENSE.
+
+NW final checks remain pending at this increment. Smoke runs can retain their
+fresh filesystem fixtures and result artifacts with npm run test:nw --
+--keep-artifacts (add --dev for the existing strict-TLS development launcher).
+This option changes artifact retention only, not Node/TLS permissions.

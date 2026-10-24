@@ -2,15 +2,15 @@ import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 import { mkdir, readFile, realpath, stat, writeFile } from 'node:fs/promises';
 import { join, resolve, sep } from 'node:path';
-import { expect, type Page } from '@playwright/test';
+import { expect, type Locator, type Page } from '@playwright/test';
 import type { CompiledScene, SceneDocument, SceneSnapshot } from '../../src/backend/scenes';
 import type { SourceIdentity } from '../../src/backend/discs';
 
 const repoRoot = resolve(import.meta.dirname, '../../../..');
-const expectedModule = '613c3a747e1c07e0e0e2632710eae1f873e4b14dda880cd6ce1c556b31c152a8';
+export const expectedModule = '613c3a747e1c07e0e0e2632710eae1f873e4b14dda880cd6ce1c556b31c152a8';
 const expectedRuntime = resolve(repoRoot, 'tmp/studio/milestone-6/checkpoint-36/web');
 
-interface SceneInspection { owner: number | null; document: SceneDocument; compiled: CompiledScene }
+export interface SceneInspection { owner: number | null; document: SceneDocument; compiled: CompiledScene }
 interface SceneDriverSnapshot {
   view: string;
   map: number | null;
@@ -35,7 +35,7 @@ interface BrowserRuntime {
   run(command: { cmd: 'frames'; count: number }): Promise<unknown>;
   status(): { running: boolean; session: { vblanks?: number | bigint } | null; page: { sessionGeneration: number } };
 }
-interface CandidatePlacement {
+export interface CandidatePlacement {
   actorId: string;
   actorIndex: number;
   runtimeActor: number;
@@ -48,13 +48,13 @@ function sha256(bytes: Uint8Array): string {
   return createHash('sha256').update(bytes).digest('hex');
 }
 
-function requiredPath(name: string): string {
+export function requiredPath(name: string): string {
   const value = process.env[name];
   if (!value) throw new Error(`${name} is required for the gated M7 original-disc Scene discovery`);
   return resolve(value);
 }
 
-async function inspectInPage(page: Page): Promise<{
+export async function inspectInPage(page: Page): Promise<{
   snapshot: SceneDriverSummary;
   owner: number | null;
   document: {
@@ -74,6 +74,7 @@ async function inspectInPage(page: Page): Promise<{
     cursor: number;
     next_id: number;
     next_event_id: number;
+    sha256: string;
   };
   compiled: { bundle_sha256: string; source_sha256: string; bundle_length: number; event_bytes_sha256: string; event_bytes_length: number; event_bindings: Record<string, number> };
 }> {
@@ -129,6 +130,7 @@ async function inspectInPage(page: Page): Promise<{
         cursor: inspection.document.cursor,
         next_id: inspection.document.next_id,
         next_event_id: inspection.document.next_event_id,
+        sha256: await digest(Array.from(new TextEncoder().encode(JSON.stringify(inspection.document)))),
       },
       compiled: {
         bundle_sha256: inspection.compiled.bundle_sha256,
@@ -142,7 +144,7 @@ async function inspectInPage(page: Page): Promise<{
   });
 }
 
-async function publicRuntimeStatus(gamePage: Page): Promise<{ identity: { module: string; disc: string; packages: string[] }; mode: number | null; disc: number | null; vblanks: number }> {
+export async function publicRuntimeStatus(gamePage: Page): Promise<{ identity: { module: string; disc: string; packages: string[] }; mode: number | null; disc: number | null; vblanks: number }> {
   return gamePage.evaluate(() => {
     const runtime = (window as unknown as { xem: BrowserRuntime }).xem;
     const status = JSON.parse(runtime.commandJson('{"cmd":"status"}')) as { identity: { module: string; disc: string; packages: string[] }; mode?: number; disc?: number; vblanks?: number };
@@ -152,7 +154,7 @@ async function publicRuntimeStatus(gamePage: Page): Promise<{ identity: { module
   });
 }
 
-async function startPublicFieldRoute(gamePage: Page, discPath: string): Promise<void> {
+export async function startPublicFieldRoute(gamePage: Page, discPath: string): Promise<void> {
   await gamePage.locator('#file').setInputFiles(discPath);
   await expect.poll(() => gamePage.locator('#message').textContent(), { timeout: 120_000, intervals: [250, 1000, 2500] })
     .toMatch(/^Xenogears disc 1 \(/);
@@ -178,7 +180,7 @@ async function startPublicFieldRoute(gamePage: Page, discPath: string): Promise<
   });
 }
 
-async function findEditablePlacement(page: Page, scene: Pick<SceneSnapshot, 'actors'>): Promise<CandidatePlacement> {
+export async function findEditablePlacement(page: Page, scene: Pick<SceneSnapshot, 'actors'>): Promise<CandidatePlacement> {
   const filter = page.getByRole('textbox', { name: 'Filter scene entities' });
   const axes = ['X', 'Y', 'Z'];
   for (let actorIndex = 0; actorIndex < scene.actors.length; actorIndex++) {
@@ -214,7 +216,20 @@ async function findEditablePlacement(page: Page, scene: Pick<SceneSnapshot, 'act
   throw new Error('The original map has no visible source actor with an immediate editable placement binding');
 }
 
-export async function runRealSceneStageA(page: Page): Promise<void> {
+export interface RealSceneContinuation {
+  page: Page;
+  gamePage: Page;
+  live: Locator;
+  artifactRoot: string;
+  disc1: string;
+  disc2: string;
+  candidate: CandidatePlacement;
+}
+
+export async function runRealSceneStageA(
+  page: Page,
+  continueAfterReadOnly?: (context: RealSceneContinuation) => Promise<void>,
+): Promise<void> {
   const artifactRoot = requiredPath('XEM_STUDIO_M7_REAL_SCENE_OUTPUT');
   const extractRoot = await realpath(requiredPath('XEM_STUDIO_EXTRACT_ROOT'));
   const disc1 = await realpath(requiredPath('XEM_STUDIO_DISC1'));
@@ -314,6 +329,8 @@ export async function runRealSceneStageA(page: Page): Promise<void> {
   assert.equal(firstScene.document.schema_version, 4);
   assert.equal(firstScene.compiled.source_sha256, firstScene.document.source.source_sha256);
   assert.equal(firstScene.snapshot.map, 23);
+  await expect(page.getByLabel('Current map')).toHaveText('Disc 1 · Map 23');
+  await expect(page.locator('[data-map="23"][aria-pressed="true"]')).toBeVisible();
 
   const scene = firstScene.snapshot.scene;
   assert.ok(scene, 'the actual original-disc Scene is open');
@@ -349,6 +366,11 @@ export async function runRealSceneStageA(page: Page): Promise<void> {
   await expect(page.getByRole('spinbutton', { name: /Scene position [XYZ]/ }).first()).toBeVisible();
 
   const bind = page.getByRole('button', { name: 'Bind original runtime source context', exact: true });
+  const runtimeControls = page.locator('.scene-pose-controls');
+  const runtimeControlsSummary = runtimeControls.locator('summary');
+  await expect(runtimeControlsSummary).toHaveText('Runtime observation controls');
+  if (!(await runtimeControls.evaluate(element => (element as HTMLDetailsElement).open))) await runtimeControlsSummary.click();
+  await expect(runtimeControls).toHaveAttribute('open', '');
   const bindDisabledReason = await bind.getAttribute('title');
   await recordProgress('candidate', {
     phase: 'qualified-placement-before-context-bind',
@@ -462,6 +484,9 @@ export async function runRealSceneStageA(page: Page): Promise<void> {
   expect(pageErrors, `unexpected browser errors: ${pageErrors.join(' | ')}`).toEqual([]);
   expect(gamePageErrors, `unexpected runtime browser errors: ${gamePageErrors.join(' | ')}`).toEqual([]);
 
+  if (await runtimeControls.evaluate(element => (element as HTMLDetailsElement).open)) await runtimeControlsSummary.click();
+  await expect(runtimeControls).not.toHaveAttribute('open', '');
+
   const scenePath = join(artifactRoot, 'm7-real-scene.png');
   const gamePath = join(artifactRoot, 'm7-real-game.png');
   await page.evaluate(async () => { await document.fonts.ready; });
@@ -514,4 +539,5 @@ export async function runRealSceneStageA(page: Page): Promise<void> {
     },
   };
   await writeFile(join(artifactRoot, 'stage-a-summary.json'), `${JSON.stringify(result, null, 2)}\n`, { flag: 'wx' });
+  if (continueAfterReadOnly) await continueAfterReadOnly({ page, gamePage, live, artifactRoot, disc1, disc2, candidate });
 }

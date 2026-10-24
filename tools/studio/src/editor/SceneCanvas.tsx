@@ -5,7 +5,7 @@ import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { TransformControls } from 'three/addons/controls/TransformControls.js';
 import '../styles/scene-canvas.scss';
 export type SceneTool='select'|'move'|'rotate';
-export interface SceneCanvasModel { group:THREE.Group; objects:Map<string,THREE.Object3D>; dispose():void }
+export interface SceneCanvasModel { group:THREE.Group; objects:Map<string,THREE.Object3D>; frameBounds(object?:THREE.Object3D):THREE.Box3; dispose():void }
 export interface SceneTransform {position:[number,number,number];rotation:[number,number,number]}
 export interface SceneCanvasProps {
   model:SceneCanvasModel;selected:string|null;tool:SceneTool;frame:number;disabled:boolean;
@@ -13,7 +13,7 @@ export interface SceneCanvasProps {
   onBeginTransform():()=>void;onTransform(value:SceneTransform):void;onError(error:unknown):void;
 }
 export function SceneCanvas(props:SceneCanvasProps){
-  const host=useRef<HTMLDivElement>(null),latest=useRef(props);latest.current=props;
+  const host=useRef<HTMLDivElement>(null),latest=useRef(props),framedRequest=useRef(props.frame);latest.current=props;
   const engine=useRef<{scene:THREE.Scene;camera:THREE.PerspectiveCamera;orbit:OrbitControls;transform:TransformControls;selection:{object:THREE.Object3D|null;proxy:THREE.Object3D};frame(object?:THREE.Object3D):void}|null>(null);
   const [error,setError]=useState<Error|null>(null),[attempt,setAttempt]=useState(0);
   useEffect(()=>{
@@ -39,7 +39,7 @@ export function SceneCanvas(props:SceneCanvasProps){
         try{validate();latest.current.onTransform(value);}catch(error){fail(error);}
       });
       const frame=(object:THREE.Object3D=latest.current.model.group)=>{
-        const box=new THREE.Box3().setFromObject(object);if(box.isEmpty())return;
+        const box=latest.current.model.frameBounds(object===latest.current.model.group?undefined:object);if(box.isEmpty())return;
         const center=box.getCenter(new THREE.Vector3()),radius=box.getSize(new THREE.Vector3()).length()/2;
         const distance=Math.max(20,radius/Math.sin(camera.fov*Math.PI/360));
         orbit!.target.copy(center);camera.position.copy(center).add(new THREE.Vector3(1,0.8,1).normalize().multiplyScalar(distance));camera.near=Math.max(0.1,distance/10000);camera.far=Math.max(10000,distance*20);camera.updateProjectionMatrix();orbit!.update();
@@ -93,6 +93,7 @@ export function SceneCanvas(props:SceneCanvasProps){
       current.transform.setMode(props.tool==='move'?'translate':'rotate');current.transform.showX=props.axes[0];current.transform.showY=props.axes[1];current.transform.showZ=props.axes[2];current.transform.attach(current.selection.proxy);
     }
   },[props.model,props.selected,props.tool,props.disabled,props.axes,attempt]);
-  useEffect(()=>{const object=props.selected?props.model.objects.get(props.selected):undefined;engine.current?.frame(object);},[props.frame]);
+  // Mount/retry uses qualified overview bounds; only a new F/button request frames selection.
+  useEffect(()=>{if(framedRequest.current===props.frame)return;framedRequest.current=props.frame;const object=props.selected?props.model.objects.get(props.selected):undefined;engine.current?.frame(object);},[props.frame]);
   return <div className="scene-canvas" ref={host}>{error&&<div className="scene-canvas__error"><pre className="editor-text editor-text--danger" role="alert">{error.stack??error.message}</pre><button className="editor-button" onClick={()=>setAttempt(value=>value+1)}>Retry 3D viewport</button></div>}<span className="scene-canvas__help editor-text editor-text--caption">Orbit: drag · Pan: right drag · Zoom: wheel · F: frame · Source axes: Y down</span></div>;
 }

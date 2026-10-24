@@ -173,3 +173,16 @@ exact actor-reader and trigger-zone macro proofs from the matching authored C
 source. `field-scene-bindings.json` is public source-analysis metadata under the
 repository MIT licence. It records full source/function identities and unknown
 roles; it contains no extracted game bytes or copied external opcode registry.
+
+
+## Milestone-seven rendering dependency notice
+
+Three.js is consumed as the exact npm dependency `three@0.186.1` and its controls,
+with package URL/integrity pinned in `package-lock.json`. Its MIT grant permits
+this use and requires the copyright and permission notice to accompany copies.
+`public/licenses/three/LICENSE` is copied byte-for-byte from that pinned package's
+`LICENSE`, SHA-256 `8b378ebe60e2fe500158cb0ac71cb5e8b7d92953c2abcc63a0eb90499653b5bc`; attribution and source identity live in
+`public/licenses/README.md`. Vite carries this public notice into `dist/licenses`
+for the browser/NW build. The existing source policy already permits a UTF-8
+file named `LICENSE`; no data/header exception is widened. This adds no RPG
+Creator extraction or grant extension and includes no original game content.

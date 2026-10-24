@@ -91,6 +91,91 @@ async function projected(page: Page, method: 'project' | 'gizmo', value: string)
   }, { method, value });
 }
 
+function rayPickFixtureInput(value: unknown): unknown {
+  const input = value as { bundle?: unknown; [key: string]: unknown };
+  if (!Array.isArray(input.bundle) || input.bundle.some(byte => !Number.isInteger(byte) || byte < 0 || byte > 255)) {
+    throw new Error('The synthetic scene trace does not contain a byte-valued bundle');
+  }
+  const source = Buffer.from(input.bundle as number[]);
+  const headerEnd = 0x1a0;
+  if (source.length < headerEnd) throw new Error('The synthetic bundle header is truncated');
+  const offsets = Array.from({ length: 9 }, (_, index) => source.readUInt32LE(0x130 + index * 4));
+  const components: Buffer[] = [];
+  for (let index = 0; index < 9; index++) {
+    const logicalSize = source.readUInt32LE(0x10c + index * 4);
+    const offset = offsets[index]!;
+    if (offset < headerEnd || offset > source.length - 4) throw new Error('Synthetic component header is out of bounds');
+    const outputSize = source.readUInt32LE(offset);
+    if (outputSize < logicalSize || outputSize - logicalSize > 16 || outputSize % 8 !== 0) {
+      throw new Error('Synthetic component output exceeds its declared allocation');
+    }
+    const groupCount = outputSize / 8;
+    const terminalOffset = offset + 4 + outputSize + groupCount;
+    const packedEnd = terminalOffset + 1;
+    if (packedEnd > source.length) throw new Error('Synthetic component stream is truncated');
+    const nextOffset = offsets.filter(candidate => candidate > offset).sort((left, right) => left - right)[0];
+    if (nextOffset !== undefined && packedEnd > nextOffset) throw new Error('Synthetic component overlaps the next packed stream');
+    const output = Buffer.alloc(outputSize);
+    let cursor = offset + 4;
+    let written = 0;
+    while (written < output.length) {
+      if (cursor + 9 > source.length) throw new Error('Synthetic literal group is truncated');
+      const flags = source[cursor++];
+      if (flags !== 0) throw new Error('The synthetic ray-pick fixture requires its literal-only input streams');
+      const count = 8;
+      if (written + count > output.length) throw new Error('Synthetic literal group exceeds its declared output');
+      const copied = source.copy(output, written, cursor, cursor + count);
+      if (copied !== count) throw new Error('Synthetic literal group is incomplete');
+      cursor += 8;
+      written += count;
+    }
+    if (cursor !== terminalOffset || source[cursor] !== 0) {
+      throw new Error('The synthetic source component is missing its terminal literal flag');
+    }
+    components.push(output);
+  }
+
+  const geometry = components[2]!;
+  if (geometry.length < 8) throw new Error('The synthetic geometry component header is truncated');
+  const group = geometry.readUInt32LE(4);
+  if (group > geometry.length - 16) throw new Error('The synthetic geometry group header is out of bounds');
+  if (geometry.readUInt32LE(group) !== 1) throw new Error('The synthetic ray-pick fixture expects one geometry group');
+  const model = group + 16;
+  if (model > geometry.length - 12) throw new Error('The synthetic model header is truncated');
+  const vertexCount = geometry.readUInt16LE(model + 2);
+  const vertexRelative = geometry.readUInt32LE(model + 8);
+  if (vertexRelative > geometry.length - group) throw new Error('The synthetic vertex span is out of bounds');
+  const vertices = group + vertexRelative;
+  if (vertexCount < 3 || vertices > geometry.length - 3 * 8) throw new Error('The synthetic ray-pick model lacks a complete triangle');
+  // Replace only the first FT3 source triangle with a non-degenerate X/Z plane.
+  // This remains a normal decoded source mesh; the test still uses real canvas picking.
+  for (const [index, point] of [[0, 0, 0, 0], [3, 0, 0, 0], [0, 0, 3, 0]].entries()) {
+    for (let axis = 0; axis < 4; axis++) geometry.writeInt16LE(point[axis]!, vertices + index * 8 + axis * 2);
+  }
+
+  let bundle = Buffer.from(source.subarray(0, headerEnd));
+  for (let index = 0; index < components.length; index++) {
+    const component = components[index]!;
+    const paddedSize = (component.length + 7) & ~7;
+    const packed = Buffer.alloc(4 + paddedSize + paddedSize / 8 + 1);
+    packed.writeUInt32LE(paddedSize, 0);
+    let sourceOffset = 0;
+    let targetOffset = 4;
+    while (sourceOffset < component.length) {
+      packed[targetOffset++] = 0;
+      const count = Math.min(8, component.length - sourceOffset);
+      component.copy(packed, targetOffset, sourceOffset, sourceOffset + count);
+      targetOffset += 8;
+      sourceOffset += count;
+    }
+    packed[packed.length - 1] = 0;
+    while (bundle.length % 4) bundle = Buffer.concat([bundle, Buffer.from([0xcc])]);
+    bundle.writeUInt32LE(bundle.length, 0x130 + index * 4);
+    bundle = Buffer.concat([bundle, packed]);
+  }
+  return { ...input, bundle: Array.from(bundle) };
+}
+
 async function expectSceneLayout(page: Page, expectedInlineState: 'clean' | 'dirty' | 'invalid'): Promise<void> {
   expect(page.viewportSize()).toEqual({ width: 1440, height: 900 });
   const canvas = page.locator('canvas[aria-label="3D field scene viewport"]');
@@ -193,10 +278,16 @@ test('synthetic Scene editing preserves the Rust owner through tree, fields, pic
   await page.locator('[data-scene-id="zone:0"]').click();
   await cornerX.fill(String(originalCornerX + 17));
   await expect(page.getByRole('button', { name: 'Apply scene fields' })).toBeEnabled();
-  await page.getByRole('button', { name: 'Apply scene fields' }).click();
+  const backendCommand = page.getByRole('textbox', { name: 'Command (JSON)' });
+  await backendCommand.fill('{"op":"echo","args":{"message":"m7-scene-ctrl-enter-must-not-send"}}');
+  const logCountBeforeSceneApply = await page.locator('.studio-log-entry').count();
+  await cornerX.focus();
+  await page.keyboard.press('Control+Enter');
   const applied = await sceneSnapshot(page);
   expect(applied.revision).toBe(initial.revision + 1);
   expect(applied.zones[0].value.corners[0][0]).toBe(originalCornerX + 17);
+  await expect(page.locator('.studio-log-entry')).toHaveCount(logCountBeforeSceneApply);
+  await expect(page.locator('.studio-log-entry').filter({ hasText: 'm7-scene-ctrl-enter-must-not-send' })).toHaveCount(0);
   await page.getByRole('button', { name: 'Undo', exact: true }).click();
   expect((await sceneSnapshot(page)).zones[0].value.corners[0][0]).toBe(originalCornerX);
   await page.getByRole('button', { name: 'Redo', exact: true }).click();
@@ -717,6 +808,83 @@ test('synthetic Scene CRUD keeps stable IDs and event ownership while refusing a
   expect(afterRefusedDelete.collision_entities).toEqual(beforeRefusedDelete.collision_entities);
   expect(afterRefusedDelete.events).toEqual(beforeRefusedDelete.events);
   expect(afterRefusedDelete.revision).toBe(owner.revision);
+});
+
+test('Scene overview ignores distant actor markers while Frame and ray picking still reach them', async ({ page }) => {
+  test.setTimeout(90_000);
+  const fixturePath = process.env.XEM_STUDIO_SCENE_UI_FIXTURE;
+  test.skip(!fixturePath, 'the native scene command trace provides a synthetic-only source');
+  const fixture = JSON.parse(readFileSync(fixturePath!, 'utf8')) as SceneTrace;
+  expect(fixture.synthetic_only).toBe(true);
+  const decoded = fixture.trace.find(step => {
+    const request = JSON.parse(step.request_json) as { op?: string };
+    return request.op === 'field.scene.decode' && typeof (step.response as { ok?: unknown }).ok !== 'undefined';
+  });
+  expect(decoded).toBeDefined();
+  const request = JSON.parse(decoded!.request_json) as { args: { input: unknown; entrances: number[] } };
+
+  await page.goto('/');
+  await expect(page.locator('[data-panel-id="backend"]')).toContainText('xem-studio 0.5.0');
+  await expect.poll(() => page.evaluate(() => typeof (window as unknown as { __xemStudioTest?: SceneTestHook }).__xemStudioTest?.loadScene)).toBe('function');
+  await loadScene(page, rayPickFixtureInput(request.args.input), request.args.entrances, 23);
+  const initial = await sceneSnapshot(page);
+  const sourceActor = initial.actors[0]!;
+  expect(initial.descriptors.some(item => item.id === sourceActor.id)).toBe(true);
+  await page.locator(`[data-scene-id="${sourceActor.id}"]`).click();
+  await page.getByRole('button', { name: 'Duplicate', exact: true }).click();
+  let current = await sceneSnapshot(page);
+  const firstCopy = current.actors.find(actor => !initial.actors.some(original => original.id === actor.id));
+  expect(firstCopy).toBeDefined();
+  await page.getByRole('spinbutton', { name: 'Scene position X' }).fill('30000');
+  await page.getByRole('button', { name: 'Apply scene fields' }).click();
+  current = await sceneSnapshot(page);
+  expect(current.descriptors.find(item => item.id === firstCopy!.id)?.value.position[0]).toBe(30000);
+
+  await page.locator(`[data-scene-id="${sourceActor.id}"]`).click();
+  await page.getByRole('button', { name: 'Duplicate', exact: true }).click();
+  current = await sceneSnapshot(page);
+  const secondCopy = current.actors.find(actor => !initial.actors.some(original => original.id === actor.id)
+    && actor.id !== firstCopy!.id);
+  expect(secondCopy).toBeDefined();
+  await page.getByRole('spinbutton', { name: 'Scene position X' }).fill('30012');
+  await page.getByRole('button', { name: 'Apply scene fields' }).click();
+  current = await sceneSnapshot(page);
+  expect(current.descriptors.find(item => item.id === secondCopy!.id)?.value.position[0]).toBe(30012);
+
+  // The normal new-source overview fits source geometry, not the two valid but distant marker boxes.
+  const firstOverviewPoint = await projected(page, 'project', firstCopy!.id);
+  const secondOverviewPoint = await projected(page, 'project', secondCopy!.id);
+  expect(firstOverviewPoint.visible).toBe(false);
+  expect(secondOverviewPoint.visible).toBe(false);
+
+  await page.locator(`[data-scene-id="${firstCopy!.id}"]`).click();
+  await page.getByRole('button', { name: 'Frame selection' }).click();
+  const firstFramedPoint = await projected(page, 'project', firstCopy!.id);
+  const secondFramedPoint = await projected(page, 'project', secondCopy!.id);
+  expect(firstFramedPoint.visible).toBe(true);
+  expect(secondFramedPoint.visible).toBe(true);
+  const canvas = page.locator('canvas[aria-label="3D field scene viewport"]');
+  const bounds = await canvas.boundingBox();
+  expect(bounds).not.toBeNull();
+  await page.locator(`[data-scene-id="${sourceActor.id}"]`).click();
+  const point = await projected(page, 'project', secondCopy!.id);
+  expect(point.visible).toBe(true);
+  await canvas.click({ position: await canvas.evaluate((element, value) => ({
+    x: value.x - element.getBoundingClientRect().left,
+    y: value.y - element.getBoundingClientRect().top,
+  }), point) });
+  await expect.poll(async () => (await hookSnapshot(page)).sceneSelection).toBe(secondCopy!.id);
+  expect(await sceneSnapshot(page)).toEqual(current);
+
+  // A previous explicit frame request belongs to the old canvas instance. On
+  // remount, the source overview returns; framing the selected outlier is explicit.
+  await page.getByRole('tab', { name: 'Command list' }).click();
+  await page.getByRole('tab', { name: 'Scene', exact: true }).click();
+  await expect(page.getByRole('tabpanel', { name: 'Scene' })).toBeVisible();
+  expect((await hookSnapshot(page)).sceneSelection).toBe(secondCopy!.id);
+  expect((await projected(page, 'project', secondCopy!.id)).visible).toBe(false);
+  await page.getByRole('button', { name: 'Frame selection' }).click();
+  expect((await projected(page, 'project', secondCopy!.id)).visible).toBe(true);
 });
 
 test('synthetic Scene inspects only selected entrance records without changing bytes, then edits X/Z transactionally', async ({ page }) => {

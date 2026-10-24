@@ -977,6 +977,7 @@ src/runtime/crates/xem-studio/tests/disc.rs
 src/runtime/crates/xem-studio/tests/field.rs
 src/runtime/crates/xem-studio/tests/field_draft.rs
 src/runtime/crates/xem-studio/tests/field_draft_parity.rs
+src/runtime/crates/xem-studio/tests/field_m7_scene_package.rs
 src/runtime/crates/xem-studio/tests/field_real_edit.rs
 src/runtime/crates/xem-studio/tests/field_real_package.rs
 src/runtime/crates/xem-studio/tests/field_relocation.rs
@@ -1311,6 +1312,8 @@ tools/studio/public/fonts/inconsolata/Inconsolata-Variable.ttf
 tools/studio/public/fonts/inconsolata/OFL.txt
 tools/studio/public/fonts/inter/Inter-Variable.ttf
 tools/studio/public/fonts/inter/OFL.txt
+tools/studio/public/licenses/README.md
+tools/studio/public/licenses/three/LICENSE
 tools/studio/scene_bindings.py
 tools/studio/scripts/audit-design-system.mjs
 tools/studio/scripts/desktop.mjs
@@ -1423,9 +1426,13 @@ tools/studio/tests/e2e/production-hook.spec.ts
 tools/studio/tests/e2e/real-parity.ts
 tools/studio/tests/e2e/remote-discs.spec.ts
 tools/studio/tests/e2e/scene-editor.spec.ts
+tools/studio/tests/e2e/scene-package-hosts.spec.ts
 tools/studio/tests/e2e/scene-project.spec.ts
+tools/studio/tests/e2e/scene-real-build.spec.ts
+tools/studio/tests/e2e/scene-real-build.ts
 tools/studio/tests/e2e/scene-real.spec.ts
 tools/studio/tests/e2e/scene-real.ts
+tools/studio/tests/e2e/scene-saved-project-frame.spec.ts
 tools/studio/tests/e2e/serve-built.mjs
 tools/studio/tests/e2e/studio-test-driver.ts
 tools/studio/tests/e2e/studio.spec.ts

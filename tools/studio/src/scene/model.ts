@@ -21,7 +21,7 @@ export function sceneRows(state:SceneSnapshot):SceneRow[]{
 }
 export interface FieldSceneModel extends SceneCanvasModel {diagnostics:string[]}
 export function makeSceneModel(assets:SceneAssets,state:SceneSnapshot,visible:Record<SceneLayer,boolean>,selected:string|null,actorPositions:Map<string,SceneVector>=new Map(),runtimePose:ScenePose|null=null):FieldSceneModel{
-  const group=new THREE.Group(),objects=new Map<string,THREE.Object3D>();group.userData.source=assets.source_sha256;
+  const group=new THREE.Group(),objects=new Map<string,THREE.Object3D>(),sourceGeometryBounds=new THREE.Box3(),identityMarkers=new Set<THREE.Object3D>();group.userData.source=assets.source_sha256;
   const geometries=new Set<THREE.BufferGeometry>(),materials=new Set<THREE.Material>(),textures=new Set<THREE.Texture>(),diagnostics=new Set<string>();
   const rememberGeometry=<T extends THREE.BufferGeometry>(geometry:T):T=>{geometries.add(geometry);return geometry;};
   const rememberMaterial=<T extends THREE.Material>(material:T):T=>{materials.add(material);return material;};
@@ -61,6 +61,8 @@ export function makeSceneModel(assets:SceneAssets,state:SceneSnapshot,visible:Re
     if(descriptor.flags&0x40){const body=new THREE.Mesh(marker,actorMaterial);body.position.y=14;object.add(body);}
     object.position.fromArray(toView(actorPositions.get(row.id)??row.position));object.rotation.set(-row.rotation[0]*Math.PI/2048,row.rotation[1]*Math.PI/2048,-row.rotation[2]*Math.PI/2048,'ZYX');
     object.userData.entity=row.id;object.visible=visible[row.layer];objects.set(row.id,object);group.add(object);
+    if(descriptor.flags&0x40)identityMarkers.add(object);
+    else if(row.kind==='descriptor'&&object.visible)sourceGeometryBounds.union(new THREE.Box3().setFromObject(object));
   }
   const collisionMaterial=rememberMaterial(new THREE.MeshBasicMaterial({color:0x3ad9df,transparent:true,opacity:0.18,side:THREE.DoubleSide,depthWrite:false}));
   const collisionLine=rememberMaterial(new THREE.LineBasicMaterial({color:0x3ad9df,transparent:true,opacity:0.7}));
@@ -95,5 +97,14 @@ export function makeSceneModel(assets:SceneAssets,state:SceneSnapshot,visible:Re
   if(selected&&objects.has(selected)){const helper=new THREE.BoxHelper(objects.get(selected)!,0x05edeb);helper.material.depthTest=false;geometries.add(helper.geometry);materials.add(helper.material);group.add(helper);}
   diagnostics.add('Base source preview: original Y-down units; runtime lighting, texture windows/semitransparent blending, morphs and sprite VM poses are not evaluated. Wire actor markers are source identities.');
   if(state.entrances.length)diagnostics.add('Entry markers show source X/Z on the editor plane; collision-derived height is evaluated by the game.');
-  return{group,objects,diagnostics:[...diagnostics],dispose(){geometries.forEach(g=>g.dispose());materials.forEach(m=>m.dispose());textures.forEach(t=>t.dispose());}};
+  if(sourceGeometryBounds.isEmpty())diagnostics.add('No visible static source geometry is available for overview framing; use Frame selection for an explicit entity. Unresolved actor markers do not determine overview bounds.');
+  const frameBounds=(object?:THREE.Object3D)=>{
+    if(!object)return sourceGeometryBounds.clone();
+    const bounds=new THREE.Box3().setFromObject(object);
+    // Editor camera context, not a game-format dimension or inferred sprite size.
+    // Retain the selected marker centre while showing nearby source environment.
+    if(identityMarkers.has(object)&&!bounds.isEmpty())bounds.expandByScalar(96);
+    return bounds;
+  };
+  return{group,objects,frameBounds,diagnostics:[...diagnostics],dispose(){geometries.forEach(g=>g.dispose());materials.forEach(m=>m.dispose());textures.forEach(t=>t.dispose());}};
 }

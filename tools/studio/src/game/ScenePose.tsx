@@ -43,16 +43,18 @@ export function SceneRuntimePose({ report }: { report(error: unknown): void }) {
     : scene.inlineDirty ? 'Apply or Cancel the inline fields first.' : null;
   const bindReason = blockedReason ?? (state.schema?.identity.packages.length ? 'Source context requires a vanilla runtime with no enabled packages.' : null);
   const refreshReason = blockedReason ?? (!scene.actor ? 'Select an actor with a qualified runtime identity.' : null);
-  return <div className="editor-field-list">
-    <p className="editor-text editor-text--caption">Both actions pause the runtime and leave it paused; resume from Live game. Live values never write authored placement.</p>
-    <button className="editor-button" disabled={Boolean(bindReason)} title={bindReason??undefined} onClick={() => run(scene.bindContext)}>Bind original runtime source context</button>
-    <p className="editor-text editor-text--caption">Binding requires a vanilla runtime and records measured provenance as unsaved project data.</p>
-    <button className="editor-button" disabled={Boolean(refreshReason)} title={refreshReason??undefined} onClick={() => run(refresh)}>Refresh observed actor pose</button>
+  return <div className="scene-pose">
     {scene.pose ? <>
       <p className="editor-text editor-text--caption">Observed VBlank {scene.pose.vblank} · Actor {scene.pose.actor} · {scene.pose.entity}</p>
-      <dl className="scene-pose-values">{scene.pose.position.map((value, axis) => <div key={axis}><dt className="editor-text editor-text--caption">{['X', 'Y', 'Z'][axis]} · source units</dt><dd className="editor-text editor-text--code">{value}</dd></div>)}</dl>
+      <dl className="scene-pose-values">{scene.pose.position.map((value, axis) => <div key={axis}><dt className="editor-text editor-text--caption">{['X', 'Y', 'Z'][axis]} · observed</dt><dd className="editor-text editor-text--code">{value}</dd></div>)}</dl>
       <p className="editor-text editor-text--caption">Signed heading word: {scene.pose.heading_raw} · orange marker is read-only</p>
     </> : <p className="editor-text editor-text--caption">{!state.connected ? 'Disconnected. Attach the matching runtime to observe a pose.' : !scene.actor ? 'Select an actor with a qualified runtime identity.' : 'No pose captured for this source/actor revision.'}</p>}
+    <details className="scene-pose-controls"><summary className="editor-text">Runtime observation controls</summary><div className="editor-field-list">
+      <p className="editor-text editor-text--caption">Both actions pause the runtime and leave it paused; resume from Live game. Live values never write authored placement.</p>
+      <button className="editor-button" disabled={Boolean(bindReason)} title={bindReason??undefined} onClick={() => run(scene.bindContext)}>Bind original runtime source context</button>
+      <p className="editor-text editor-text--caption">Binding requires a vanilla runtime and records measured provenance as unsaved project data.</p>
+      <button className="editor-button" disabled={Boolean(refreshReason)} title={refreshReason??undefined} onClick={() => run(refresh)}>Refresh observed actor pose</button>
+    </div></details>
     {error && <details role="alert"><summary className="editor-text editor-text--danger">{error.message}</summary><pre className="editor-text editor-text--code">{error.stack ?? error.message}</pre></details>}
   </div>;
 }

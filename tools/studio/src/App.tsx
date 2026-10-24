@@ -114,7 +114,7 @@ export function App() {
 
   useEffect(() => {
     const key = (event: KeyboardEvent) => {
-      if (document.querySelector('[aria-modal="true"]')) return;
+      if (event.defaultPrevented || document.querySelector('[aria-modal="true"]')) return;
       if (event.key === 'F10' && !event.shiftKey) { event.preventDefault(); document.querySelector<HTMLButtonElement>('[data-studio-menu="File"]')?.focus(); }
       if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'o') { event.preventDefault(); open(); }
       if ((event.ctrlKey || event.metaKey) && event.key === 'Enter') { event.preventDefault(); send(); }

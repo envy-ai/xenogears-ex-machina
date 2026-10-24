@@ -11,8 +11,17 @@ is retried by this milestone.
 
 Human M7 UI approval is received (record and exact images below). Backend
 native/WASM proofs and the first synthetic Scene UI increment are verified;
-original-map edited gameplay, real project/runtime observations and NW acceptance remain open.
+original-browser project save/reload, Build/Play and authored placement readback now pass. Exact-package native/browser playback and untouched-map/Disc2 comparisons now pass; saved-project framing now passes with reviewed real pixels. NW acceptance remains open.
 The dated checkpoints below retain historical gate/failure statements.
+
+Current publication direction: Bart has authorized one normal, non-force push to
+`origin` (`https://github.com/envy-ai/xenogears-ex-machina.git`), branch
+`modding-toolkit`, at a clean validated checkpoint after outgoing-history review.
+This supersedes earlier no-push wording in this plan only; no PR, merge or force
+push is authorized. A published checkpoint does not establish M7 completion.
+The owned LAN preview may select the best verified compatible Xenogears runtime;
+TLS/network/security configuration stays unchanged. Its current game is the
+accepted M6checkpoint36 module, with served identities checked over strict TLS.
 
 ## Result and authority
 
@@ -145,7 +154,7 @@ Reference artifacts (existing, not new capture requests):
 Suggested mockups: populated authored scene with selection/inline transform and
 script binding; invalid/unsupported/reference-conflict state retaining last-good
 build and a read-only live overlay. Illustration names/counts are not format
-requirements. M7 UI approval is currently pending.
+requirements. The explicit human approval received below satisfies the M7 UI gate.
 
 ## Acceptance and verification
 
@@ -711,3 +720,72 @@ an opening 'Fei?' game prompt, so they are discovery evidence, not the required
 usable real scene/edited-gameplay visual proof. Initial selection framing and
 meaningful real package/save/reload/Play/native/browser evidence are still being
 completed. No M7 completion or new full-runtime-suite pass is claimed.
+
+### Current real browser proof (checkpoint86)
+
+The authored actor descriptor:3 uses the explicitly qualified pc:1076 placement.
+Normal inline Apply changes X29→61 while Z1270 and collision-derived Y remain
+unchanged. Complete source outputs0–4 and6–8 match the measured original context;
+component5 intentionally changes (5343→5344 bytes with authored packing tail).
+No original-source padding or RAM is fabricated. The actual OPFS browser adapter
+saves/reloads the scene document through UI controls; a new owner preserves full
+export/compiled hashes and bindings. Its one Disc1/slot652 delta builds and plays
+normally. Invalid X32768 blocks Apply/Build/Play while retaining the successful
+package; actual WebGL context loss/retry preserves that package as well.
+
+The exact set SHA-256 is
+d242f77413949e6dfa32db17f3815fc4adf35c7f0ede5f1d2e5d96b08e229489,
+identity studio-map-23@54458cc80057ab7af95dc59508f9f018d9c3d5531e1fa352cca154c2a1a2612d.
+After UI Play, a separately recorded fresh canonical boot/reconnect retains the
+same staged package. Runtime position61/0/1270 is already observed at ordinary
+field entry, before Cross, and remains so after Cross+600 frames. Input is not
+claimed as the cause of placement onset. The new game capture shows the forest,
+character and readable Elly dialogue. This is real browser proof; the same set's
+native comparison and untouched-map/Disc2 matrix remain separate work.
+
+Human/root pixel review accepts simultaneous authored/observed coordinates,
+source binding, explicit Map23 and the meaningful game image. The final viewport
+still exposed a framing issue after owner/renderer replacement, so it is not
+final scene-visual acceptance. The correction gives the generic canvas an
+explicit model-owned frameBounds contract: overview uses visible static source
+geometry rather than unresolved markers, while normal Frame selection uses the
+current selected object's bounds and camera context. The96-unit marker padding
+is editor camera policy, not an inferred sprite dimension. A focused saved-
+project/framing regression and actual new pixels are pending; the successful86
+playback proof is retained. App shortcuts now respect an already-handled event,
+so inline Ctrl+Enter does not also submit an unrelated Backend command; its
+focused regression is pending alongside framing.
+
+
+### Exact-package native/browser and framing proof (checkpoints89–90)
+
+Checkpoint89 verifies the exact86 UI set in native and browser for Disc1map23,
+actual Disc1map22 and Disc2 title, each absent/disabled/enabled. Raw memory hashes
+and status compare across hosts without normalization; absent equals disabled.
+Enabled map23 actor3 enters at61/0/1270 versus vanilla29/0/1270 before Cross and
+retains it afterward. All Disc1map22 file bytes and its index record are original;
+all Disc2 index/directory records and full sampled files650/652 remain original.
+Disc2slot652 is a24-byte placeholder. No full Disc2 progression is claimed.
+The gated Rust test hashes original Disc2 files before moving its source into
+the virtual wrapper, then compares wrapped reads; no original asset is copied
+into the repository. Native captures show readable forest/Elly dialogue, while
+functional displacement is established by the exact readback/disabled controls.
+
+Checkpoint90 runs only the corrected focused synthetic picking/index tests and
+the saved original-map project Frame journey. The same complete saved document
+imports with a new owner and deterministically builds the exact86 set. Normal
+Frame selection centers descriptor:3 after that replacement; the new fullsize
+capture shows the selected marker and surrounding decoded collision geometry,
+with authored61/0(floor)/1270 and vanilla observed29/0/1270 simultaneously visible.
+Root reviewed actual pixels; no sprite fidelity or lighting equivalence is
+claimed. SourceY remains an empty disabled floor-derived field, not authored0.
+The synthetic picker uses a bounded non-collinear synthetic source triangle;
+original failed89 used a collinear fixture and remains retained.89 aggregate1
+reflects that failure;90 aggregate0 does not rewrite it. Scope/commands/hashes
+and individual results remain in the ignored verification ledger.
+
+NW integration and final publication are still pending; no full M7 completion
+claim is made by this checked increment. The Three.js MIT notice is exact in
+source and in the checked88 built distribution. No new runtime core/decomp
+inputs changed, so accepted M6 full-suite/focused-retry evidence is reused with
+its original exit1 and screenshot limitation preserved.

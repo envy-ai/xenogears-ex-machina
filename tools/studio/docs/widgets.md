@@ -602,3 +602,31 @@ never an inferred entrance count. It closes on a successful read so the entity
 list regains space; original errors remain expandable on refusal. Inspection
 does not write game bytes/history. Supported coordinate Apply uses the existing
 fixed actions; structural-action refusal is visible beside disabled buttons.
+
+The Scene inspector keeps a compact locked observed XYZ/VBlank summary outside
+its authored-field scroller. Runtime observation controls are an explicit native
+details disclosure; its opened controls retain the pause side-effect notice.
+Authored source selection composes a labelled native select and compact Open
+script action. Apply/Cancel keep their full accessible names while sharing one
+compact action row with supported CRUD. Current Disc/Map is explicit above the
+browser, and selected map rows scroll into the browser's existing list viewport.
+
+The default right dock gives the inspector weight3.5 versus Live game's1, so
+selected source fields and a read-only observation can be compared at1440×900.
+Saved user layouts are preserved; View → Reset workspace layout adopts these
+new defaults. Source/session controls stay in the existing native disclosure,
+collapsed only while Scene is active. The map list uses DockerList's existing
+body-only grid pattern (as the schema list does), with one complete selected row
+reserved in Scene mode; it never borrows an absent header's grid track.
+
+SceneCanvasModel supplies `frameBounds(object?)`: overview bounds contain only
+visible static source geometry, while explicit selection bounds come from the
+current model/identity after owner replacement. Unresolved actor markers, vertex
+handles, zones and live overlays cannot expand the default overview. A selected
+sprite identity marker gets96 source units of camera context on each side; this
+is editor framing policy, not sprite fidelity or a game-format dimension. With
+no visible static geometry, overview bounds are empty and explicit Frame selection
+remains available. Framing never modifies source transforms or runtime state.
+Selection framing responds only to a new frame-request counter, not to mounting
+with a prior counter value. View remount/retry therefore starts from qualified
+geometry bounds instead of replaying another view/source's old Frame action.

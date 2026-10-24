@@ -36,3 +36,14 @@
 
 .scene-entrance-picker {flex:0 0 auto;max-height:150px;overflow:auto;}
 .scene-entrance-picker summary {cursor:pointer;}
+
+// Keep authored fields and the locked observation summary independently reachable.
+.scene-inspector-fields {gap:6px;}
+.scene-binding-row {display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:end;gap:6px;}
+.scene-binding-row > label {min-width:0;}
+.scene-binding-row select {width:100%;min-width:0;}
+.scene-placement-notes > summary,.scene-pose-controls > summary {cursor:pointer;}
+.scene-runtime {flex:0 0 auto;max-height:48%;overflow:auto;gap:4px;padding:6px;}
+.scene-pose {display:flex;flex-direction:column;gap:4px;}
+.scene-pose-controls[open] > .editor-field-list {padding-block:6px;}
+.scene-property-actions {padding:4px 0;gap:4px;}
