@@ -2,8 +2,8 @@ import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { once } from 'node:events';
-import { closeSync, existsSync, mkdirSync, openSync, readFileSync, readSync, statSync, writeFileSync } from 'node:fs';
-import { join, relative, resolve, sep } from 'node:path';
+import { closeSync, createReadStream, existsSync, mkdirSync, openSync, readFileSync, readSync, statSync, writeFileSync } from 'node:fs';
+import { basename, join, relative, resolve, sep } from 'node:path';
 import { expect, test, type Page } from '@playwright/test';
 import { nativeGameTransport } from '../../src/game/native';
 import type { GameTransport } from '../../src/game/protocol';
@@ -49,6 +49,17 @@ function required(name: string): string {
 
 function sha256(bytes: Uint8Array): string {
   return createHash('sha256').update(bytes).digest('hex');
+}
+
+async function fileSha256(path: string): Promise<string> {
+  const digest = createHash('sha256');
+  await new Promise<void>((resolvePromise, reject) => {
+    const stream = createReadStream(path);
+    stream.on('data', chunk => digest.update(chunk));
+    stream.on('error', reject);
+    stream.on('end', resolvePromise);
+  });
+  return digest.digest('hex');
 }
 
 function originalIndexRecord(discPath: string, slot: number): Buffer {
@@ -527,4 +538,126 @@ test('gated M7 exact Scene package matches browser and native routes on both ori
     checks: { map22_actual_route_both_hosts: true, map22_full_file_preservation: 'verified by field_m7_scene_package gated Rust test',
       map23_only_enabled_position_change: true, disc2_package_family_passthrough: true, hostParity: true } };
   writeFileSync(join(artifactRoot, 'host-routes.json'), `${JSON.stringify(output, null, 2)}\n`, { flag: 'wx' });
+});
+
+test('gated offline Map 23 Scene package runs identically in fresh native and browser hosts', async ({ page }) => {
+  test.setTimeout(1_200_000);
+  test.skip(process.env.XEM_STUDIO_CONTEXT_UX_HOSTS !== '1', 'set XEM_STUDIO_CONTEXT_UX_HOSTS=1 for the fresh offline Scene package host check');
+  const root = repoRoot;
+  const packagePath = required('XEM_STUDIO_CONTEXT_UX_SET');
+  const disc1 = required('XEM_STUDIO_CONTEXT_UX_DISC1');
+  const headless = required('XEM_STUDIO_CONTEXT_UX_HEADLESS');
+  const runtimeWeb = required('XEM_STUDIO_CONTEXT_UX_GAME_DIR');
+  const artifactRoot = required('XEM_STUDIO_CONTEXT_UX_HOSTS_OUTPUT');
+  const expectedSetSha256 = '5ba108ec9d59316dcb3e55072d7826c16b527cdd7db55b269d78d089f6defa2a';
+  const expectedBundleSha256 = 'd9506735b94efcc4cb41f33a8be721f46319353fcf3a26db4b5cadd21007bbbc';
+  assert.equal(basename(packagePath), 'offline-map23-edited.xemmods');
+  assert.ok(packagePath.startsWith(join(root, 'tmp/studio/context-ux') + sep), 'package input stays in isolated ignored context-ux storage');
+  assert.equal(basename(disc1), 'disc1.bin');
+  assert.equal(basename(headless), 'xem-headless');
+  assert.equal(basename(runtimeWeb), 'web');
+  assert.equal(process.env.XEM_STUDIO_GAME_DIR, runtimeWeb, 'browser loads the accepted read-only M6 game build');
+  assert.ok(artifactRoot.startsWith(join(root, 'tmp/studio/context-ux') + sep), 'all new route data stays under isolated ignored context-ux storage');
+  assert.equal(existsSync(artifactRoot), false, 'fresh package-host output leaf must not overwrite prior evidence');
+  mkdirSync(artifactRoot);
+  assert.ok(existsSync(headless) && existsSync(disc1));
+  assert.equal(await fileSha256(disc1), '39c547a9afc6da15d847ef81a2c6cea1a6516bdfa562cf13b0999b04e8598bda');
+  assert.equal(await fileSha256(headless), 'dabe1826f54dc379fefc2a28899ec86eccb79990bdd5c03ed307c94f952e14cb');
+
+  const modulePath = join(runtimeWeb, 'game/game.wasm');
+  const schemaPath = join(runtimeWeb, 'game/schema.json');
+  assert.ok(existsSync(modulePath) && existsSync(schemaPath));
+  const schema = JSON.parse(readFileSync(schemaPath, 'utf8')) as { module_sha256?: string };
+  assert.equal(schema.module_sha256, MODULE_SHA256);
+  assert.equal(sha256(readFileSync(modulePath)), MODULE_SHA256);
+  const packageBytes = readFileSync(packagePath);
+  assert.equal(sha256(packageBytes), expectedSetSha256, 'consume the exact set saved by the new offline UI build');
+  assert.notEqual(sha256(packageBytes), EXPECTED_SET_SHA256, 'do not reuse the prior context-backed M7 package');
+  const pkg = parsePackage(packageBytes);
+  PACKAGE_IDENTITY = pkg.identity;
+  assert.equal(pkg.manifest.files.length, 1);
+  assert.deepEqual(pkg.manifest.files.map(file => [file.disc, file.slot, file.source_sha256, file.result_sha256]), [
+    ['SLUS-00664', 652, '0f0a131acdf052cae070a64912fc09eb00e0b5e6a81f9d8cb4719d6416213add', expectedBundleSha256],
+  ]);
+  assert.equal(pkg.manifest.discs.map(disc => disc.serial).sort().join(','), 'SLUS-00664,SLUS-00669');
+  const original650 = sha256(originalIndexRecord(disc1, 650));
+  const original652 = sha256(originalIndexRecord(disc1, 652));
+  const sectorCount = Math.floor(statSync(disc1).size / RAW_SECTOR_BYTES);
+  const expected652 = Buffer.alloc(7);
+  expected652.writeUIntLE(sectorCount, 0, 3);
+  expected652.writeInt32LE(pkg.manifest.files[0]!.result_size, 3);
+  const expected652Hash = sha256(expected652);
+  const resultFile = join(artifactRoot, 'offline-map23-hosts.json');
+  assert.equal(existsSync(resultFile), false);
+
+  await page.goto('/');
+  await expect(page.locator('[data-panel-id="backend"]')).toContainText('xem-studio 0.5.0');
+  const browser: RouteResult[] = [];
+  const native: RouteResult[] = [];
+  let routeIndex = 0;
+  for (const mode of ['absent', 'disabled', 'enabled'] as const) {
+    browser.push(await browserRoute(page, mode, 'map23', disc1, packageBytes, artifactRoot, routeIndex));
+    native.push(await nativeRoute(mode, 'map23', disc1, packagePath, headless, artifactRoot, routeIndex));
+    routeIndex += 1;
+  }
+
+  for (const result of [...browser, ...native]) {
+    assert.equal(result.identity.module, MODULE_SHA256);
+    assert.equal(result.identity.disc, 'SLUS-00664+SLUS-00669');
+    assert.equal(result.identity.packages.join(','), result.mode === 'enabled' ? PACKAGE_IDENTITY : '');
+    assert.equal(result.active_disc, 1);
+    assert.equal(result.field_map, 23);
+    assert.equal(result.index650_sha256, original650, 'map22 index slot650 is untouched');
+    if (result.mode === 'enabled') {
+      assert.equal(result.index652_sha256, expected652Hash);
+      assert.deepEqual(result.actor3_before_input, [61, 0, 1270]);
+      assert.deepEqual(result.actor3_after_cross_600, [61, 0, 1270]);
+    } else {
+      assert.equal(result.index652_sha256, original652);
+      assert.deepEqual(result.actor3_before_input, [29, 0, 1270]);
+      assert.deepEqual(result.actor3_after_cross_600, [29, 0, 1270]);
+    }
+    assert.notEqual(result.memory_hash_before_input, '');
+    assert.notEqual(result.memory_hash_after_input, '');
+    assert.equal(result.status_after_input.field_map, 23);
+  }
+
+  for (const mode of ['absent', 'disabled', 'enabled'] as const) {
+    const browserResult = browser.find(item => item.mode === mode)!;
+    const nativeResult = native.find(item => item.mode === mode)!;
+    assert.equal(browserResult.identity.module, nativeResult.identity.module);
+    assert.equal(browserResult.identity.disc, nativeResult.identity.disc);
+    assert.deepEqual(browserResult.identity.packages, nativeResult.identity.packages);
+    assert.equal(browserResult.index650_sha256, nativeResult.index650_sha256);
+    assert.equal(browserResult.index652_sha256, nativeResult.index652_sha256);
+    assert.deepEqual(browserResult.actor3_before_input, nativeResult.actor3_before_input);
+    assert.deepEqual(browserResult.actor3_after_cross_600, nativeResult.actor3_after_cross_600);
+    assert.equal(browserResult.memory_hash_before_input, nativeResult.memory_hash_before_input);
+    assert.equal(browserResult.memory_hash_after_input, nativeResult.memory_hash_after_input);
+    assert.deepEqual(browserResult.status_before_input, nativeResult.status_before_input);
+    assert.deepEqual(browserResult.status_after_input, nativeResult.status_after_input);
+  }
+  for (const host of [browser, native]) {
+    const absent = host.find(item => item.mode === 'absent')!;
+    const disabled = host.find(item => item.mode === 'disabled')!;
+    assert.equal(disabled.memory_hash_before_input, absent.memory_hash_before_input);
+    assert.equal(disabled.memory_hash_after_input, absent.memory_hash_after_input);
+    assert.deepEqual(disabled.status_before_input, absent.status_before_input);
+    assert.deepEqual(disabled.status_after_input, absent.status_after_input);
+    assert.deepEqual(disabled.actor3_before_input, absent.actor3_before_input);
+    assert.deepEqual(disabled.actor3_after_cross_600, absent.actor3_after_cross_600);
+  }
+  assert.ok(browser.some(item => item.mode === 'absent' && item.m7_map23_screenshot_sha256));
+  assert.ok(browser.some(item => item.mode === 'enabled' && item.m7_map23_screenshot_sha256));
+  assert.ok(native.some(item => item.mode === 'absent' && item.m7_map23_screenshot_sha256));
+  assert.ok(native.some(item => item.mode === 'enabled' && item.m7_map23_screenshot_sha256));
+  writeFileSync(resultFile, `${JSON.stringify({
+    schema_version: 1,
+    module_sha256: MODULE_SHA256,
+    original_bundle_sha256: '0f0a131acdf052cae070a64912fc09eb00e0b5e6a81f9d8cb4719d6416213add',
+    compiled_candidate_sha256: expectedBundleSha256,
+    package_set_sha256: expectedSetSha256,
+    package_identity: PACKAGE_IDENTITY,
+    routes: [...browser, ...native],
+  }, null, 2)}\n`, { flag: 'wx' });
 });

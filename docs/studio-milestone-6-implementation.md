@@ -247,3 +247,16 @@ The follow-up runner also encountered missing `compgen` in the pinned shell
 when collecting outcomes. Its per-stage exits are preserved; the run already
 fails from the built-NW timeout independently of this aggregation error. Future
 recording reads explicit stage files and does not relabel the run green.
+
+
+## Later qualified Scene-only optional-tail contract
+
+A separately authorized isolated M7 change permits only the exact verified
+Disc1 Map23 Scene source to use component8's logical72-byte prefix without a
+runtime context. Any edited Scene package authors a self-contained component8
+stream, rather than allowing the original output78 stream to read appended data.
+Those six tail bytes are not preserved or claimed to be junk, unused, or measured
+RAM. No-edit output stays byte-identical. The original runtime decoder and the
+measured-context contract above remain unchanged, including strict captured
+project imports. Event-only M6 repacking is not relaxed. Exact qualification,
+limits and new offline-package verification are in studio-milestone-7.md.

@@ -182,6 +182,7 @@ fn packed_error(error: packed::PackedError) -> StudioError {
             "packed_truncated"
         }
         packed::PackedError::OutputLimit { .. } => "packed_output_limit",
+        packed::PackedError::RequiredOutput { .. } => "packed_required_output",
         packed::PackedError::InvalidDistance { .. } => "packed_invalid_distance",
         packed::PackedError::CopyCrossesOutput { .. } => "packed_copy_crosses_output",
         packed::PackedError::FlagGroupCrossesOutput { .. } => "packed_group_crosses_output",

@@ -1012,8 +1012,13 @@ losslessly readable. Original actor0 is fixed for engine events2/3.
 ## M7 Scene UI — supported-scene acceptance complete
 
 Choose Scene (Ctrl+4) for the selected original map. Its source-qualified bundle
-may require measured context from an attached vanilla runtime, as described for
-M6. The hierarchy filters original entity identities and layers. Q/W/E select,
+may require a one-time qualified context capture from an attached vanilla runtime,
+as described for M6. If disconnected when this source needs context, Scene explains
+how to use Live game → Open game & attach (/runtime/ by default), Choose disc
+image…, Boot, attach again if needed, and load the same vanilla disc/map before
+retrying Scene. Save project after capture to retain the matching context for
+offline reuse; Load project can reuse an already saved qualified context. Sources
+that decode completely offline do not require a runtime connection. The hierarchy filters original entity identities and layers. Q/W/E select,
 move or rotate; F frames the selected source. Dragging previews inline values;
 Apply commits one Rust transaction and Cancel preserves the accepted scene.
 Raw integer units and unsupported operations are explicit. A display handle is
@@ -1118,3 +1123,28 @@ X0 preserved. Application exit0 alone is insufficient: require a successful
 Scene result without an error. Failed earlier attempts remain retained. The
 supported-scene acceptance record, including format limitations, is
 [studio-milestone-7.md](../../docs/studio-milestone-7.md).
+
+
+## Qualified Map23 offline Scene policy
+
+One exact original Disc1 Map23 source (slot652, LBA124528, indexed110052 bytes,
+bundle SHA2560f0a131acdf052cae070a64912fc09eb00e0b5e6a81f9d8cb4719d6416213add)
+can open and compile Scene offline without a runtime capture. Component8 at
+source offset109992 has logical72 and packed output78. Only its72-byte logical
+payload is verified in this mode; six tail bytes are not preserved. This does
+not establish that they are junk, unused, or developer-intended padding. Other
+sources keep their existing validation and actionable context-required errors;
+an affected-map list has not been established.
+
+No edit, or edit then undo, returns exact indexed source bytes. Any actual edit
+normalizes component8 into a new self-contained authored stream and updates its
+descriptor, even if only the header/another component changed. Final streams
+strict-decode safely; unchanged complete outputs of the other components are
+protected. No missing RAM/sector bytes are synthesized. Offline assets expose
+optional_tail_bytes6 and an explicit non-runtime-provenance diagnostic.
+
+Save/Load retains the context-free Scene document. Existing captured-context
+projects remain supported with strict full-output validation; event-only M6
+repacking is unchanged. Actual disconnected Scene edit/save/reload/Build and a
+new same-package native/browser field-entry comparison pass in the isolated
+verification. The active preview is not changed by those checks.

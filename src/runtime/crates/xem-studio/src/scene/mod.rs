@@ -45,6 +45,11 @@ pub struct ComponentSummary {
     pub source_offset: usize,
     pub source_bytes_read: usize,
     pub output_sha256: String,
+    #[serde(skip_serializing_if = "is_zero")]
+    pub optional_tail_bytes: usize,
+}
+fn is_zero(value: &usize) -> bool {
+    *value == 0
 }
 #[derive(Clone, Debug, Serialize)]
 pub struct Actor {
@@ -124,10 +129,14 @@ pub fn decode(args: DecodeArgs) -> Result<Decoded, FieldError> {
             source_offset: c.source_offset,
             source_bytes_read: c.source_bytes_read,
             output_sha256: hash(&c.bytes),
+            optional_tail_bytes: c.optional_tail_bytes,
         })
         .collect();
     let mut diagnostics=vec!["Actor sprite VM frames and script-derived placements are not evaluated by this asset decoder; use explicit script bindings or a labelled live observation.".into(),
         "Entrances list contains only supplied selectors; variable/saved-state references can prevent structural reference closure.".into()];
+    if c[8].optional_tail_bytes > 0 {
+        diagnostics.push("Qualified Disc 1 Map 23 offline policy: component 8 verifies its 72 logical bytes; six decoded tail bytes are not preserved. Edited packages author a self-contained stream from known logical data. This policy is not measured runtime context.".into());
+    }
     if !images.shared_slots.is_empty() {
         diagnostics.push("Shared image slots require an identified inherited VRAM source; missing pixels are not synthesized.".into());
     }

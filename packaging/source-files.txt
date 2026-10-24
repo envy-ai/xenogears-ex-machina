@@ -821,6 +821,7 @@ src/runtime/crates/xem-disc/src/sector.rs
 src/runtime/crates/xem-disc/src/source.rs
 src/runtime/crates/xem-disc/tests/field_context.rs
 src/runtime/crates/xem-disc/tests/mod_packages.rs
+src/runtime/crates/xem-disc/tests/packed_prefix.rs
 src/runtime/crates/xem-disc/tests/user_discs.rs
 src/runtime/crates/xem-game/Cargo.toml
 src/runtime/crates/xem-game/build.rs
@@ -1425,6 +1426,7 @@ tools/studio/tests/e2e/nw-smoke.mjs
 tools/studio/tests/e2e/production-hook.spec.ts
 tools/studio/tests/e2e/real-parity.ts
 tools/studio/tests/e2e/remote-discs.spec.ts
+tools/studio/tests/e2e/scene-context-required.spec.ts
 tools/studio/tests/e2e/scene-editor.spec.ts
 tools/studio/tests/e2e/scene-package-hosts.spec.ts
 tools/studio/tests/e2e/scene-project.spec.ts
@@ -1445,6 +1447,7 @@ tools/studio/tests/unit/disc-server.test.ts
 tools/studio/tests/unit/discs.test.ts
 tools/studio/tests/unit/event-search.test.ts
 tools/studio/tests/unit/field-authoring.test.ts
+tools/studio/tests/unit/field-scene-context.test.ts
 tools/studio/tests/unit/files.test.ts
 tools/studio/tests/unit/game-pc.test.ts
 tools/studio/tests/unit/game-real-parity.test.ts

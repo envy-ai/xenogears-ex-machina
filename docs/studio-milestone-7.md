@@ -981,3 +981,109 @@ independent M6 screenshot limitation and separate asset-permission boundary
 remain unchanged. GitHub showed zero workflow/check/status contexts for the
 application branch push; that is not a CI pass. The Windows evidence closes M7's
 desktop criterion without rewriting any earlier failed or skipped result.
+
+
+## Isolated Map23 optional-tail scope (2026-10-24; implementation plan)
+
+Bart authorized ignoring only the unverified decoded suffix of the exact
+original Disc1 Map23 component8: logical72, packed output78. This does not
+establish that the six bytes are junk, unused, or developer-intended padding.
+Original CD-copy behavior and measured-context provenance remain unchanged.
+Implementation and tests stay in the isolated studio-context-prerequisite-ux
+worktree; the active preview/live checkout must not change. No push yet.
+
+1. Add a separate bounded logical-prefix packed decoder; keep decode_block's
+complete eight-token groups and speculative terminal flag behavior unchanged.
+Validate declared output limits, every required token/distance and full token
+output bounds, even when a copy straddles the requested logical end. Stop at
+the exact required length without consuming an optional token or flag.
+2. Qualify only exact original disc/boot/map/slot/LBA/indexed size/sourceSHA,
+component8 offset109992, logical72 and advertised78. Other inputs remain strict.
+With no context expose72 known bytes and an explicit optional-tail diagnostic,
+not measured RAM provenance. Context-present/imported documents retain strict
+full-output behavior and their existing byte/hash contract.
+3. Preserve exact original indexed bytes for no edit and edit→undo. Any edited
+no-context package must author a self-contained component8 stream from known
+logical data and update its descriptor, even if that payload was unchanged or
+the edit only changed a header/different component. Strict-decode the final
+stream safely; preserve the other eight complete outputs. Retain original source
+bytes in their original prefix except required header/descriptor changes.
+4. Focused malformed/truncation/straddling-token/source-identity/import/history
+regressions, actual original Map23 offline open/edit/build/save/reload and fresh
+identical-package native/browser gameplay. No old context-based package may
+substitute for the new offline package. Retain failures and exact evidence.
+5. Source/type/Rust/WASM/metadata checks in pinned bounded scopes; independent
+review, local reviewable commit/diff. Live application and publication are
+separate coordination boundaries, not part of this isolated implementation.
+
+
+### Qualified offline contract and verified isolated result
+
+This exception is selected only after ordinary source validation and the exact
+Disc1/boot identity, Map23/slot652/LBA124528, indexed size110052 and bundle SHA256
+`0f0a131acdf052cae070a64912fc09eb00e0b5e6a81f9d8cb4719d6416213add` match.
+Component8 must start at109992, declare logical72 and advertise packed output78.
+No other map/source is admitted by this policy. Without context, its decoded
+asset summary reports output_size72 and optional_tail_bytes6, and diagnostics
+explicitly distinguish this policy from measured runtime context. Those six
+bytes are not preserved; their use and the developers' intent are not established.
+The input can supply more than72 output bytes, but this contract stops at the
+logical boundary rather than claiming that every omitted byte is unavailable.
+
+No-edit and edit→undo return the exact original indexed bundle. On any edit,
+including header-only or sparse other-component changes, preparation authors a
+new complete component8 literal stream from the known logical payload and
+redirects its descriptor. It does not leave the old stream reading appended
+authored bytes. All final streams are strict-decoded; other complete outputs
+remain unchanged except intentional authored replacements. Original indexed
+source bytes remain in the prefix except required descriptor/header changes.
+This authored stream is not reconstructed RAM. Context-present documents still
+use strict complete outputs; no blanket truncation exception or global runtime
+decoder change exists. Event-only M6 repacking keeps its existing strict contract;
+this new policy belongs to source-qualified Scene compilation.
+
+Focused native results: prefix4/4, existing strict packed7/7, scene container10/10,
+original-map compatibility1/1 and source-identity/sparse-repack1/1 pass. These
+include required-token straddling/bounds, one-byte-short real prefix rejection,
+wrong SHA/map/slot/LBA rejection, original no-edit/undo, header-only and missing-c8
+replacement normalization. Historical saved-context project SHA3cffb561…81f9a
+imports/re-exports unchanged and compiles to prior2a50712b…91ca1f9; restoring its
+X61 instruction to original29 returns0f0a131a…6213add. Prior context-based static
+transform3f1120… is reproduced. Those hashes are compatibility proofs, not the new
+offline package. Strict Clippy and formatting pass on the pinned1.97.1 toolchain.
+
+The new WASM-backed isolated browser opens actual Map23 without an attached game,
+with source-context handler calls0 and no popup. It edits descriptor:3/pc:1076
+X29→61, saves/reloads the actual context-free project and builds through the
+normal active.repack path. New candidate SHA256 is
+`d9506735b94efcc4cb41f33a8be721f46319353fcf3a26db4b5cadd21007bbbc`.
+New7002-byte set SHA256 is
+`5ba108ec9d59316dcb3e55072d7826c16b527cdd7db55b269d78d089f6defa2a`,
+member identity studio-map-23@4055429ca45de66c80ca96d09903e0bcd1f4057daf7638786649219e8191aac8.
+This exact new package executes on fresh native/browser routes in all three
+absent/disabled/enabled modes. Raw memory/status/index observations agree;
+enabled actor3 enters at61 while absent/disabled remain29, before public input
+and after Cross+600. Input is not claimed to cause the placement onset. Fresh
+actual captures show forest, character and readable Elly dialogue. This is a
+bounded field-entry route, not proof of all uses of the omitted tail or full story.
+Map22/Disc2 gameplay and the full runtime suite were not repeated.
+
+Production validation stages current source in a separate ignored app with the
+NEW checkpoint05 backend, both test/package-override flags unset. The built and
+actually served WASM SHA matches that new SDK, not preserved oldpkg; production
+hooks are absent. Design/type/source audits pass, and the five disconnected/offline
+UX unit regressions are reused by exact source hashes. The public new host fixture
+uses env-resolved inputs, verified hashes and ignored fresh-output guards. New
+codec/policy code is locally authored from the repository codec; only source
+identity facts/hashes are public. Original game/context/project/package bytes
+remain ignored private inputs/artifacts, with no new external extraction.
+
+Failed02(output-root guard),04(test TypeScript syntax),05(empty-Y fixture) and
+07(Clippy dispatch) remain retained with targeted successful03/06/08 retests.
+The06 summary's member hash incorrectly included its containing buffer; a separate
+correction and synthetic helper regression retain the original receipt and prove
+member405542… distinct from set5ba108…. Current production checks pass in10.
+Exact local commands, source/tool/input identities, stage results, full hashes
+and explicit missing outer telemetry are recorded in ignored
+`tmp/studio/context-ux/commands-and-results.md`. No live checkout/HMR/service
+change or push forms part of this isolated result.

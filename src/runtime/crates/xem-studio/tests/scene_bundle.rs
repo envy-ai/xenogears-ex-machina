@@ -376,6 +376,20 @@ fn missing_source_guard_requests_measured_context_instead_of_fabricating_tail_by
 }
 
 #[test]
+fn nonqualified_disc1_map23_identity_does_not_enable_optional_tail_prefix_decode() {
+    let truncated = bundle_fixture(0, true);
+    let near_match = identity(&truncated); // Correct disc and map, but synthetic index location/size.
+    let error = bundle::Source::load(bundle::Input {
+        bundle: truncated,
+        context: None,
+        source: Some(near_match),
+        module_sha256: None,
+    })
+    .expect_err("the narrow real-source exception cannot be selected by a similar identity");
+    assert_eq!(error.kind, "source_context_required");
+}
+
+#[test]
 fn measured_synthetic_guard_materializes_full_outputs_through_header_growth_and_replacement() {
     // This is a synthetic context-contract fixture, not evidence of runtime
     // observation or identification for the fabricated component streams.

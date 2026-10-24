@@ -2,7 +2,8 @@
 //!
 //! Measured context is verified against original source/module/disc identity
 //! before any append. Header growth relocates packed source bytes together;
-//! unchanged streams must reproduce their complete original outputs.
+//! unchanged streams must reproduce their complete original outputs, except for
+//! the explicitly qualified no-context Map23 component8 logical-prefix policy.
 use super::formats::{Header, decode_header};
 use crate::field::FieldError;
 use serde::{Deserialize, Serialize};
@@ -70,6 +71,8 @@ pub struct Component {
     pub bytes: Vec<u8>,
     pub source_offset: usize,
     pub source_bytes_read: usize,
+    /// Explicit source-qualified optional suffix; never measured RAM.
+    pub optional_tail_bytes: usize,
 }
 #[derive(Clone, Debug)]
 pub struct Replacement {
@@ -115,6 +118,23 @@ fn decode(
     }
     Ok(result)
 }
+// This is a bounded policy for one verified indexed source, not a map-number
+// exception or a general relaxation of missing source/context validation.
+fn optional_map23_tail(input: &Input, header: &Header) -> bool {
+    input.context.is_none()
+        && input.source.as_ref().is_some_and(|source| {
+            source.disc == 1
+                && source.map == 23
+                && source.slot == 652
+                && source.lba == 124_528
+                && source.indexed_size == 110_052
+                && source.source_sha256
+                    == "0f0a131acdf052cae070a64912fc09eb00e0b5e6a81f9d8cb4719d6416213add"
+        })
+        && header.logical_sizes[8] == 72
+        && header.offsets[8] == 109_992
+        && xem_disc::field_context::word(&input.bundle, header.offsets[8]).ok() == Some(78)
+}
 impl Source {
     pub fn load(input: Input) -> Result<Self, FieldError> {
         let header = decode_header(&input.bundle)?;
@@ -140,16 +160,27 @@ impl Source {
         };
         let mut measured = input.bundle.clone();
         measured.extend_from_slice(&guard);
+        let optional_tail = optional_map23_tail(&input, &header);
         let mut components = Vec::with_capacity(9);
         for index in 0..9 {
             let logical = header.logical_sizes[index];
             let start = header.offsets[index];
-            let block = decode(&measured, index, logical, start)?;
+            let prefix_only = optional_tail && index == 8;
+            let block = if prefix_only {
+                packed::decode_prefix(&measured[start..], logical, logical + 16).map_err(|e| {
+                    invalid(format!(
+                        "component {index}: required logical-prefix decode failed: {e}"
+                    ))
+                })?
+            } else {
+                decode(&measured, index, logical, start)?
+            };
             components.push(Component {
                 logical_size: logical,
                 bytes: block.data,
                 source_offset: start,
                 source_bytes_read: block.source_bytes_read,
+                optional_tail_bytes: if prefix_only { 6 } else { 0 },
             });
         }
         Ok(Self {
@@ -166,7 +197,9 @@ impl Source {
     /// All changes are derived from an immutable source. This primitive does not
     /// authorize reference-changing edits; the domain transaction validates them.
     /// New packing may add an explicit authored tail (at most logical+16), never
-    /// a fabricated original-source guard. Complete unaffected outputs are exact.
+    /// a fabricated original-source guard. Complete unaffected outputs are exact;
+    /// the qualified offline c8 instead retains its logical payload and authors a
+    /// self-contained stream whenever any part of the bundle changes.
     pub fn repack(
         &self,
         header: &Header,
@@ -233,7 +266,35 @@ impl Source {
             result[0x130 + index * 4..0x134 + index * 4].copy_from_slice(&value.to_le_bytes());
         }
         let mut expected = BTreeMap::new();
-        for (&index, value) in replacements {
+        // Every edited prefix-qualified bundle redirects c8 to a complete
+        // authored stream, even when another component/header alone changed.
+        // The original compressed suffix must never consume appended data.
+        let optional_replacement = Replacement {
+            logical_size: self.components[8].logical_size,
+            bytes: if self.components[8].optional_tail_bytes > 0 {
+                self.components[8].bytes.clone()
+            } else {
+                Vec::new()
+            },
+        };
+        let extra = if self.components[8].optional_tail_bytes > 0 && !replacements.contains_key(&8)
+        {
+            Some((8, &optional_replacement))
+        } else {
+            None
+        };
+        for (index, value) in replacements
+            .iter()
+            .map(|(&index, value)| (index, value))
+            .chain(extra)
+        {
+            if self.components[index].optional_tail_bytes > 0
+                && value.bytes.len() != value.logical_size
+            {
+                return Err(invalid(
+                    "offline optional-tail replacement must contain only its known logical payload",
+                ));
+            }
             if value.logical_size > MAX_COMPONENT - 16
                 || value.logical_size > value.bytes.len()
                 || value.bytes.len() - value.logical_size > 16
@@ -242,7 +303,8 @@ impl Source {
                     "component {index}: replacement exceeds logical+16 allocation"
                 )));
             }
-            if value.logical_size == self.components[index].logical_size
+            if self.components[index].optional_tail_bytes == 0
+                && value.logical_size == self.components[index].logical_size
                 && value.bytes == self.components[index].bytes
             {
                 continue;

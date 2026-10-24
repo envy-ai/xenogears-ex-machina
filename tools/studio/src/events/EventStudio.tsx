@@ -333,6 +333,7 @@ function useStudio(backend: Backend | null, folder: FilesAdapter | null, report:
     if (import.meta.env.VITE_XEM_STUDIO_TEST !== '1' || !backend) return;
     const hook = {
       command: (json: string) => backend.command(json),
+      setSourceContextHandler: (handler: Parameters<ReturnType<typeof useFieldDraft>['registerSource']>[0]) => latest.current.draft.registerSource(handler),
       inspectScene:()=>({owner:latest.current.draft.sceneOwner(),document:latest.current.draft.sceneDocument(),compiled:latest.current.draft.sceneCompile()}),
       loadComponent: async (bytes: number[], declared_size: number, number = 0) => { await latest.current.install(bytes, declared_size, number); },
       openNativePath: (path: string) => latest.current.openNativePath(path),

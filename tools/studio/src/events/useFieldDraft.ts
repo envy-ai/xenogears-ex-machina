@@ -232,7 +232,12 @@ export function useFieldDraft(backend: Backend | null, folder: FilesAdapter | nu
       catch(error){
         if (!(error instanceof StudioCommandError) || error.kind!=='source_context_required') throw error;
         if (!source.source || !sourceHandler.current) throw new Error('Load this original source map in an attached vanilla runtime to measure its complete scene context',{cause:error});
-        context=await sourceHandler.current(source.source);checkOwner(token);
+        try { context=await sourceHandler.current(source.source); }
+        catch (contextError) {
+          if (contextError instanceof StudioCommandError && contextError.kind==='source_context_required' && contextError.cause===undefined) contextError.cause=error;
+          throw contextError;
+        }
+        checkOwner(token);
         candidate=FieldAuthoring.scene(backend,input(),[],document);
       }
       const assets=decodeSceneAssets(backend,input(),[]);checkOwner(token);

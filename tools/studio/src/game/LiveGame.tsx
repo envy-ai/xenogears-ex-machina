@@ -12,6 +12,7 @@ import { EditorDialogShell } from '../editor/EditorDialogShell';
 import { DockerList, DockerListBody, DockerListRow, DockerListEmpty } from '../editor/DockerList';
 import { useEventNavigation, useEventPackagePlay } from '../events/EventStudio';
 import type { SourceContext } from '../backend/discs';
+import { StudioCommandError } from '../backend/service';
 import './live-game.scss';
 
 const Context = createContext<GameController | null>(null);
@@ -84,6 +85,14 @@ export function LiveControls({ report }: { report(error: unknown): void }) {
   useEffect(() => {
     eventPackage.registerSource(async source => {
       if (busy) throw new Error('Wait for the current game operation before reading source context');
+      if (!controller.getSnapshot().connected) {
+        const connect = nativeHost
+          ? 'In Live game, use Launch & connect with the matching original disc.'
+          : 'In Live game, use the same-origin game page (/runtime/ by default) and Open game & attach. In the game window, Choose disc image…, click Boot, then Open game & attach again if needed.';
+        const error = new StudioCommandError('source_context_required', `This source needs a one-time qualified source-context capture. ${connect} Load the same vanilla map (Disc ${source.disc}, Map ${source.map}), then retry Scene. After capture, Save project to reuse this source context offline, or Load project with an already saved matching context.`);
+        error.cause = controller.getSnapshot().error ?? undefined;
+        throw error;
+      }
       const context=await controller.command({cmd:'field_source_context',map:source.map,source_sha256:source.source_sha256}) as unknown as SourceContext;
       if (context.module_sha256!==controller.getSnapshot().schema?.identity.module) throw new Error('Runtime source context module changed during capture');
       return context;
