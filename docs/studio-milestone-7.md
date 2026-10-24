@@ -458,4 +458,30 @@ remain explicit atomic refusals until separately qualified. New scene event
 operations address stable actors rather than exposing transient virtual row
 indices. Final compilation includes only active rows for reachability/reference
 closure while retaining original storage, contexts and monotonic IDs/history.
-This direction is not implemented or accepted yet; new UI remains human-gated.
+This direction is implemented through the existing compiler. Eleven synthetic
+actor cases and116-request native/default-WASM parity passed; the original
+Disc1/map23 no-edit/static-transform preservation check also passed again at
+checkpoint54. This is backend proof, not game execution or UI acceptance; new
+UI remains human-gated.
+
+Active actor snapshots expose stable ID, typed original/copy origin and explicitly
+private `event_source_row` provenance. Add/Duplicate insert matching descriptors
+and independently copied qualified event rows; Delete emits only remaining active
+rows. Empty copied slots use the proven original end-slot seed, so `actor_event`
+can author a new event by stable actor ID. Public numeric M6 NewEvent rows retain
+original-source meaning and cannot silently select a new virtual row.
+
+The private derivation allows an entry-induced block split only after strict
+canonical checks on both graphs: original bytes/rows/instructions/diagnostics/pins
+and ordered execution edges remain exact. Block IDs are recomputed from the new
+metadata. Failed setup/guard/lint attempts and the independent diagnostic are
+retained in ignored verification checkpoints46–55. No original source code or
+game input was replaced to make these checks pass.
+
+Before frontend integration, imported M6 undo/redo must become part of the same
+scene timeline. The current prototype retains that history as an initial baseline
+but cannot undo it through Scene commands. A single timeline will preserve its
+allocated IDs, redo cursor and global watermark while keeping an actually empty
+original root. Existing source-bound unknown references must remain inspectable
+during that validated history import; unsafe namespace changes still refuse
+them. No hidden editable baseline or duplicate history registry is acceptable.

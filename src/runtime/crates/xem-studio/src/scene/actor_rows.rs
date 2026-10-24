@@ -12,7 +12,9 @@ fn invalid(message: impl Into<String>) -> FieldError {
 #[derive(Clone, Debug, Serialize)]
 pub struct Row {
     pub id: String,
-    /// The actual source actor row, not a guessed slot/entity limit.
+    /// Row in the explicitly supplied source graph. Scene compilation may
+    /// supply a validated private virtual-table derivation; this number is not
+    /// automatically an original game identity or a public stable actor ID.
     pub source_actor: u32,
 }
 #[derive(Clone, Debug, Serialize)]

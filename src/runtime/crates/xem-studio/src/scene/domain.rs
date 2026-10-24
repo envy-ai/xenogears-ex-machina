@@ -1,8 +1,8 @@
 //! Source-owned, revisioned scene transactions. The immutable container is never
 //! replaced by a compiled result. History replays actions, not opaque byte blobs.
 use super::{
-    bundle, collision, entities, entrances, event_document, event_state, formats, geometry,
-    placements, topology,
+    actors, bundle, clone_event, collision, entities, entrances, event_document, event_state,
+    formats, geometry, placements, topology,
 };
 use crate::field::{self, FieldError, draft};
 use serde::{Deserialize, Serialize};
@@ -25,6 +25,23 @@ pub enum Action {
     Event {
         #[serde(deserialize_with = "event_document::action_from_json")]
         action: Box<draft::Action>,
+    },
+    AddActor {
+        template: String,
+        position: [u16; 3],
+        rotation: [u16; 3],
+    },
+    DuplicateActor {
+        id: String,
+    },
+    DeleteActor {
+        id: String,
+    },
+    ActorEvent {
+        actor: String,
+        event: u8,
+        #[serde(deserialize_with = "event_document::nodes_from_json")]
+        nodes: Vec<draft::NodeInput>,
     },
     SetPlacement {
         change: placements::Change,
@@ -112,6 +129,7 @@ pub struct Entity<T> {
 #[derive(Clone)]
 struct State {
     descriptors: Vec<Entity<formats::Descriptor>>,
+    actors: Vec<actors::Actor>,
     zones: Vec<Entity<formats::Zone>>,
     collision: entities::Collision,
     entrances: Vec<entrances::Entrance>,
@@ -146,6 +164,7 @@ pub struct Snapshot {
     pub can_redo: bool,
     pub modified: bool,
     pub descriptors: Vec<Entity<formats::Descriptor>>,
+    pub actors: Vec<actors::Actor>,
     pub zones: Vec<Entity<formats::Zone>>,
     pub collision: collision::Collision,
     pub collision_entities: entities::Collision,
@@ -234,6 +253,7 @@ impl Draft {
             return Err(invalid("source entrance layer exceeds collision layers"));
         }
         let initial = State {
+            actors: actors::initial(events.actors.len()),
             descriptors: source
                 .header
                 .descriptors
@@ -288,6 +308,7 @@ impl Draft {
             can_redo: self.cursor < self.actions.len(),
             modified: self.cursor > 0 || self.base.event_modified,
             descriptors: self.state.descriptors.clone(),
+            actors: self.state.actors.clone(),
             zones: self.state.zones.clone(),
             collision: self.state.collision.resolve(&self.base.collision)?,
             collision_entities: self.state.collision.clone(),
@@ -427,12 +448,148 @@ impl Draft {
     }
     fn static_instance(&self, state: &State, id: &str) -> Result<usize, FieldError> {
         let at = index(&state.descriptors, id)?;
-        if at < self.base.event_actor_count || state.descriptors[at].value.flags & 0x40 != 0 {
+        if at < state.actors.len() || state.descriptors[at].value.flags & 0x40 != 0 {
             return Err(unsupported(
                 "actor CRUD requires a reference-safe event-row transaction, not instance CRUD",
             ));
         }
         Ok(at)
+    }
+    fn actor_at(state: &State, id: &str) -> Result<usize, FieldError> {
+        state
+            .actors
+            .iter()
+            .position(|a| a.id == id)
+            .ok_or_else(|| invalid(format!("actor {id} is not active")))
+    }
+    fn validate_source_event_action(
+        &self,
+        state: &State,
+        action: &draft::Action,
+    ) -> Result<(), FieldError> {
+        match action {
+            draft::Action::Batch { actions } => {
+                for action in actions {
+                    self.validate_source_event_action(state, action)?;
+                }
+            }
+            draft::Action::NewEvent { actor, .. }
+                if *actor >= self.base.event_actor_count
+                    || !state
+                        .actors
+                        .iter()
+                        .any(|a| a.event_source_row as usize == *actor) =>
+            {
+                return Err(unsupported(
+                    "new scene actor events require the stable actor_event action; numeric M6 rows address active original source actors only",
+                ));
+            }
+            _ => {}
+        }
+        Ok(())
+    }
+    fn edit_events(
+        state: &mut State,
+        action: draft::Action,
+        next_event: &mut u32,
+        descriptors: &[String],
+        zones: &[String],
+    ) -> Result<(), FieldError> {
+        let events = Arc::make_mut(&mut state.events);
+        events.draft.advance_allocator(*next_event)?;
+        events.edit(action, descriptors, zones)?;
+        *next_event = events.draft.next_node_id();
+        Ok(())
+    }
+    fn add_actor(
+        &self,
+        state: &mut State,
+        template: &str,
+        transform: Option<([u16; 3], [u16; 3])>,
+        next: &mut u32,
+        next_event: &mut u32,
+    ) -> Result<(), FieldError> {
+        if self.base.event_actor_count > usize::from(u8::MAX) {
+            return Err(unsupported(
+                "generic actor CRUD on wider original tables needs additional runtime byte-link qualification; original decoding remains supported",
+            ));
+        }
+        actors::runtime_index(state.actors.len())?;
+        let at = Self::actor_at(state, template)?;
+        let compiled = self.compile_events(state)?;
+        actors::qualify_template(&compiled.graph, at)?;
+        let before_descriptors = entity_ids(&state.descriptors);
+        let before_zones = entity_ids(&state.zones);
+        let mut value = state.descriptors[at].value.clone();
+        if let Some((position, rotation)) = transform {
+            if value.flags & 0x40 != 0 && value.rotation != rotation {
+                return Err(unsupported(
+                    "sprite rotation is reset by the loader; use an independent script-facing binding",
+                ));
+            }
+            value.position = position;
+            value.rotation = rotation;
+        }
+        let row = Arc::make_mut(&mut state.events).extend_actor_source()?;
+        let mut actions = Vec::new();
+        let mut watermark = *next_event;
+        for event in 0..32 {
+            let entry = usize::from(compiled.graph.actors[at][usize::from(event)]);
+            if compiled.graph.instructions.iter().any(|i| {
+                i.pc == entry
+                    && i.spec.handler == "field_event_end_slot"
+                    && i.spec.operands.is_empty()
+                    && i.size == 1
+            }) {
+                // Keep terminal-only slots empty so the stable actor can
+                // receive a genuinely new authored event later.
+                continue;
+            }
+            if let Some(prepared) =
+                clone_event::prepare(&compiled.graph, at as u32, event, watermark)?
+            {
+                watermark = prepared.next_id;
+                actions.push(draft::Action::NewEvent {
+                    actor: row as usize,
+                    event: usize::from(event),
+                    nodes: prepared.nodes,
+                });
+            }
+        }
+        if !actions.is_empty() {
+            // Copied bytes already contain current namespace repairs. Capture
+            // their literals before inserting the new descriptor into its actor
+            // prefix, so shifted static indices cannot silently rebind a copy.
+            Self::edit_events(
+                state,
+                draft::Action::Batch { actions },
+                next_event,
+                &before_descriptors,
+                &before_zones,
+            )?;
+        }
+        if *next_event != watermark {
+            return Err(invalid(
+                "actor script copy allocation differs from prepared stable identities",
+            ));
+        }
+        let id = new_id(next, "actor")?;
+        let insert = state.actors.len();
+        state.descriptors.insert(
+            insert,
+            Entity {
+                id: id.clone(),
+                value,
+            },
+        );
+        state.actors.push(actors::Actor {
+            id,
+            event_source_row: row,
+            origin: actors::Origin::IndependentCopy {
+                template: template.into(),
+            },
+        });
+        Ok(())
     }
     fn apply(
         &self,
@@ -456,14 +613,66 @@ impl Draft {
             Action::Event { action } => {
                 let descriptors = entity_ids(&state.descriptors);
                 let zones = entity_ids(&state.zones);
-                let events = Arc::make_mut(&mut state.events);
-                events.draft.advance_allocator(*next_event)?;
-                events.edit((**action).clone(), &descriptors, &zones)?;
-                *next_event = events.draft.next_node_id();
+                self.validate_source_event_action(state, action)?;
+                Self::edit_events(state, (**action).clone(), next_event, &descriptors, &zones)?;
+            }
+            Action::AddActor {
+                template,
+                position,
+                rotation,
+            } => self.add_actor(
+                state,
+                template,
+                Some((*position, *rotation)),
+                next,
+                next_event,
+            )?,
+            Action::DuplicateActor { id } => self.add_actor(state, id, None, next, next_event)?,
+            Action::DeleteActor { id } => {
+                if self.base.event_actor_count > usize::from(u8::MAX) {
+                    return Err(unsupported(
+                        "generic actor CRUD on wider original tables needs runtime byte-link qualification",
+                    ));
+                }
+                let at = Self::actor_at(state, id)?;
+                if at == 0 {
+                    return Err(unsupported(
+                        "original actor zero retains engine-owned events2/3 and cannot be deleted",
+                    ));
+                }
+                let compiled = self.compile_events(state)?;
+                actors::qualify_template(&compiled.graph, at)?;
+                state.actors.remove(at);
+                state.descriptors.remove(at);
+            }
+            Action::ActorEvent {
+                actor,
+                event,
+                nodes,
+            } => {
+                let at = Self::actor_at(state, actor)?;
+                let row = state.actors[at].event_source_row as usize;
+                let descriptors = entity_ids(&state.descriptors);
+                let zones = entity_ids(&state.zones);
+                Self::edit_events(
+                    state,
+                    draft::Action::NewEvent {
+                        actor: row,
+                        event: usize::from(*event),
+                        nodes: nodes.clone(),
+                    },
+                    next_event,
+                    &descriptors,
+                    &zones,
+                )?;
             }
             Action::SetPlacement { change } => {
                 let compiled = self.compile_events(state)?;
-                let actors = entity_ids(&state.descriptors[..self.base.event_actor_count]);
+                let actors = state
+                    .actors
+                    .iter()
+                    .map(|a| a.id.clone())
+                    .collect::<Vec<_>>();
                 let action = placements::prepare(
                     &compiled,
                     &state.events.draft,
@@ -639,7 +848,12 @@ impl Draft {
     }
     pub fn placement(&self, node: &str) -> Result<placements::Binding, FieldError> {
         let compiled = self.compile_events(&self.state)?;
-        let actors = entity_ids(&self.state.descriptors[..self.base.event_actor_count]);
+        let actors = self
+            .state
+            .actors
+            .iter()
+            .map(|a| a.id.clone())
+            .collect::<Vec<_>>();
         placements::describe(
             &compiled,
             &self.state.events.draft,
@@ -654,16 +868,28 @@ impl Draft {
     fn compile_events(&self, state: &State) -> Result<draft::Compiled, FieldError> {
         let descriptor_ids = entity_ids(&state.descriptors);
         let zone_ids = entity_ids(&state.zones);
+        if state.actors.len() > state.descriptors.len()
+            || state
+                .actors
+                .iter()
+                .zip(&state.descriptors)
+                .any(|(a, d)| a.id != d.id)
+        {
+            return Err(invalid(
+                "active actor rows and descriptor prefix identities differ",
+            ));
+        }
+        let mut events =
+            state
+                .events
+                .compile(&descriptor_ids, &zone_ids, &actors::rows(&state.actors))?;
         // field_event_begin_effect reads iv@1 as a raw effect owner, stores it
         // in field_effect_launch.actor and emitter.unk52, then field_effect.c
         // indexes descriptors with it. It is not an actor-selector byte. Keep
         // this source-proven indirect dependency explicit until its variable /
         // 0xff dual semantics have qualified stable bindings.
         if descriptor_ids != entity_ids(&self.base.initial.descriptors)
-            && state
-                .events
-                .draft
-                .compile()?
+            && events
                 .graph
                 .instructions
                 .iter()
@@ -674,7 +900,6 @@ impl Draft {
                 "field_event_begin_effect has raw/variable effect-owner descriptor indices; structural descriptor edits require qualified effect reference closure",
             ));
         }
-        let mut events = state.events.compile(&descriptor_ids, &zone_ids)?;
         if !state.entrances.is_empty() {
             events.bytes = entrances::encode_entrances(
                 &events.graph,

@@ -50,6 +50,13 @@ fn parse<E: de::Error>(value: Value) -> Result<Box<draft::Document>, E> {
         .map(Box::new)
         .map_err(E::custom)
 }
+pub fn nodes_from_json<'de, D: serde::Deserializer<'de>>(
+    deserializer: D,
+) -> Result<Vec<draft::NodeInput>, D::Error> {
+    let value = Value::deserialize(deserializer)?;
+    portable(&value).map_err(de::Error::custom)?;
+    serde_json::from_value(value).map_err(de::Error::custom)
+}
 pub fn action_from_json<'de, D: serde::Deserializer<'de>>(
     deserializer: D,
 ) -> Result<Box<draft::Action>, D::Error> {

@@ -226,10 +226,28 @@ pub fn capture(
     descriptors: &[String],
     zones: &[String],
 ) -> Result<References, FieldError> {
+    capture_inner(graph, descriptors, zones, true)
+}
+/// Private source-table derivations retain inactive/empty virtual rows. Their
+/// rows are not the runtime descriptor namespace; final compilation selects
+/// active rows before validating references. Canonical bytes/facts stay strict.
+pub(crate) fn capture_virtual(
+    graph: &FieldGraph,
+    descriptors: &[String],
+    zones: &[String],
+) -> Result<References, FieldError> {
+    capture_inner(graph, descriptors, zones, false)
+}
+fn capture_inner(
+    graph: &FieldGraph,
+    descriptors: &[String],
+    zones: &[String],
+    runtime_rows: bool,
+) -> Result<References, FieldError> {
     field::encode(graph)?;
     ids(descriptors, "descriptor")?;
     ids(zones, "zone")?;
-    if graph.actors.len() > descriptors.len() {
+    if runtime_rows && graph.actors.len() > descriptors.len() {
         return Err(invalid("actor rows exceed descriptor namespace"));
     }
     let m = metadata()?;

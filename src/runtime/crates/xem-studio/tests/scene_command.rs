@@ -33,6 +33,22 @@ fn placement_open_args(bytes: Vec<u8>) -> Value {
 
 const BYTECODE_OFFSET: usize = 132 + 64;
 
+fn primary_opcode(handler: &str) -> u8 {
+    let metadata: Value = serde_json::from_str(include_str!("../data/field-opcodes.json")).unwrap();
+    metadata["primary"]
+        .as_object()
+        .unwrap()
+        .iter()
+        .find_map(|(opcode, forms)| {
+            forms
+                .as_array()?
+                .iter()
+                .any(|form| form["handler"] == handler)
+                .then(|| opcode.parse::<u8>().unwrap())
+        })
+        .unwrap_or_else(|| panic!("canonical primary opcode metadata contains {handler}"))
+}
+
 fn placement_scene_bundle(
     actor_count: usize,
     entries: &[(usize, usize, usize)],
@@ -1582,6 +1598,254 @@ fn writes_native_scene_command_trace_for_wasm_replay_when_requested() {
         &mut trace,
         "field.scene.draft",
         json!({"kind":"close","scene":imported_placement_scene}),
+    );
+
+    // Actor rows use the same public scene protocol. This fixture is copied
+    // from the passing scene_actors placement test: one source actor owns a
+    // qualified place_at_height event at pc:1 and a terminal slot at pc:8.
+    // Its entrance list is empty because the code begins at pc:1, not at an
+    // indexed 14-byte entrance prefix.
+    let place_at_height = primary_opcode("field_event_place_at_height");
+    let actor_bundle = placement_scene_bundle(
+        1,
+        &[(0, 0, 1)],
+        &[0xff, place_at_height, 0xfe, 0xff, 0x0d, 0, 0xf9, 0xff, 0],
+    );
+    let actor_open = record(
+        &studio,
+        &mut trace,
+        "field.scene.draft",
+        placement_open_args(actor_bundle.clone()),
+    );
+    assert!(
+        actor_open["ok"].is_object(),
+        "actor fixture opens: {actor_open}"
+    );
+    let actor_scene = actor_open["ok"]["scene"].as_u64().unwrap() as u32;
+    let first_copy = record(
+        &studio,
+        &mut trace,
+        "field.scene.draft",
+        json!({"kind":"edit","scene":actor_scene,"revision":0,
+            "action":{"kind":"duplicate_actor","id":"descriptor:0"}}),
+    );
+    assert_eq!(
+        first_copy["ok"]["state"]["actors"][1]["id"],
+        "scene:1:actor"
+    );
+    assert_eq!(first_copy["ok"]["state"]["next_event_id"], 3);
+    let actor_transform = record(
+        &studio,
+        &mut trace,
+        "field.scene.draft",
+        json!({"kind":"edit","scene":actor_scene,"revision":1,
+            "action":{"kind":"set_placement","change":{
+                "node":"new:1","actor":"scene:1:actor","event":0,
+                "position":[10,20,30],"layer":null}}}),
+    );
+    assert_eq!(actor_transform["ok"]["state"]["revision"], 2);
+    record(
+        &studio,
+        &mut trace,
+        "field.scene.draft",
+        json!({"kind":"undo","scene":actor_scene,"revision":2}),
+    );
+    record(
+        &studio,
+        &mut trace,
+        "field.scene.draft",
+        json!({"kind":"undo","scene":actor_scene,"revision":3}),
+    );
+    let alternate_actor = record(
+        &studio,
+        &mut trace,
+        "field.scene.draft",
+        json!({"kind":"edit","scene":actor_scene,"revision":4,
+            "action":{"kind":"duplicate_actor","id":"descriptor:0"}}),
+    );
+    assert_eq!(
+        alternate_actor["ok"]["state"]["actors"][1]["id"],
+        "scene:2:actor"
+    );
+    assert_eq!(alternate_actor["ok"]["state"]["next_event_id"], 5);
+    let authored_actor_event = record(
+        &studio,
+        &mut trace,
+        "field.scene.draft",
+        json!({"kind":"edit","scene":actor_scene,"revision":5,
+        "action":{"kind":"actor_event","actor":"scene:2:actor","event":1,
+            "nodes":[
+                {"bytes":[1,0,0],"targets":{"0":"new:6"}},
+                {"bytes":[0],"targets":{}}
+            ]}}),
+    );
+    assert_eq!(authored_actor_event["ok"]["state"]["next_event_id"], 7);
+    assert_eq!(
+        authored_actor_event["ok"]["state"]["actors"][1]["id"],
+        "scene:2:actor"
+    );
+    // Numeric M6 NewEvent addresses the immutable original source actor rows and may not
+    // silently target a virtual actor row. The stable ActorEvent route above is
+    // the supported way to author scripts on the new actor.
+    let numeric_virtual_event = record(
+        &studio,
+        &mut trace,
+        "field.scene.draft",
+        json!({"kind":"edit","scene":actor_scene,"revision":6,
+            "action":{"kind":"event","action":{"kind":"new_event","actor":1,"event":2,
+                "nodes":[{"bytes":[14],"targets":{}},{"bytes":[0],"targets":{}}]}}}),
+    );
+    assert_eq!(
+        numeric_virtual_event["error"]["kind"],
+        "unsupported_scene_edit"
+    );
+    let malformed_actor_nodes = record(
+        &studio,
+        &mut trace,
+        "field.scene.draft",
+        json!({"kind":"edit","scene":actor_scene,"revision":6,
+            "action":{"kind":"actor_event","actor":"scene:2:actor","event":2,
+                "nodes":[{"bytes":[256],"targets":{}}]}}),
+    );
+    assert_eq!(malformed_actor_nodes["error"]["kind"], "invalid_args");
+    let malformed_actor_targets = record_wire(
+        &studio,
+        &mut trace,
+        format!(
+            "{{\"op\":\"field.scene.draft\",\"args\":{{\"kind\":\"edit\",\"scene\":{actor_scene},\"revision\":6,\"action\":{{\"kind\":\"actor_event\",\"actor\":\"scene:2:actor\",\"event\":2,\"nodes\":[{{\"bytes\":[1,0,0],\"targets\":{{\"4294967296\":\"new:6\"}}}},{{\"bytes\":[0],\"targets\":{{}}}}]}}}}}}"
+        ),
+    );
+    assert_eq!(malformed_actor_targets["error"]["kind"], "invalid_args");
+    let actor_export = record(
+        &studio,
+        &mut trace,
+        "field.scene.draft",
+        json!({"kind":"export","scene":actor_scene}),
+    );
+    assert_eq!(actor_export["ok"]["next_id"], 3);
+    assert_eq!(actor_export["ok"]["next_event_id"], 7);
+    let actor_compile = record(
+        &studio,
+        &mut trace,
+        "field.scene.draft",
+        json!({"kind":"compile","scene":actor_scene}),
+    );
+    let actor_bindings = &actor_compile["ok"]["events"]["bindings"];
+    assert!(!actor_bindings.as_object().unwrap().contains_key("new:1"));
+    assert!(!actor_bindings.as_object().unwrap().contains_key("new:2"));
+    assert!(actor_bindings.as_object().unwrap().contains_key("new:3"));
+    assert!(actor_bindings.as_object().unwrap().contains_key("new:4"));
+    assert!(actor_bindings.as_object().unwrap().contains_key("new:5"));
+    assert!(actor_bindings.as_object().unwrap().contains_key("new:6"));
+    let actor_event_bytes = byte_array(&actor_compile["ok"]["events"]["bytes"]);
+    let actor_bytecode_offset = actor_compile["ok"]["events"]["graph"]["bytecode_offset"]
+        .as_u64()
+        .expect("compiled actor event graph exposes its bytecode base")
+        as usize;
+    assert_eq!(actor_bytecode_offset, 132 + 2 * 64);
+    let actor_branch_pc = actor_bindings["new:5"].as_u64().unwrap() as usize;
+    let actor_branch_target = actor_bindings["new:6"].as_u64().unwrap() as usize;
+    assert_eq!(
+        actor_event_bytes[actor_bytecode_offset + actor_branch_pc],
+        1
+    );
+    assert_eq!(
+        u16::from_le_bytes([
+            actor_event_bytes[actor_bytecode_offset + actor_branch_pc + 1],
+            actor_event_bytes[actor_bytecode_offset + actor_branch_pc + 2],
+        ]) as usize,
+        actor_branch_target
+    );
+    record(
+        &studio,
+        &mut trace,
+        "field.scene.draft",
+        json!({"kind":"close","scene":actor_scene}),
+    );
+    let actor_import = record(
+        &studio,
+        &mut trace,
+        "field.scene.draft",
+        json!({"kind":"import","document":actor_export["ok"]}),
+    );
+    let imported_actor_scene = actor_import["ok"]["scene"].as_u64().unwrap() as u32;
+    let actor_recompile = record(
+        &studio,
+        &mut trace,
+        "field.scene.draft",
+        json!({"kind":"compile","scene":imported_actor_scene}),
+    );
+    assert_eq!(
+        actor_recompile["ok"]["bundle"],
+        actor_compile["ok"]["bundle"]
+    );
+    assert_eq!(
+        actor_recompile["ok"]["events"]["bindings"],
+        actor_compile["ok"]["events"]["bindings"]
+    );
+    record(
+        &studio,
+        &mut trace,
+        "field.scene.draft",
+        json!({"kind":"close","scene":imported_actor_scene}),
+    );
+
+    // AddActor/DeleteActor and actor-zero protection use a terminal-only source
+    // row, matching the passing actor unit fixture and requiring no fake script.
+    let crud_bundle = placement_scene_bundle(1, &[(0, 0, 1)], &[0xff, 0]);
+    let crud_open = record(
+        &studio,
+        &mut trace,
+        "field.scene.draft",
+        placement_open_args(crud_bundle.clone()),
+    );
+    let crud_scene = crud_open["ok"]["scene"].as_u64().unwrap() as u32;
+    let added_actor = record(
+        &studio,
+        &mut trace,
+        "field.scene.draft",
+        json!({"kind":"edit","scene":crud_scene,"revision":0,
+            "action":{"kind":"add_actor","template":"descriptor:0",
+                "position":[11,22,33],"rotation":[3,4,5]}}),
+    );
+    assert_eq!(
+        added_actor["ok"]["state"]["actors"][1]["id"],
+        "scene:1:actor"
+    );
+    let actor_zero_delete = record(
+        &studio,
+        &mut trace,
+        "field.scene.draft",
+        json!({"kind":"edit","scene":crud_scene,"revision":1,
+            "action":{"kind":"delete_actor","id":"descriptor:0"}}),
+    );
+    assert_eq!(actor_zero_delete["error"]["kind"], "unsupported_scene_edit");
+    let delete_actor = record(
+        &studio,
+        &mut trace,
+        "field.scene.draft",
+        json!({"kind":"edit","scene":crud_scene,"revision":1,
+            "action":{"kind":"delete_actor","id":"scene:1:actor"}}),
+    );
+    assert_eq!(
+        delete_actor["ok"]["state"]["actors"]
+            .as_array()
+            .unwrap()
+            .len(),
+        1
+    );
+    let crud_compile = record(
+        &studio,
+        &mut trace,
+        "field.scene.draft",
+        json!({"kind":"compile","scene":crud_scene}),
+    );
+    assert_eq!(byte_array(&crud_compile["ok"]["bundle"]), crud_bundle);
+    record(
+        &studio,
+        &mut trace,
+        "field.scene.draft",
+        json!({"kind":"close","scene":crud_scene}),
     );
 
     let fixture = json!({"schema_version":1,"synthetic_only":true,"trace":trace});

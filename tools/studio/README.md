@@ -968,3 +968,20 @@ capability and persistent diagnostic strings. Unsupported, shared, pinned or
 variable-derived bindings fail explicitly. X/Z-only floor placement remains
 editable; an entered floor Y is rejected. Edits reuse M6 field transactions and
 therefore participate in the scene's atomic undo/save/build history.
+
+Actor actions are `add_actor{template,position,rotation}`, `duplicate_actor{id}`,
+`delete_actor{id}` and `actor_event{actor,event,nodes}`. Template/id/actor fields
+use snapshot's stable actor IDs. New actors independently copy qualified current
+scripts; constants keep their stable old targets and self remains symbolic.
+Paired/inline/relative/party-owned/unclosed forms fail atomically with their
+original reason. The template's scripts may override descriptor placement; use
+explicit source placement bindings for those writers.
+
+`actor_event` uses the existing M6 NodeInput form for an empty event slot, with
+IDs beginning at snapshot.next_event_id. Numeric M6 NewEvent actor indices still
+mean active original source rows, not the current runtime actor order or private
+virtual rows. Snapshot actors carry typed origins and event_source_row as
+provenance only. Generic creation supports runtime indices0..254 because actual
+byte actor links and resolved0xff selectors have an absent sentinel. This does
+not assert a universal original actor-count maximum; wider sources remain
+losslessly readable. Original actor0 is fixed for engine events2/3.

@@ -118,6 +118,18 @@ pub struct FieldGraph {
     pub diagnostics: Diagnostics,
 }
 
+/// A validated actor-table edit can add an entry at an existing instruction,
+/// splitting its canonical basic block. Block IDs then change by construction.
+/// Keep the complete ordered PC/kind/status edge facts exact; each graph's own
+/// block associations are still checked by the normal strict encoder. This is
+/// private to the authored table derivation, not a relaxed graph/byte encoder.
+pub(crate) fn execution_edges_match(left: &FieldGraph, right: &FieldGraph) -> bool {
+    left.edges.len() == right.edges.len()
+        && left.edges.iter().zip(&right.edges).all(|(a, b)| {
+            a.from_pc == b.from_pc && a.to_pc == b.to_pc && a.kind == b.kind && a.status == b.status
+        })
+}
+
 pub(super) fn source_hash(bytes: &[u8]) -> String {
     Sha256::digest(bytes)
         .iter()

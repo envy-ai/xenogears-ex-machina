@@ -173,6 +173,53 @@ impl Draft {
             next_id: 1,
         })
     }
+    pub(crate) fn source_graph(&self) -> &FieldGraph {
+        &self.base
+    }
+    /// Scene-only table derivation. The original code/variable bits/row prefix
+    /// must remain exact. Replaying the same typed history retains node IDs;
+    /// compiled bytes are never accepted as a new original source.
+    pub(crate) fn with_extended_actor_table(&self, base: FieldGraph) -> Result<Self, FieldError> {
+        let bytes = encode(&base)?;
+        if base.actors.len() != self.base.actors.len() + 1
+            || !base.actors.starts_with(&self.base.actors)
+            || base.variable_unsigned_bits != self.base.variable_unsigned_bits
+            || bytes.get(base.bytecode_offset..) != self.bytes.get(self.base.bytecode_offset..)
+            || base.declared_size.checked_sub(base.bytecode_offset)
+                != self
+                    .base
+                    .declared_size
+                    .checked_sub(self.base.bytecode_offset)
+            || base.instructions != self.base.instructions
+            || !super::execution_edges_match(&base, &self.base)
+            || base.diagnostics != self.base.diagnostics
+        {
+            return Err(error(
+                "scene actor derivation must preserve original rows, variable bits, code, gaps, tails and instruction facts",
+            ));
+        }
+        // A new root may split blocks but must never remove an original pinned
+        // byte's restriction. Preserve the original writability authority.
+        for old in self.base.blocks.iter().filter(|b| b.kind == "pinned") {
+            let mut at = old.start;
+            for block in base.blocks.iter().filter(|b| b.kind == "pinned") {
+                if block.start <= at && at < block.end {
+                    at = block.end.min(old.end);
+                }
+                if at == old.end {
+                    break;
+                }
+            }
+            if at != old.end {
+                return Err(error(
+                    "scene actor derivation removes original pinned storage",
+                ));
+            }
+        }
+        let mut document = self.document();
+        document.base = base;
+        Self::import(document)
+    }
     pub(crate) fn revision(&self) -> u32 {
         self.revision
     }

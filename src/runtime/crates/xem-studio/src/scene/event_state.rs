@@ -1,7 +1,11 @@
 //! Scene-owned M6 transactions and stable selector bindings. The original M6
 //! document remains the sole script representation/compiler. Captured selectors
 //! retain entity identities through scene renumbering and code relocation.
-use super::bindings::{self, Reference, References};
+use super::{
+    actor_rows,
+    bindings::{self, Reference, References},
+    virtual_actors,
+};
 use crate::field::{self, FieldError, draft};
 use std::{
     collections::{BTreeMap, BTreeSet},
@@ -34,7 +38,7 @@ fn capture(
     descriptors: &[String],
     zones: &[String],
 ) -> Result<References, FieldError> {
-    let mut refs = bindings::capture(&compiled.graph, descriptors, zones)?;
+    let mut refs = bindings::capture_virtual(&compiled.graph, descriptors, zones)?;
     let nodes = nodes(compiled);
     for reference in &mut refs.entries {
         reference.node = nodes.get(&reference.pc).cloned().ok_or_else(|| {
@@ -115,6 +119,13 @@ impl Events {
             bindings,
         })
     }
+    pub fn extend_actor_source(&mut self) -> Result<u32, FieldError> {
+        let row = u32::try_from(self.draft.source_graph().actors.len())
+            .map_err(|_| invalid("virtual actor row exceeds u32"))?;
+        let base = virtual_actors::extend_empty(self.draft.source_graph())?;
+        self.draft = self.draft.with_extended_actor_table(base)?;
+        Ok(row)
+    }
     pub fn edit(
         &mut self,
         action: draft::Action,
@@ -172,8 +183,10 @@ impl Events {
         &self,
         descriptors: &[String],
         zones: &[String],
+        rows: &[actor_rows::Row],
     ) -> Result<draft::Compiled, FieldError> {
-        let compiled = self.draft.compile()?;
+        let virtual_compiled = self.draft.compile()?;
+        let compiled = runtime_rows(virtual_compiled, rows)?;
         let current = capture(&compiled, descriptors, zones)?;
         let mut selected: BTreeMap<usize, Vec<usize>> = BTreeMap::new();
         for reference in current.entries {
@@ -196,7 +209,26 @@ impl Events {
             // each reference, not a current/relocated PC.
             rewrites.extend(repaired);
         }
-        self.draft
-            .compile_with_scene_operands(&rewrites, descriptors.len())
+        if rewrites.is_empty() {
+            return Ok(compiled);
+        }
+        let limit = descriptors
+            .len()
+            .max(self.draft.source_graph().actors.len());
+        runtime_rows(
+            self.draft.compile_with_scene_operands(&rewrites, limit)?,
+            rows,
+        )
     }
+}
+
+fn runtime_rows(
+    mut compiled: draft::Compiled,
+    rows: &[actor_rows::Row],
+) -> Result<draft::Compiled, FieldError> {
+    let rebuilt = actor_rows::rebuild(&compiled.graph, rows)?;
+    compiled.bytes = rebuilt.bytes;
+    compiled.declared_size = rebuilt.declared_size;
+    compiled.graph = rebuilt.graph;
+    Ok(compiled)
 }
