@@ -1077,7 +1077,32 @@ selected object after project/renderer replacement. View→Reset workspace layou
 adopts the new default inspector proportions without replacing saved user layouts.
 Three's exact MIT notice accompanies builds at licenses/three/LICENSE.
 
-NW final checks remain pending at this increment. Smoke runs can retain their
+The ordinary development and production NW smokes pass. Scene desktop acceptance
+is blocked on this test host: its Xvfb has no GLX, and an explicit normal Mesa
+Vulkan selection is WebGL2-blocklisted. Scene NW editing, Save and subsequent
+reload therefore remain unverified; M7 is not fully accepted. No graphics,
+sandbox, blocklist or TLS bypass was applied. Smoke runs can retain their
 fresh filesystem fixtures and result artifacts with npm run test:nw --
 --keep-artifacts (add --dev for the existing strict-TLS development launcher).
 This option changes artifact retention only, not Node/TLS permissions.
+
+
+The optional original-project desktop journey is npm run test:nw -- --scene
+--keep-artifacts, with explicit XEM_NW_SMOKE_TEST_DIST (a test-only Vite build),
+XEM_STUDIO_DISC1, XEM_STUDIO_DISC2 and XEM_STUDIO_M7_SAVED_PROJECT inputs. Private
+inputs/output stay under ignored M7 storage. It uses a physical copied app with
+canonical package/launcher/TLS helper and hash-checked assets. The optional
+--scene-vulkan is valid only with --scene and selects the normal ANGLE Vulkan
+renderer; set VK_ICD_FILENAMES to the existing pinned XEM_LAVAPIPE_ICD when
+reproducing that measured test configuration. That attempted configuration
+failed on this host and is retained as a diagnostic, not a successful recipe.
+A working normal WebGL2 desktop environment is still needed for this case.
+
+
+Final focused checks through97 pass: current typecheck/design/source/provenance
+and opcode/access/model/scene-binding consistency checks, production assets and
+Third-party notice identity, and the real production-browser test-hook absence
+case. Matching-source Rust/native/WASM and unit proofs are reused; no unchanged
+runtime rebuild/full-suite repeat is claimed. Failed Scene NW attempts remain
+retained and explicitly incomplete. The current acceptance record is
+[studio-milestone-7.md](../../docs/studio-milestone-7.md).

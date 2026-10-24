@@ -11,7 +11,8 @@ is retried by this milestone.
 
 Human M7 UI approval is received (record and exact images below). Backend
 native/WASM proofs and the first synthetic Scene UI increment are verified;
-original-browser project save/reload, Build/Play and authored placement readback now pass. Exact-package native/browser playback and untouched-map/Disc2 comparisons now pass; saved-project framing now passes with reviewed real pixels. NW acceptance remains open.
+original-browser project save/reload, Build/Play and authored placement readback now pass. Exact-package native/browser playback and untouched-map/Disc2 comparisons now pass; saved-project framing now passes with reviewed real pixels. General development/production NW smokes pass; Scene NW is environment-blocked
+by missing GLX and WebGL2 blocklisting. M7 acceptance remains incomplete.
 The dated checkpoints below retain historical gate/failure statements.
 
 Current publication direction: Bart has authorized one normal, non-force push to
@@ -789,3 +790,73 @@ claim is made by this checked increment. The Three.js MIT notice is exact in
 source and in the checked88 built distribution. No new runtime core/decomp
 inputs changed, so accepted M6 full-suite/focused-retry evidence is reused with
 its original exit1 and screenshot limitation preserved.
+
+
+### Desktop acceptance limitation (checkpoints91–95)
+
+Fresh test/production Vite builds, typecheck, design/source audits and the normal
+built/development NW smokes passed at91. Development checks use the actual HTTPS
+server, selected public certificate and strict TLS/hostname validation; the
+canonical temporary manifest has exactly https://localhost:5176/* plus that one
+public additional trust anchor. The copied production manifest has neither.
+Three's notice and all distribution assets are copied/compared byte-for-byte.
+No existing dist or prior result directory is cleared. --keep-artifacts retains
+fresh smoke folders; ordinary default cleanup behavior stays available.
+
+The new optional Scene NW journey uses actual original-disc path controls and
+Map23 selection, seeds the exact86 project into a fresh ignored folder, then
+uses normal Load through the real NodeFilesAdapter. Only OS directory-chooser
+selection is intercepted. It is designed to qualify actor descriptor:3/pc:1076,
+edit61→62 with inline Apply/Undo/Redo, and verify real Node Save/Load/document
+identities. Those edit/write/reload assertions have NOT executed successfully.
+91 failed an incorrect folder-observation selector before Scene;92 corrected
+that harness observation and reached a real Three.js WebGL context failure.
+
+93 measured the test Xvfb server's actual extensions: GLX is absent. The suite's
+normal Mesa EGL/llvmpipe environment cannot supply an RGB GLX visual there.94
+confirmed the existing pinned Mesa Lavapipe Vulkan driver is available.95 used
+only normal renderer selection --use-gl=angle --use-angle=vulkan and the pinned
+VK_ICD_FILENAMES; NW then explicitly reported WebGL2 blocklisted and Three.js
+refused context creation. This was a modified test renderer configuration, not
+a passing default launch. [ANGLE's documented renderer selection](https://chromium.googlesource.com/angle/angle/+/HEAD/doc/DebuggingTips.md#usage) is distinct
+from its unrelated sandbox/watchdog options, which were not applied.
+
+No blocklist, unsafe SwiftShader, sandbox, TLS, system trust or Node-origin bypass
+is permitted or present. The app keeps the local original renderer diagnostic.
+A normal NW.js display/driver providing supported WebGL2 is required to finish
+Scene desktop edit/save acceptance. Browser Scene and exact-package both-host
+gameplay remain separately verified. Failed91/92/95 logs and93/94 diagnostic
+results remain intact; a pushed checkpoint will not establish full M7 completion.
+Astra's final source review additionally removed a premature test-only coordinate
+wait before actor/binding selection, with focused typecheck96 passing. No
+further NW graphics retries were run.
+
+
+### Final available checks and review (checkpoints96–97)
+
+All four public metadata generators pass --check; typecheck, source/archive
+policy and diff checks pass at96. Its production inventory verifier initially
+failed because Node localeCompare and Python lexical ordering differed, despite
+all 11 complete path/size/SHA identities matching.97 fixes only that ignored
+verifier, rejects duplicate paths, compares full identities independent of
+enumeration order, and reuses96 only after all recorded source inputs match.
+The actual production-hook browser test passes1/1 in4.8s with Chromium sandbox
+enabled and the test flag unset, against exact91 production assets. Inventory
+checks before/after both pass. No production rebuild or other journey repeats.
+
+Matching-source unit evidence remains76's seven pose/PC tests,64's three
+field-authoring cases plus unchanged scene/service cases from63. Native26 cases
+and141 full command envelopes from58, WASM parity60 and strict Clippy/fmt89
+remain valid for unchanged backend inputs. Runtime core/decomp did not change,
+so no full runtime suite was launched. Accepted M6's full-suite exit1, focused
+passing retries and residual independent screenshot limitation stay historical.
+
+Astra independently reviewed the current package/ownership/framing proof and the
+new NW harness permission, retention and private-input boundaries. Its one latent
+coordinate-wait ordering finding was corrected and typechecked. No further code
+blocker was found in that bounded review. Scene NW edit/save remains unexecuted
+because of the measured normal-WebGL2 environment barrier. M7 is not declared
+complete. Five protected main PR46 files retain their exact baseline hashes;
+their separate changes are not part of the outgoing editor patch. Publication
+is a separate authorized checkpoint action, with exact remote/CI receipts kept
+locally and reported in-session; it does not waive this remaining acceptance.
