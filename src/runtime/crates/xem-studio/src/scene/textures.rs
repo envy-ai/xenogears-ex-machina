@@ -280,3 +280,104 @@ pub fn decode_images(
         shared_slots,
     })
 }
+
+/// Original field companion stream, in consecutive 2048-byte user sectors.
+///
+/// field.c:field_map_stream_start selects file0xb9+2*map with both placement
+/// modes/base offsets zero. resident/cd_reads_and_streams.c:stream_load_image_strip
+/// reads a header sector followed by one sector per strip. The first header's
+/// image count is authoritative; later headers do not replace it. A non-image
+/// header stops the original reader, including placeholder companion files.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct MapStream {
+    pub uploads: Vec<Upload>,
+    pub source_bytes_read: usize,
+    pub image_count: usize,
+    pub stop_reason: String,
+}
+
+pub fn decode_map_stream(data: &[u8]) -> Result<MapStream, FieldError> {
+    const SECTOR: usize = 2048;
+    if data.len() > 32 << 20 {
+        return Err(invalid("map image stream exceeds32MiB source budget"));
+    }
+    let mut at = 0;
+    let mut uploads = Vec::new();
+    let mut budget = Budget::default();
+    let mut remaining = None;
+    let mut image_count = 0;
+    loop {
+        let kind = word(data, at)?;
+        if kind != 0x1200 && kind != 0x1201 {
+            return Ok(MapStream {
+                uploads,
+                source_bytes_read: at + 4,
+                image_count,
+                stop_reason: "non_image_header".into(),
+            });
+        }
+        let header = bytes(data, at, SECTOR)?;
+        if remaining.is_none() {
+            let count = word(header, 20)?;
+            if count == 0 || count > MAX_UPLOADS {
+                return Err(invalid("map image count is zero or exceeds service budget"));
+            }
+            remaining = Some(count);
+        }
+        let strips = word(header, 24)?;
+        if strips == 0 || strips > (SECTOR - 28) / 2 {
+            return Err(invalid(
+                "map strip count is zero or exceeds its header sector",
+            ));
+        }
+        let x = u32::from(half(header, 4)?) + u32::from(half(header, 8)?);
+        let mut y = u32::from(half(header, 6)?) + u32::from(half(header, 10)?);
+        let width = half(header, 12)?;
+        if x > 1023 || y > 511 || width == 0 || x + u32::from(width) > 1024 {
+            return Err(invalid("map image placement lies outside original VRAM"));
+        }
+        at += SECTOR;
+        for strip in 0..strips {
+            let height = half(header, 28 + strip * 2)?;
+            if height == 0
+                || usize::from(width) * usize::from(height) > SECTOR / 2
+                || y + u32::from(height) > 512
+            {
+                return Err(invalid(
+                    "map image strip exceeds its sector or original VRAM",
+                ));
+            }
+            bytes(data, at, SECTOR)?;
+            uploads.push(upload(
+                data,
+                [at, at + SECTOR],
+                at,
+                [x as u16, y as u16, width, height],
+                UploadKind {
+                    kind: if kind == 0x1200 {
+                        "map_image_strip"
+                    } else {
+                        "map_palette_strip"
+                    },
+                    slot: None,
+                    mode: None,
+                },
+                &mut budget,
+            )?);
+            y += u32::from(height);
+            at += SECTOR;
+        }
+        image_count += 1;
+        let left = remaining.as_mut().expect("first header count");
+        *left -= 1;
+        if *left == 0 {
+            return Ok(MapStream {
+                uploads,
+                source_bytes_read: at,
+                image_count,
+                stop_reason: "image_count_complete".into(),
+            });
+        }
+    }
+}

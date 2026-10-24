@@ -19,6 +19,10 @@ const DIRECTORY_BYTES: usize = 0x7C;
 const EXE_LBA: usize = 50;
 const BUNDLE_LBAS: [usize; 1] = [70];
 const PLACEHOLDER_LBA: usize = 71;
+#[cfg(feature = "test-fixtures")]
+const COMPANION_LBA: usize = 120;
+#[cfg(feature = "test-fixtures")]
+const STREAM_IMAGE_SECTORS: usize = 240;
 
 pub struct SyntheticDisc {
     pub image: Vec<u8>,
@@ -180,4 +184,42 @@ pub fn build() -> SyntheticDisc {
         component,
         bundle,
     }
+}
+
+/// Add one indexed map companion to an otherwise unchanged synthetic disc.
+/// The index lives in its own raw sectors; leave the boot executable untouched.
+#[cfg(feature = "test-fixtures")]
+pub fn with_map_stream(mut fixture: SyntheticDisc, stream: &[u8]) -> SyntheticDisc {
+    assert!(!stream.is_empty() && stream.len().is_multiple_of(USER_SIZE));
+    assert!(COMPANION_LBA + stream.len() / USER_SIZE <= STREAM_IMAGE_SECTORS);
+    fixture.image.resize(STREAM_IMAGE_SECTORS * SECTOR_SIZE, 0);
+    let companion_slot = 0xB9usize;
+    let index_start = EXE_HEADER + 4;
+    let mut index = fixture.executable[index_start..index_start + INDEX_BYTES].to_vec();
+    let record_at = companion_slot * 7;
+    index[record_at..record_at + 7]
+        .copy_from_slice(&index_record(COMPANION_LBA as u32, stream.len() as i32));
+
+    for (sector, chunk) in index.chunks_exact(USER_SIZE).enumerate() {
+        put_sector(&mut fixture.image, 24 + sector, chunk);
+    }
+    for (offset, chunk) in stream.chunks(USER_SIZE).enumerate() {
+        put_sector(&mut fixture.image, COMPANION_LBA + offset, chunk);
+    }
+    fixture
+}
+
+#[cfg(feature = "test-fixtures")]
+pub fn sample_map_stream() -> Vec<u8> {
+    let mut stream = vec![0; 2 * USER_SIZE];
+    stream[0..4].copy_from_slice(&0x1200u32.to_le_bytes());
+    stream[4..6].copy_from_slice(&12u16.to_le_bytes());
+    stream[6..8].copy_from_slice(&30u16.to_le_bytes());
+    stream[12..14].copy_from_slice(&2u16.to_le_bytes());
+    stream[20..24].copy_from_slice(&1u32.to_le_bytes());
+    stream[24..28].copy_from_slice(&1u32.to_le_bytes());
+    stream[28..30].copy_from_slice(&1u16.to_le_bytes());
+    stream[USER_SIZE..USER_SIZE + 2].copy_from_slice(&0x1234u16.to_le_bytes());
+    stream[USER_SIZE + 2..USER_SIZE + 4].copy_from_slice(&0x5678u16.to_le_bytes());
+    stream
 }

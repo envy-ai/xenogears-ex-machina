@@ -1215,3 +1215,33 @@ Normal production build verification consumes the current backend WASM and
 confirms the explicit test driver is absent. Publication and live-preview
 integration are separate steps; this fix's acceptance does not refresh a running
 user preview.
+
+
+### Original map texture streams
+
+Scene reads both directory4 files for the selected map: the geometry/event bundle
+`0xb8 + 2*map` and the companion image stream `0xb9 + 2*map`. The typed command
+`field.map_textures` takes `{session,map}` and uses the same pending-range/binary
+fill workflow as `field.map_bundle`. Its ready reply contains `file`, `slot`,
+`lba`, `indexed_size`, `source_sha256` and `images` (ordered raw VRAM uploads,
+`source_bytes_read`, `image_count`, `stop_reason`). An absent/zero-sized companion
+has explicit `empty_file`; a non0x1200/0x1201 header stops the original image
+reader and is reported as `non_image_header`. Truncated recognized streams,
+invalid rectangles/counts, missing strips and resource excess are errors.
+
+The shared Rust reader follows `stream_load_image_strip` in
+`src/decomp/src/resident/cd_reads_and_streams.c`. Header/strip sectors are2048
+user bytes; strip padding is not invented image pixels. Type0x1200/0x1201 share
+the original field mode0 placement. Complete uploads are applied after bundle
+palettes/images, the ordinary field-entry order. Transitions3/5 can interleave
+these loads; the editor previews source assets, not a replay of arbitrary
+transition or event-driven VRAM changes. Unknown texels remain explicitly
+untextured. Sprite VM poses, runtime lighting, morphs and texture-window/blending
+fidelity remain outside this preview.
+
+Companion uploads are read-only render resources, separate from authored Scene
+history, saved game bytes and mod packages. Normal Scene opening and project
+reload fetch them from the selected disc; same-source history/discard/context
+operations retain the qualified resource. A source-less project can still be
+inspected without a disc, but cannot supply missing original image resources.
+No map-number/hash special case or game-data download is involved.

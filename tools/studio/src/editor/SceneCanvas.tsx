@@ -59,6 +59,21 @@ export function SceneCanvas(props:SceneCanvasProps){
         };
         (canvas as HTMLCanvasElement&{__xemScene?:unknown}).__xemScene={
           project:(id:string)=>{const object=latest.current.model.objects.get(id);if(!object)throw new Error('Scene object is not mounted');return project(object);},
+          textureStats:()=>{
+            let meshes=0,texturedMeshes=0,texturedTriangles=0;
+            const maps=new Set<THREE.Texture>();
+            latest.current.model.group.traverse(object=>{
+              if(!(object instanceof THREE.Mesh)||!visible(object))return;
+              meshes++;
+              const materials=Array.isArray(object.material)?object.material:[object.material];
+              for(const material of materials){
+                if(!(material instanceof THREE.MeshBasicMaterial)||!material.map)continue;
+                texturedMeshes++;maps.add(material.map);
+                texturedTriangles+=(object.geometry.index?.count??object.geometry.getAttribute('position')?.count??0)/3;
+              }
+            });
+            return {source:latest.current.model.group.userData.source,meshes,texturedMeshes,texturedTriangles,texturePages:maps.size,map_stream:latest.current.model.group.userData.map_stream??null};
+          },
           gizmo:(axis:string)=>{let handle:THREE.Object3D|null=null;transform!.getHelper().traverse(object=>{if(!handle&&object.name===axis&&object instanceof THREE.Mesh&&visible(object))handle=object;});if(!handle)throw new Error('Requested gizmo handle is not visible');return project(handle);},
         };
       }

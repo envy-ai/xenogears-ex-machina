@@ -53,6 +53,7 @@ const OPERATIONS: &[&str] = &[
     "disc.maps",
     "field.map_events",
     "field.map_bundle",
+    "field.map_textures",
     "field.structure",
     "names.validate",
     "field.lanes",
@@ -130,6 +131,8 @@ enum Command {
     FieldMapEvents(MapArgs),
     #[serde(rename = "field.map_bundle")]
     FieldMapBundle(MapArgs),
+    #[serde(rename = "field.map_textures")]
+    FieldMapTextures(MapArgs),
     #[serde(rename = "field.structure")]
     FieldStructure(FieldStructureArgs),
     #[serde(rename = "names.validate")]
@@ -369,6 +372,12 @@ impl Command {
                     .discs
                     .borrow_mut()
                     .map_bundle(args.session, args.map)?,
+            ),
+            Self::FieldMapTextures(args) => CommandResult::Json(
+                studio
+                    .discs
+                    .borrow_mut()
+                    .map_textures(args.session, args.map)?,
             ),
             Self::FieldMapEvents(args) => CommandResult::Json(
                 studio

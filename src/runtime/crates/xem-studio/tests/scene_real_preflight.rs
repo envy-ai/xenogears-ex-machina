@@ -154,6 +154,30 @@ fn offline_audit_output() -> PathBuf {
     path
 }
 
+fn map_stream_audit_output() -> PathBuf {
+    let path = PathBuf::from(
+        std::env::var_os("XEM_STUDIO_MAP_STREAM_AUDIT_OUTPUT")
+            .expect("explicit ignored map-stream output directory is required"),
+    );
+    let repo = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .ancestors()
+        .nth(4)
+        .expect("crate is inside repository")
+        .to_path_buf();
+    assert!(
+        path.starts_with(repo.join("tmp/studio/scene-textures-20261024")),
+        "private map-stream evidence stays under ignored scene-textures storage"
+    );
+    assert!(
+        !path.exists(),
+        "fresh output preserves prior stream audit evidence"
+    );
+    fs::create_dir_all(path.parent().expect("output has a parent"))
+        .expect("create ignored map-stream parent");
+    fs::create_dir(&path).expect("create fresh map-stream output leaf");
+    path
+}
+
 fn audit_indexed_disc(number: u8, path: &Path) -> Value {
     const MAP_FIRST_FILE: u32 = 0xB8;
     let mut track = open_path(path).expect("open explicitly supplied original raw disc");
@@ -1560,6 +1584,144 @@ fn both_disc_nonempty_full_output_completions_end_on_complete_flag_groups() {
         admitted_total <= raw_full_outputs_total,
         "Source admission count cannot exceed the raw full-output candidate count"
     );
+}
+
+#[test]
+#[ignore = "requires both explicitly supplied original raw disc images"]
+fn both_disc_map_companion_streams_match_the_indexed_decoder_inventory() {
+    const FIRST_MAP_FILE: u32 = 0xB8;
+    let paths = [
+        (
+            1u8,
+            PathBuf::from(
+                std::env::var_os("XEM_STUDIO_OFFLINE_AUDIT_DISC1")
+                    .expect("explicit original Disc 1 raw image path is required"),
+            ),
+        ),
+        (
+            2u8,
+            PathBuf::from(
+                std::env::var_os("XEM_STUDIO_OFFLINE_AUDIT_DISC2")
+                    .expect("explicit original Disc 2 raw image path is required"),
+            ),
+        ),
+    ];
+    let output = map_stream_audit_output();
+    let mut discs = Vec::new();
+    for (number, path) in paths {
+        assert!(path.is_file(), "explicit Disc {number} input exists");
+        let mut track = open_path(&path).expect("open original raw disc");
+        let index = Index::from_disc(track.as_mut()).expect("read original on-disc file index");
+        assert_eq!(index.disc_number(), Some(u16::from(number)));
+        let registry = xem_studio::disc::map_registry(&index)
+            .expect("read the production map/companion registry");
+        assert_eq!(
+            registry.len(),
+            730,
+            "each supported disc has 730 directory map entries"
+        );
+        let mut rows = Vec::with_capacity(registry.len());
+        let mut placeholder_maps = 0usize;
+        let mut empty_companions = 0usize;
+        let mut total_images = 0usize;
+        let mut total_uploads = 0usize;
+        let mut max_source_bytes = 0usize;
+        for record in &registry {
+            let companion = record.image_record;
+            if record.record.is_unused() || record.record.size < 0x154 {
+                placeholder_maps += 1;
+                rows.push(json!({
+                    "map":record.map,
+                    "file":FIRST_MAP_FILE + 1 + 2 * record.map,
+                    "slot":record.image_slot,
+                    "lba":companion.lba,
+                    "indexed_size":companion.size,
+                    "state":"placeholder_map"
+                }));
+                continue;
+            }
+            if companion.size == 0 {
+                empty_companions += 1;
+                rows.push(json!({
+                    "map":record.map,
+                    "file":FIRST_MAP_FILE + 1 + 2 * record.map,
+                    "slot":record.image_slot,
+                    "lba":companion.lba,
+                    "indexed_size":0,
+                    "state":"empty_file"
+                }));
+                continue;
+            }
+            assert!(
+                companion.size > 0,
+                "map {} has a nonnegative companion",
+                record.map
+            );
+            let size = usize::try_from(companion.size).expect("positive companion size");
+            assert!(
+                size <= 32 << 20,
+                "companion remains inside the decoder source budget"
+            );
+            let data = read_data(track.as_mut(), companion.lba, size)
+                .expect("read complete indexed map companion");
+            assert_eq!(data.len(), size);
+            let decoded =
+                xem_studio::scene::textures::decode_map_stream(&data).unwrap_or_else(|error| {
+                    panic!(
+                        "Disc {number} map {} companion rejected: {error}",
+                        record.map
+                    )
+                });
+            assert!(decoded.source_bytes_read <= data.len());
+            assert!(
+                decoded.image_count > 0,
+                "nonempty Disc {number} map {} companion decoded an image",
+                record.map
+            );
+            total_images += decoded.image_count;
+            total_uploads += decoded.uploads.len();
+            max_source_bytes = max_source_bytes.max(size);
+            rows.push(json!({
+                "map":record.map,
+                "file":FIRST_MAP_FILE + 1 + 2 * record.map,
+                "slot":record.image_slot,
+                "lba":companion.lba,
+                "indexed_size":size,
+                "indexed_sha256":hash(&data),
+                "source_bytes_read":decoded.source_bytes_read,
+                "image_count":decoded.image_count,
+                "upload_count":decoded.uploads.len(),
+                "stop_reason":decoded.stop_reason
+            }));
+        }
+        let expected = if number == 1 {
+            (0usize, 0usize, 730usize, 75_662usize)
+        } else {
+            (525usize, 0usize, 205usize, 21_936usize)
+        };
+        assert_eq!(placeholder_maps, expected.0);
+        assert_eq!(empty_companions, expected.1);
+        let decoded_maps = rows.len() - placeholder_maps - empty_companions;
+        assert_eq!(decoded_maps, expected.2);
+        assert_eq!(registry.len() - placeholder_maps, expected.2);
+        assert_eq!(total_uploads, expected.3);
+        assert!(total_images >= decoded_maps);
+        discs.push(json!({
+            "disc":number,
+            "directory_maps":registry.len(),
+            "placeholder_maps":placeholder_maps,
+            "empty_companions":empty_companions,
+            "decoded_maps":decoded_maps,
+            "total_images":total_images,
+            "total_uploads":total_uploads,
+            "max_indexed_source_bytes":max_source_bytes,
+            "maps":rows
+        }));
+    }
+    let summary =
+        json!({"schema_version":1,"kind":"both_disc_map_companion_stream_audit","discs":discs});
+    write_summary(&output, &summary);
+    eprintln!("both-disc map companion stream audit summary written under ignored output");
 }
 
 #[test]

@@ -17,12 +17,16 @@ export interface SceneUploads {
   uploads:{source_span:[number,number];pixels_offset:number;rect:[number,number,number,number];words:number[];kind:string;slot:number|null;tim_mode:number|null}[];
   shared_slots:number[];
 }
+export interface SceneMapStream {
+  uploads:SceneUploads['uploads']; source_bytes_read:number; image_count:number; stop_reason:string;
+  source?:{file:number;slot:number;lba:number;indexed_size:number;source_sha256:string};
+}
 export interface SceneAssets {
   schema_version:1; source_sha256:string;
   header:{descriptors:SceneDescriptor[];view:{words:number[]};slots:{x:number;y:number;reserved:number;shared:number}[];offsets:number[];logical_sizes:number[];source_sha256:string};
   geometry:{groups:{source_offset:number;flags:number;meshes:SceneMeshAsset[]}[]};
   collision:SceneCollision; zones:{zones:{corners:SceneCorners}[];tail:number[]};
-  palettes:SceneUploads; images:SceneUploads; events:FieldGraph;
+  palettes:SceneUploads; images:SceneUploads; map_stream?:SceneMapStream; events:FieldGraph;
   entrances:SceneEntrance[]; diagnostics:string[];
 }
 export function decodeSceneAssets(backend:Backend,input:SceneInput,entrances:number[]):SceneAssets {

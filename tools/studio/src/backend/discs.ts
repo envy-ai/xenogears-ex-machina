@@ -1,4 +1,5 @@
 import type * as Fs from 'node:fs/promises';
+import type { SceneMapStream } from './scene-assets';
 import type * as Path from 'node:path';
 import { readCommandResult, type Backend } from './service';
 import { cleanupAfterFailure } from '../platform/errors';
@@ -86,6 +87,10 @@ export interface SourceContext {
   schema_version:1; provenance:'runtime_field_decompress'; module_sha256:string;
   identity:SourceIdentity; source_address:number; allocation_size:number; load_vblank:string;
   components:{index:number;source_offset:number;logical_size:number;packed_size:number;source_bytes_read:number;output_size:number;output_sha256:string;destination_address:number;extra:number[]}[];
+}
+export interface MapTextures extends DiscProgress {
+  map:number; file:number; slot:number; lba:number; indexed_size:number;
+  source_sha256:string; images:SceneMapStream;
 }
 export interface MapBundle { session:number; map:number; slot:number; state: 'ready'; placeholder:boolean; bytes:number[]; source:SourceIdentity|null }
 
@@ -473,6 +478,15 @@ export class DiscSession {
       safeInteger(map, 'Map id');
       const result = await this.ready<MapBundle>('field.map_bundle', scope, undefined, { session: this.id, map });
       if (result.map !== map || !Number.isSafeInteger(result.slot) || !Array.isArray(result.bytes)) throw new Error('Invalid field.map_bundle result');
+      return result;
+    }, options);
+  }
+
+  mapTextures(map: number, options: DiscOptions = {}): Promise<MapTextures> {
+    return this.enqueue(async scope => {
+      safeInteger(map, 'Map id');
+      const result = await this.ready<MapTextures>('field.map_textures', scope, undefined, { session: this.id, map });
+      if (result.map !== map || result.file !== 0xb9 + 2 * map || !Number.isSafeInteger(result.slot) || !/^[a-f0-9]{64}$/.test(result.source_sha256) || !Array.isArray(result.images?.uploads)) throw new Error('Invalid field.map_textures result');
       return result;
     }, options);
   }

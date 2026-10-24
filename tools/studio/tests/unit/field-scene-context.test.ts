@@ -109,6 +109,14 @@ const originalSnapshot = {
   bindings: {},
 };
 
+function mapTextures() {
+  return {
+    state: 'ready', map: 23, file: 0xB9 + 2 * 23, slot: 648, lba: 0, indexed_size: 0,
+    source_sha256: '0'.repeat(64),
+    images: { uploads: [], source_bytes_read: 0, image_count: 0, stop_reason: 'empty_file' },
+  };
+}
+
 function owner(scene: unknown = null) {
   return {
     snapshot: originalSnapshot,
@@ -163,7 +171,7 @@ describe('Scene source-context prerequisite UX', () => {
     expect(sourceHandler).toBeTypeOf('function');
     testDoubles.openScene.mockImplementationOnce(() => { throw backendRequirement; });
     hook.registerSource(sourceHandler!);
-    const disc = { mapBundle: vi.fn(async () => ({ placeholder: false, bytes: [1, 2, 3], source })) };
+    const disc = { mapBundle: vi.fn(async () => ({ placeholder: false, bytes: [1, 2, 3], source })), mapTextures: vi.fn(async () => mapTextures()) };
 
     let rejected: unknown;
     try { await hook.openScene(23, disc as never); } catch (error) { rejected = error; }
@@ -193,7 +201,7 @@ describe('Scene source-context prerequisite UX', () => {
     const sourceHandler = registerLiveSourceHandler(vi.fn());
     hook.registerSource(sourceHandler!);
     testDoubles.openScene.mockImplementationOnce(() => { throw backendRequirement; });
-    const disc = { mapBundle: vi.fn(async () => ({ placeholder: false, bytes: [1], source })) };
+    const disc = { mapBundle: vi.fn(async () => ({ placeholder: false, bytes: [1], source })), mapTextures: vi.fn(async () => mapTextures()) };
 
     let rejected: unknown;
     try { await hook.openScene(23, disc as never); } catch (error) { rejected = error; }
@@ -226,7 +234,7 @@ describe('Scene source-context prerequisite UX', () => {
       schema: { identity: { module: 'module-hash' } }, status: null, snapshots: [], kind: 'browser',
     });
     hook.registerSource(registerLiveSourceHandler(vi.fn())!);
-    const disc = { mapBundle: vi.fn(async () => ({ placeholder: false, bytes: [1, 2, 3], source })) };
+    const disc = { mapBundle: vi.fn(async () => ({ placeholder: false, bytes: [1, 2, 3], source })), mapTextures: vi.fn(async () => mapTextures()) };
 
     await expect(hook.openScene(23, disc as never)).resolves.toMatchObject({ draft: -45, revision: 0 });
     expect(testDoubles.controller.command).toHaveBeenCalledOnce();
@@ -249,7 +257,7 @@ describe('Scene source-context prerequisite UX', () => {
       throw new Error('runtime context should not be requested');
     });
     hook.registerSource(sourceContextHandler);
-    const disc = { mapBundle: vi.fn(async () => ({ placeholder: false, bytes: [1, 2, 3], source })) };
+    const disc = { mapBundle: vi.fn(async () => ({ placeholder: false, bytes: [1, 2, 3], source })), mapTextures: vi.fn(async () => mapTextures()) };
 
     await expect(hook.openScene(23, disc as never)).resolves.toMatchObject({ draft: -44, revision: 0 });
     expect(sourceContextHandler).not.toHaveBeenCalled();
@@ -266,7 +274,7 @@ describe('Scene source-context prerequisite UX', () => {
       throw new Error('must not call runtime for unrelated error');
     });
     hook.registerSource(sourceContextHandler);
-    const disc = { mapBundle: vi.fn(async () => ({ placeholder: false, bytes: [1, 2, 3], source })) };
+    const disc = { mapBundle: vi.fn(async () => ({ placeholder: false, bytes: [1, 2, 3], source })), mapTextures: vi.fn(async () => mapTextures()) };
 
     await expect(hook.openScene(23, disc as never)).rejects.toBe(unrelated);
     expect(sourceContextHandler).not.toHaveBeenCalled();

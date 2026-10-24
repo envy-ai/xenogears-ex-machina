@@ -34,6 +34,8 @@ pub struct MapRecord {
     pub file: u32,
     pub slot: usize,
     pub record: Record,
+    pub image_slot: usize,
+    pub image_record: Record,
 }
 
 /// The record before the first bundle counts bundle/companion pairs; this is
@@ -77,11 +79,24 @@ pub fn map_registry(index: &Index) -> Result<Vec<MapRecord>, StudioError> {
                     "map {map} bundle exceeds {MAX_BUNDLE_BYTES} bytes"
                 )));
             }
+            let image_slot = index
+                .slot(4, file + 1)
+                .ok_or_else(|| invalid_index("missing map image companion slot"))?;
+            let image_record = index
+                .record(image_slot)
+                .ok_or_else(|| invalid_index("missing map image companion record"))?;
+            if image_record.size < 0 || image_record.size as usize > MAX_BUNDLE_BYTES {
+                return Err(invalid_index(format!(
+                    "map {map} companion is not a bounded image file"
+                )));
+            }
             Ok(MapRecord {
                 map,
                 file,
                 slot,
                 record,
+                image_slot,
+                image_record,
             })
         })
         .collect()
@@ -265,6 +280,7 @@ struct Session {
     summaries: Vec<MapSummary>,
     map_read: Option<BundleRead>,
     event_read: Option<BundleRead>,
+    image_read: Option<BundleRead>,
 }
 
 impl Session {
@@ -292,6 +308,7 @@ impl Session {
             summaries: Vec::new(),
             map_read: None,
             event_read: None,
+            image_read: None,
         }
     }
 
@@ -621,6 +638,58 @@ impl DiscSessions {
 
     pub fn map_bundle(&mut self, session: u32, map: u32) -> Result<Value, StudioError> {
         self.read_map(session, map, true)
+    }
+
+    /// The companion stream is read independently from the geometry bundle.
+    /// Native and WASM pull sessions share the same incremental reader/decoder.
+    pub fn map_textures(&mut self, session: u32, map: u32) -> Result<Value, StudioError> {
+        let state = self.session(session)?;
+        state.require_ready()?;
+        let record = state
+            .registry
+            .get(map as usize)
+            .filter(|r| r.map == map)
+            .ok_or_else(|| {
+                StudioError::new(
+                    "unknown_map",
+                    format!("map {map} outside this disc's map registry"),
+                )
+            })?;
+        let slot = record.image_slot;
+        let image_record = record.image_record;
+        if state.image_read.as_ref().is_none_or(|read| read.map != map) {
+            state.image_read = Some(BundleRead {
+                map,
+                record: image_record,
+                bytes: Vec::new(),
+            });
+        }
+        let read = state.image_read.as_mut().expect("image stream read");
+        if !read
+            .advance(state.source.as_mut().expect("ready source").as_mut())
+            .map_err(disc_error)?
+        {
+            return Ok(
+                json!({"session":session,"map":map,"state":"pending","missing":state.missing()}),
+            );
+        }
+        let bytes = std::mem::take(&mut read.bytes);
+        state.image_read = None;
+        let images = if bytes.is_empty() {
+            crate::scene::textures::MapStream {
+                uploads: Vec::new(),
+                source_bytes_read: 0,
+                image_count: 0,
+                stop_reason: "empty_file".into(),
+            }
+        } else {
+            crate::scene::textures::decode_map_stream(&bytes)?
+        };
+        Ok(
+            json!({"session":session,"map":map,"state":"ready","file":MAP_FILE+2*map+1,
+            "slot":slot,"lba":image_record.lba,"indexed_size":bytes.len(),
+            "source_sha256":xem_disc::field_context::hash(&bytes),"images":images}),
+        )
     }
 
     fn read_map(

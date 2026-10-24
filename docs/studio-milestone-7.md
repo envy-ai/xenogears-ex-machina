@@ -1327,3 +1327,134 @@ The active preview remains the separately managed d4f480c3 checkout/74c1 backend
 with PID139863. These isolated tests do not integrate source, overwrite its
 ignored outputs, restart the service or interact with the user's browser. The
 five protected PR46 files retain their baseline hashes and unstaged state.
+
+
+## General Scene texture repair — implementation plan (2026-10-24)
+
+Bart reported gray geometry on multiple maps and authorized a format-level fix,
+not a Map1 exception. Work starts from published96635ecd in the isolated
+`studio-context-prerequisite-ux` checkout. The current preview may be updated only
+after verification; preserve its TLS/network/disc/runtime configuration.
+
+The missing input is the companion image stream: `field_map_stream_start`
+selects file `0xb9 + 2*map` in directory4, whereas the Scene loaded only the
+`0xb8 + 2*map` bundle. Original readers are
+`resident/cd_reads_and_streams.c:stream_load_image_strip` and
+`field/field_screen.c` field-load ordering. Header sectors (2048 user bytes)
+contain type0x1200/0x1201, placement halfwords at+4, width at+12, first-image
+count at+20, strip count at+24 and strip heights at+28. Each following sector
+supplies one VRAM strip. Field mode uses placement mode0 and zero base offsets.
+Other header types end the original stream; malformed recognized headers,
+missing strip bytes, invalid rectangles and resource excess remain errors.
+
+Ordered work/checkpoints:
+1. Inventory actual companion streams on BOTH discs, separating real bundles
+   and placeholders; retain counts, file identities and decoder limitations.
+2. Add a bounded shared Rust strip decoder and `field.map_textures` session
+   command through the existing incremental native/pull+binary-fill path.
+   Return file identity and original VRAM uploads, never inferred pixels.
+3. Merge stream uploads after bundle palettes/images in the Scene renderer.
+   Keep them read-only and separate from authored documents/packages; rehydrate
+   from the selected disc and preserve them on same-source project/history
+   operations. Check async source/project ownership before adoption. Keep
+   unresolved VRAM/texture state diagnostic rather than making it up.
+4. Luna owns synthetic decoder/addressing/ordering/transport regressions and
+   focused Rust/WASM/TS/browser runs, pinned tools in one outer16GiB/no-swap
+   scope. Verify real texture coverage on multiple maps on BOTH discs and
+   readable rendered output, source preservation, load/history and stale-source
+   guards. Astra reviews the final source/provenance/scope diff.
+5. Record exact commands/artifacts/failures, source/private-input hashes,
+   current production build and test-hook absence. Commit a coherent reviewed
+   fix; the preview update preserves the game module and access settings.
+
+No game-byte editing, decomp changes, guessed inherited state, sprite VM or
+unrelated rendering redesign is included. No full runtime suite is required
+for these standalone Studio asset-reader/preview changes.
+
+
+Texture repair preflight: the corrected complete inventory
+`tmp/studio/scene-textures-20261024/both-disc-real-stream-inventory.json` scans
+all730 registry slots on each disc, skips525 Disc2 short-bundle placeholders,
+and validates all935 real companion streams (730 Disc1,205 Disc2). They supply
+75662 and21936 sector-strip uploads respectively, with maximum companion555008
+bytes and maximum single-image240 strips. No malformed real stream was observed
+by the independent Python format inventory. This is stream/container coverage,
+not935 Scene-open or gameplay passes. The earlier
+`original-stream-inventory.json` D2 scan was only maps0..204 and included
+placeholders; it is retained and superseded for complete Disc2 coverage.
+
+Astra's source review found no bounds/ownership/cache defect, and corrected one
+load-order claim: ordinary field entry loads bundle then companion; transition
+kinds3/5 start streaming before the bundle load and finish after it
+(`field_screen.c:779-816`). The preview explicitly uses ordinary-entry order;
+it does not claim arbitrary transition/event VRAM replay. Missing inherited
+pixels and existing Scene parser/context limitations remain explicit.
+
+
+### Texture repair verification checkpoint
+
+The production path contains no map-number, slot or source-hash exception. Native
+Rust decoder coverage independently reproduces the inventory: all935 real
+companions finish their advertised image counts, with97598 total strip uploads;
+525 Disc2 placeholder bundles are classified separately. This does not remove
+the previously documented Scene parser/context limitations on other maps.
+
+Successful focused evidence under ignored
+`tmp/studio/scene-textures-20261024/`:
+- Checkpoint27:11 Rust texture tests,12 focused TypeScript texture/context tests,
+  command operation/version regression, source/type/format checks.
+- Checkpoint30/32: real aligned pending-range/fill/ready synthetic companion
+  transport, explicit empty companion, unchanged exact synthetic boot identity;
+  strict Clippy and current source checks. No identity allowlist was expanded.
+- Checkpoint31: actual native original-disc stream sweep (730+205), plus empty-
+  companion protocol regression. Source data and Cargo.lock remain unchanged.
+- Checkpoint33: fresh WASM/bindgen/Vite test build, SDK and dist WASM both
+  `0d7bd3955f4a5cea8cd376bfb4f9a0ba13449d87be25f5312f2abbae5de04c19`.
+- Checkpoint34: normal browser disc/map opening and companion range filling,
+  Scene open, static hierarchy selection, layer controls, Frame selection and
+  Scene/List/Scene navigation, with original compiled-bundle SHA equality.
+  Disc1Map1:147 mounted textured meshes,6705 triangles,30 page/CLUT pairs;
+  Disc1Map2:122/5676/29; Disc2Map23:52/6673/8. Exact companion hash/size/slot
+  matches the native inventory. All three1440x900 PNGs were inspected at full
+  size: textured village grass/buildings/rock and dark forest surfaces are
+  visible. The forest capture is not a runtime-lighting or sprite-fidelity claim.
+
+All test invocations used pinned Nix/Rust/browser inputs and one outer user
+scope per batch with MemoryMax16G,MemorySwapMax0, finite measured timeouts. Exact
+commands, source manifests, scope invocation IDs, stage exits and private-input
+hashes are retained in the ignored runners/output directories and verification
+ledger. No full runtime/gameplay suite was repeated for this standalone preview
+reader change; existing game-module/package evidence is unaffected.
+
+Retained failed attempts are not rewritten:25 lacked required invocation env;
+26 exposed two missing disc-method mocks (93 other frontend tests passed,3
+skipped), corrected by27;27's new transport fixture violated chunk alignment;
+28 changed its test boot identity;29 asserted identity before pending open
+completed and captured a pre-format source hash;30 corrected those harness
+issues while preserving the original boot and production validation.31 Clippy
+found unused fixture helpers, corrected with feature scoping at32.33's browser
+case was interrupted with exit130 after getting stuck on Scene's collapsed map
+controls, and its unhelpful far-overview Map1 screenshot is retained.34 uses
+normal Command-list navigation and qualified static-instance framing; no forced
+clicks, invented geometry or camera-code workaround. The earlier partial Disc2
+Python inventory is also retained with its explicit coverage correction.
+
+
+Final texture production checks: checkpoint36's fresh staged application builds
+with the default package selection (no test flag/package override), design audit
+and typecheck pass. Checkpoint37 serves the exact new WASM hash above, excludes
+all test hook markers, carries the exact pinned Three MIT notice, and passes
+both the production browser test and canonical packaged NW.js smoke (new
+operation/version, Node file adapter and window controls). The NW smoke disables
+GPU as its established filesystem/protocol test requires; it is not new native
+GPU texture-rendering proof. Browser34 is the actual rendered-texture evidence.
+
+Production-validation harness failures remain honest:35 initially gated on the
+aborted33 aggregate instead of its successful build stages;36's asset-check shell
+wrapper had a quoting error;37's final receipt comparison compared different
+absolute/relative path spellings despite equal hashes.38 verifies the normalized
+digests and all successful individual stage receipts, without repeating tests or
+builds. The old isolated default SDK is byte-identical; all new builds use fresh
+ignored artifacts. The denied M6 diagnostic and game/runtime full suites were
+not retried. Source/provenance review found no new licence grant, private game
+asset, source identity bypass or protected-checkout edit in the fix.

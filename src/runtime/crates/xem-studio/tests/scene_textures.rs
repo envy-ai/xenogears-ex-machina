@@ -8,6 +8,49 @@ fn put_u32(bytes: &mut [u8], at: usize, value: u32) {
     bytes[at..at + 4].copy_from_slice(&value.to_le_bytes());
 }
 
+const MAP_SECTOR: usize = 2048;
+
+fn map_image_header(
+    kind: u32,
+    image_count: u32,
+    x: u16,
+    y: u16,
+    width: u16,
+    heights: &[u16],
+) -> Vec<u8> {
+    let mut header = vec![0; MAP_SECTOR];
+    put_u32(&mut header, 0, kind);
+    put_u16(&mut header, 4, x);
+    put_u16(&mut header, 6, y);
+    put_u16(&mut header, 8, 0);
+    put_u16(&mut header, 10, 0);
+    put_u16(&mut header, 12, width);
+    put_u32(&mut header, 20, image_count);
+    put_u32(&mut header, 24, heights.len() as u32);
+    for (index, height) in heights.iter().copied().enumerate() {
+        put_u16(&mut header, 28 + index * 2, height);
+    }
+    header
+}
+
+fn map_strip(height: u16, words: &[u16]) -> Vec<u8> {
+    let mut strip = vec![0xCD; MAP_SECTOR];
+    for (index, value) in words.iter().copied().enumerate() {
+        put_u16(&mut strip, index * 2, value);
+    }
+    assert!(words.len() <= usize::from(height) * 1024);
+    strip
+}
+
+fn append_map_image(stream: &mut Vec<u8>, header: Vec<u8>, strips: &[Vec<u8>]) {
+    assert_eq!(header.len(), MAP_SECTOR);
+    stream.extend(header);
+    for strip in strips {
+        assert_eq!(strip.len(), MAP_SECTOR);
+        stream.extend(strip);
+    }
+}
+
 fn put_tim_block(bytes: &mut [u8], at: usize, rect: [u16; 4], words: &[u16]) -> usize {
     let size = 12 + words.len() * 2;
     assert_eq!(size % 4, 0);
@@ -221,4 +264,112 @@ fn aliased_image_lists_hit_the_decoded_word_budget_before_more_upload_data_is_al
     let error = textures::decode_images(&full, logical_size, &slots)
         .expect_err("aliased uploads exceed the service word budget");
     assert_eq!(error.kind, "scene_resource_limit");
+}
+
+#[test]
+fn map_stream_decodes_image_and_palette_strips_with_sector_spans_and_vram_rows() {
+    let mut stream = Vec::new();
+    append_map_image(
+        &mut stream,
+        map_image_header(0x1200, 2, 12, 30, 2, &[1, 2]),
+        &[
+            map_strip(1, &[0x1234, 0x5678]),
+            map_strip(2, &[0x9ABC, 0xDEF0, 0x1357, 0x2468]),
+        ],
+    );
+    append_map_image(
+        &mut stream,
+        map_image_header(0x1201, 99, 40, 80, 1, &[1]),
+        &[map_strip(1, &[0x55AA])],
+    );
+
+    let decoded = textures::decode_map_stream(&stream).expect("decode companion stream");
+    assert_eq!(decoded.image_count, 2);
+    assert_eq!(decoded.source_bytes_read, stream.len());
+    assert_eq!(decoded.stop_reason, "image_count_complete");
+    assert_eq!(decoded.uploads.len(), 3);
+    assert_eq!(decoded.uploads[0].kind, "map_image_strip");
+    assert_eq!(decoded.uploads[0].source_span, [MAP_SECTOR, 2 * MAP_SECTOR]);
+    assert_eq!(decoded.uploads[0].pixels_offset, MAP_SECTOR);
+    assert_eq!(decoded.uploads[0].rect, [12, 30, 2, 1]);
+    assert_eq!(decoded.uploads[0].words, [0x1234, 0x5678]);
+    assert_eq!(
+        decoded.uploads[1].source_span,
+        [2 * MAP_SECTOR, 3 * MAP_SECTOR]
+    );
+    assert_eq!(decoded.uploads[1].rect, [12, 31, 2, 2]);
+    assert_eq!(decoded.uploads[1].words, [0x9ABC, 0xDEF0, 0x1357, 0x2468]);
+    assert_eq!(decoded.uploads[2].kind, "map_palette_strip");
+    assert_eq!(decoded.uploads[2].rect, [40, 80, 1, 1]);
+    assert_eq!(decoded.uploads[2].words, [0x55AA]);
+}
+
+#[test]
+fn map_stream_uses_first_header_count_and_stops_at_non_image_header() {
+    let mut stream = Vec::new();
+    append_map_image(
+        &mut stream,
+        map_image_header(0x1200, 1, 0, 0, 1, &[1]),
+        &[map_strip(1, &[0x0001])],
+    );
+    // The first header's count ends the original stream before this marker.
+    stream.extend(vec![0xFF; MAP_SECTOR]);
+    let decoded = textures::decode_map_stream(&stream).expect("first image count is authoritative");
+    assert_eq!(decoded.image_count, 1);
+    assert_eq!(decoded.source_bytes_read, 2 * MAP_SECTOR);
+    assert_eq!(decoded.stop_reason, "image_count_complete");
+    assert_eq!(decoded.uploads.len(), 1);
+
+    let mut terminated = Vec::new();
+    append_map_image(
+        &mut terminated,
+        map_image_header(0x1201, 2, 0, 0, 1, &[1]),
+        &[map_strip(1, &[0x0002])],
+    );
+    terminated.extend([0xEF; 4]);
+    let decoded = textures::decode_map_stream(&terminated).expect("non-image marker ends stream");
+    assert_eq!(decoded.image_count, 1);
+    assert_eq!(decoded.source_bytes_read, 2 * MAP_SECTOR + 4);
+    assert_eq!(decoded.stop_reason, "non_image_header");
+}
+
+#[test]
+fn map_stream_rejects_incomplete_sectors_bad_counts_and_invalid_vram_extents() {
+    assert!(textures::decode_map_stream(&[0x00, 0x12, 0, 0]).is_err());
+
+    let mut short_header = map_image_header(0x1200, 1, 0, 0, 1, &[1]);
+    short_header.truncate(MAP_SECTOR - 1);
+    assert!(textures::decode_map_stream(&short_header).is_err());
+
+    for (count, strips) in [(0, 1), (1, 0), (1, 1025)] {
+        let header = map_image_header(0x1200, count, 0, 0, 1, &vec![1; strips.min(1) as usize]);
+        let mut malformed = header;
+        put_u32(&mut malformed, 24, strips);
+        assert!(textures::decode_map_stream(&malformed).is_err());
+    }
+
+    let mut bad_x = Vec::new();
+    append_map_image(
+        &mut bad_x,
+        map_image_header(0x1200, 1, 1023, 0, 2, &[1]),
+        &[map_strip(1, &[1, 2])],
+    );
+    assert!(textures::decode_map_stream(&bad_x).is_err());
+
+    let mut short_strip = map_image_header(0x1200, 1, 0, 0, 1, &[1]);
+    short_strip.extend([0; MAP_SECTOR - 1]);
+    assert!(textures::decode_map_stream(&short_strip).is_err());
+}
+
+#[test]
+fn map_stream_rejects_strip_dimensions_that_exceed_sector_or_vram_bounds() {
+    for (x, y, width, height) in [(0, 0, 0, 1), (0, 511, 1, 2), (0, 0, 1024, 3)] {
+        let mut stream = Vec::new();
+        append_map_image(
+            &mut stream,
+            map_image_header(0x1200, 1, x, y, width, &[height]),
+            &[map_strip(height.max(1), &[1])],
+        );
+        assert!(textures::decode_map_stream(&stream).is_err());
+    }
 }

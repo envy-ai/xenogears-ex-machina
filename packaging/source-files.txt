@@ -1435,6 +1435,7 @@ tools/studio/tests/e2e/scene-real-build.ts
 tools/studio/tests/e2e/scene-real.spec.ts
 tools/studio/tests/e2e/scene-real.ts
 tools/studio/tests/e2e/scene-saved-project-frame.spec.ts
+tools/studio/tests/e2e/scene-texture-streams.spec.ts
 tools/studio/tests/e2e/serve-built.mjs
 tools/studio/tests/e2e/studio-test-driver.ts
 tools/studio/tests/e2e/studio.spec.ts

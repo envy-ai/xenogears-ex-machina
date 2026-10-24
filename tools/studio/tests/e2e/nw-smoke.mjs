@@ -250,7 +250,7 @@ try {
     version: '0.5.0',
     operations: [
       'version', 'echo', 'field.decode', 'field.scene.decode', 'field.scene.draft', 'field.encode', 'disc.open', 'disc.poll',
-      'disc.missing', 'disc.close', 'disc.maps', 'field.map_events', 'field.map_bundle',
+      'disc.missing', 'disc.close', 'disc.maps', 'field.map_events', 'field.map_bundle', 'field.map_textures',
       'field.structure', 'names.validate', 'field.lanes', 'disc.cue', 'package.build',
       'package.inspect', 'package.bundle', 'field.draft.open', 'field.templates', 'field.instruction',
       'field.draft.edit', 'field.draft.undo', 'field.draft.redo', 'field.draft.compile',

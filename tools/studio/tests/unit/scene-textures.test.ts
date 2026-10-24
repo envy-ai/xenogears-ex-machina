@@ -1,15 +1,16 @@
 import { describe, expect, it } from 'vitest';
 import { facePixelsKnown, SceneVram } from '../../src/scene/textures';
-import type { SceneAssets } from '../../src/backend/scene-assets';
+import type { SceneAssets, SceneMapStream } from '../../src/backend/scene-assets';
 
 type Upload = SceneAssets['images']['uploads'][number];
 function upload(x: number, y: number, width: number, height: number, words: number[]): Upload {
   return { source_span: [0, words.length * 2], pixels_offset: 0, rect: [x, y, width, height], words, kind: 'synthetic', slot: null, tim_mode: null };
 }
-function vram(palettes: Upload[] = [], images: Upload[] = []): SceneVram {
-  const assets: Pick<SceneAssets, 'palettes' | 'images'> = {
+function vram(palettes: Upload[] = [], images: Upload[] = [], mapStream?: SceneMapStream): SceneVram {
+  const assets: Pick<SceneAssets, 'palettes' | 'images' | 'map_stream'> = {
     palettes: { uploads: palettes, shared_slots: [] },
     images: { uploads: images, shared_slots: [] },
+    map_stream: mapStream,
   };
   return new SceneVram(assets);
 }
@@ -65,6 +66,30 @@ describe('source PS1 texture preview addressing', () => {
       [upload(0, 0, 1, 1, [0x03e0]), upload(0, 0, 1, 1, [0x7c00])],
     );
     expect(rgba(source.page(0x100, 0), 0)).toEqual([0, 0, 255, 255]);
+  });
+
+  it('applies streamed map palette and image strips after bundle uploads', () => {
+    const stream: SceneMapStream = {
+      source_bytes_read: 3 * 2048,
+      image_count: 1,
+      stop_reason: 'image_count_complete',
+      uploads: [
+        { ...upload(16, 0, 2, 1, [0, 0x7c00]), kind: 'map_palette_strip' },
+        { ...upload(0, 256, 1, 1, [0x0001]), kind: 'map_image_strip' },
+      ],
+    };
+    const source = vram(
+      [upload(16, 0, 2, 1, [0, 0x001f])],
+      [upload(0, 256, 1, 1, [0x0002])],
+      stream,
+    );
+    const page = source.page(0x10, 1);
+
+    expect(rgba(page, 0)).toEqual([0, 0, 255, 255]);
+    expect(page.known[0]).toBe(1);
+    expect(rgba(page, 1)).toEqual([0, 0, 0, 0]);
+    expect(page.known[1]).toBe(1);
+    expect(page.known[4]).toBe(0);
   });
 
   it('requires every integer texel covered by a face UV bounding rectangle to be known', () => {

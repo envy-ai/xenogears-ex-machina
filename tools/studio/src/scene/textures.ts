@@ -6,9 +6,12 @@ export class SceneVram {
   private words=new Uint16Array(1024*512);
   private known=new Uint8Array(1024*512);
   private pages=new Map<string,TexturePage>();
-  constructor(assets:Pick<SceneAssets,'palettes'|'images'>) {
-    // field_load_from_bundle uploads palette TIMs before the image slot list.
-    for(const upload of [...assets.palettes.uploads,...assets.images.uploads]) {
+  constructor(assets:Pick<SceneAssets,'palettes'|'images'|'map_stream'>) {
+    // field_load_from_bundle uploads palette TIMs, then sprite images;
+    // Normal field entry starts the separate map stream afterward. This source
+    // preview uses that order; transition kinds3/5 can interleave the two loads
+    // and are not simulated here (field_screen.c:779-816).
+    for(const upload of [...assets.palettes.uploads,...assets.images.uploads,...(assets.map_stream?.uploads??[])]) {
       const [x,y,w,h]=upload.rect;
       if(upload.words.length!==w*h)throw new Error('Decoded VRAM upload rectangle and words disagree');
       for(let row=0;row<h;row++)for(let column=0;column<w;column++){

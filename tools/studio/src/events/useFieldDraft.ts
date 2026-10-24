@@ -6,7 +6,7 @@ import { FieldAuthoring, sameSceneSource } from '../backend/field-authoring';
 import type { SceneAction, SceneDocument, SceneInput, SceneSnapshot } from '../backend/scenes';
 import { decodeSceneAssets, type SceneAssets } from '../backend/scene-assets';
 import { readCommandResult, StudioCommandError } from '../backend/service';
-import type { DiscSession, SourceContext, SourceIdentity } from '../backend/discs';
+import type { DiscSession, MapTextures, SourceContext, SourceIdentity } from '../backend/discs';
 import type { FilesAdapter } from '../platform/files';
 import type { FieldGraph, NameTable, NamesContext } from './model';
 
@@ -14,6 +14,21 @@ export interface FieldBuild { bytes: Uint8Array; identity: string; revision: num
 export function useFieldDraft(backend: Backend | null, folder: FilesAdapter | null, report: (error: unknown) => void, log: (kind: string, text: string) => void) {
   const current = useRef<FieldAuthoring | null>(null);
   const sourceContext=useRef<SourceContext|null>(null);
+  // Immutable render resources are not authored bytes or project state. Keep
+  // only the current source's companion, qualified by bundle hash AND identity.
+  const sceneTextures=useRef<{hash:string;source:SourceIdentity|null;textures:MapTextures}|null>(null);
+  const assetsFor=(input:SceneInput,selectors:number[],textures?:MapTextures):SceneAssets=>{
+    if (!backend) throw new Error('The backend is not ready');
+    const assets=decodeSceneAssets(backend,input,selectors);
+    const cached=sceneTextures.current;
+    const resource=textures??(cached&&cached.hash===assets.source_sha256&&sameSceneSource(cached.source,input.source??null)?cached.textures:undefined);
+    if (resource) assets.map_stream={...resource.images,source:{file:resource.file,slot:resource.slot,lba:resource.lba,indexed_size:resource.indexed_size,source_sha256:resource.source_sha256}};
+    if (!resource&&input.source) assets.diagnostics.push('Map image stream is not loaded; open this source from its original disc to load the texture preview.');
+    return assets;
+  };
+  const rememberTextures=(input:SceneInput,assets:SceneAssets,textures:MapTextures)=>{
+    sceneTextures.current={hash:assets.source_sha256,source:input.source??null,textures};
+  };
   const contextGeneration = useRef(0);
   const savedContextGeneration = useRef(0);
   const [contextDirty, setContextDirty] = useState(false);
@@ -92,7 +107,7 @@ export function useFieldDraft(backend: Backend | null, folder: FilesAdapter | nu
   const clear = useCallback(() => {
     if (!guard(true)) return false;
     const previous=current.current;
-    current.current=null; sourceContext.current=null; contextGeneration.current++; savedContextGeneration.current=contextGeneration.current; setContextDirty(false); sessionGeneration.current++; setSnapshot(null); setSceneSnapshot(null); setSceneAssets(null);
+    current.current=null; sceneTextures.current=null; sourceContext.current=null; contextGeneration.current++; savedContextGeneration.current=contextGeneration.current; setContextDirty(false); sessionGeneration.current++; setSnapshot(null); setSceneSnapshot(null); setSceneAssets(null);
     savedProjectRef.current=false; setHasSavedProject(false); setSavedRevision(0);
     dirty(false); setMode('operand'); setEditorKey(value=>value+1); setError(null);
     previous?.close();
@@ -104,7 +119,7 @@ export function useFieldDraft(backend: Backend | null, folder: FilesAdapter | nu
     if (!backend) throw new Error('The backend is not ready');
     if ('base' in document) return open(document.base);
     const next=FieldAuthoring.scene(backend,document.input,document.entrance_selectors);
-    try {const assets=decodeSceneAssets(backend,document.input,document.entrance_selectors);const result=adopt(next,false,document.input.context??null);setSceneAssets(assets);return result;}
+    try {const assets=assetsFor(document.input,document.entrance_selectors);const result=adopt(next,false,document.input.context??null);setSceneAssets(assets);return result;}
     catch(error){next.close();throw error;}
   }, [open,backend,adopt]);
   const validate = useCallback(() => {
@@ -142,14 +157,17 @@ export function useFieldDraft(backend: Backend | null, folder: FilesAdapter | nu
       checkOwner(token);
       if (parsed.schema_version===2 && 'input' in parsed.document) {
         let original=active.scene?.export().input;
+        let textures:MapTextures|undefined;
         if (sourceDisc) {
           const source=await sourceDisc.mapBundle(map);checkOwner(token);
           original={bundle:source.bytes,source:source.source};
+          textures=await sourceDisc.mapTextures(map);checkOwner(token);
         }
         if (!original || original.bundle.length!==parsed.document.input.bundle.length || original.bundle.some((byte,index)=>byte!==((parsed.document as SceneDocument).input.bundle[index])) || !sameSceneSource(original.source??null,parsed.document.input.source??null)) throw new Error('Saved scene input differs from the selected original disc/map');
         const next=FieldAuthoring.importScene(backend,parsed.document);
         try {
-          const assets=decodeSceneAssets(backend,parsed.document.input,parsed.document.entrance_selectors);checkOwner(token);
+          const assets=assetsFor(parsed.document.input,parsed.document.entrance_selectors,textures);checkOwner(token);
+          if(textures)rememberTextures(parsed.document.input,assets,textures);
           const snapshot=adopt(next,true,parsed.document.input.context??null);setSceneAssets(assets);return {snapshot,names};
         } catch(error){next.close();throw error;}
       }
@@ -240,10 +258,11 @@ export function useFieldDraft(backend: Backend | null, folder: FilesAdapter | nu
         checkOwner(token);
         candidate=FieldAuthoring.scene(backend,input(),[],document);
       }
-      const assets=decodeSceneAssets(backend,input(),[]);checkOwner(token);
+      const textures=await disc.mapTextures(map);checkOwner(token);
+      const assets=assetsFor(input(),[],textures);checkOwner(token);
       const wasUnsaved=(active.snapshot.modified||savedProjectRef.current)&&active.snapshot.revision!==savedRevision;
       if (context!==sourceContext.current) {sourceContext.current=context;contextGeneration.current++;setContextDirty(true);token=ownerToken();}
-      checkOwner(token);current.current=candidate;sessionGeneration.current++;publish(candidate);setSceneAssets(assets);setSavedRevision(wasUnsaved?-1:candidate.snapshot.revision);setError(null);setEditorKey(value=>value+1);
+      checkOwner(token);rememberTextures(input(),assets,textures);current.current=candidate;sessionGeneration.current++;publish(candidate);setSceneAssets(assets);setSavedRevision(wasUnsaved?-1:candidate.snapshot.revision);setError(null);setEditorKey(value=>value+1);
       candidate=null;active.close();return current.current.snapshot;
     }catch(error){if(candidate)candidate.close();return fail(error);}finally{endPending();}
   },[backend,guard,savedRevision,fail]);
@@ -256,7 +275,7 @@ export function useFieldDraft(backend: Backend | null, folder: FilesAdapter | nu
     const document=promoteExistingEvents?previous?.export():undefined;
     if(promoteExistingEvents&&(!document||!('base' in document)))throw new Error('Scene promotion requires the current original-root M6 event document');
     const next=FieldAuthoring.scene(backend,input,entrances,document&&'base' in document?document:undefined);
-    try {const assets=decodeSceneAssets(backend,input,entrances);const snapshot=adopt(next,wasSavedProject,input.context??null);if(wasUnsaved)setSavedRevision(-1);if(wasContextUnsaved){savedContextGeneration.current=-1;setContextDirty(true);}setSceneAssets(assets);return snapshot;}
+    try {const assets=assetsFor(input,entrances);const snapshot=adopt(next,wasSavedProject,input.context??null);if(wasUnsaved)setSavedRevision(-1);if(wasContextUnsaved){savedContextGeneration.current=-1;setContextDirty(true);}setSceneAssets(assets);return snapshot;}
     catch(error){next.close();throw error;}
   },[backend,guard,adopt,savedRevision]);
   const inspectEntrance=useCallback((selector:number)=>{
@@ -275,7 +294,7 @@ export function useFieldDraft(backend: Backend | null, folder: FilesAdapter | nu
           Object.entries(before.events.bindings).some(([id,pc])=>after.events.bindings[id]!==pc)){
         throw new Error('Entrance inspection changed authored bytes or bindings; the previous Scene is preserved');
       }
-      const assets=decodeSceneAssets(backend,document.input,selectors),previous=active.snapshot;
+      const assets=assetsFor(document.input,selectors),previous=active.snapshot;
       const unsaved=(previous.modified||savedProjectRef.current)&&previous.revision!==savedRevision;
       current.current=next;next=null;sessionGeneration.current++;publish(current.current);setSceneAssets(assets);
       setSavedRevision(unsaved?-1:current.current.snapshot.revision);setEditorKey(value=>value+1);setError(null);
@@ -295,7 +314,7 @@ export function useFieldDraft(backend: Backend | null, folder: FilesAdapter | nu
       const context=await handler(document.input.source);checkOwner(token);
       const input={...document.input,context,module_sha256:context.module_sha256};
       next=FieldAuthoring.importScene(backend,{...document,input});
-      const assets=decodeSceneAssets(backend,input,document.entrance_selectors);checkOwner(token);
+      const assets=assetsFor(input,document.entrance_selectors);checkOwner(token);
       const previous=current.current;current.current=next;next=null;sessionGeneration.current++;
       sourceContext.current=context;contextGeneration.current++;setContextDirty(true);
       publish(current.current);setSceneAssets(assets);setSavedRevision(-1);setEditorKey(value=>value+1);setError(null);

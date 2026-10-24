@@ -154,6 +154,90 @@ fn pull_session_identifies_fixture_lists_maps_and_extracts_components() {
     assert_eq!(sessions.poll(session).unwrap_err().kind, "unknown_session");
 }
 
+#[cfg(feature = "test-fixtures")]
+#[test]
+fn map_texture_transport_resumes_a_missing_companion_and_reports_empty_files() {
+    let stream = synthetic_disc::sample_map_stream();
+    let base = synthetic_disc::build();
+    let base_executable = base.executable.clone();
+    let fixture = synthetic_disc::with_map_stream(base, &stream);
+    assert_eq!(fixture.executable, base_executable);
+    let mut sessions = DiscSessions::new();
+    let opened = sessions
+        .open(OpenArgs::Pull {
+            name: "invented-texture-fixture.bin".into(),
+            bytes: fixture.image.len() as u64,
+        })
+        .expect("pull session opens");
+    let session = opened["session"].as_u64().expect("session") as u32;
+    let companion_start = 120 * synthetic_disc::SECTOR_SIZE;
+    let companion_end = companion_start + stream.len();
+    let fill_chunk = xem_studio::disc::CHUNK_BYTES;
+    sessions
+        .fill(session, 0, &fixture.image[..fill_chunk])
+        .expect("fill source before companion");
+    sessions
+        .fill(
+            session,
+            (2 * fill_chunk) as u64,
+            &fixture.image[2 * fill_chunk..],
+        )
+        .expect("fill source after companion");
+    let indexed = sessions.poll(session).expect("disc index is available");
+    assert_eq!(indexed["state"], "ready");
+    assert_eq!(
+        indexed["identity"]["boot_sha256"],
+        "dfe782b25d3e17220c592d2646d05ac78b3d42dd110d291a46c1f3d87c13ba6d"
+    );
+
+    let pending = sessions
+        .map_textures(session, 0)
+        .expect("missing companion returns pending");
+    assert_eq!(pending["state"], "pending");
+    let missing = pending["missing"].as_array().expect("missing byte ranges");
+    assert!(!missing.is_empty());
+    for range in missing {
+        let start = range[0].as_u64().expect("range start") as usize;
+        let end = range[1].as_u64().expect("range end") as usize;
+        assert!(start <= companion_start && end >= companion_end);
+        sessions
+            .fill(session, start as u64, &fixture.image[start..end])
+            .expect("fill requested companion bytes");
+    }
+
+    let ready = sessions
+        .map_textures(session, 0)
+        .expect("completed companion decodes");
+    assert_eq!(ready["state"], "ready");
+    assert_eq!(ready["file"], 0xB9);
+    assert_eq!(ready["slot"], 0xB9);
+    assert_eq!(ready["lba"], 120);
+    assert_eq!(ready["indexed_size"], stream.len());
+    assert_eq!(
+        ready["source_sha256"],
+        xem_disc::field_context::hash(&stream)
+    );
+    assert_eq!(ready["images"]["image_count"], 1);
+    assert_eq!(ready["images"]["source_bytes_read"], stream.len());
+    assert_eq!(ready["images"]["stop_reason"], "image_count_complete");
+    assert_eq!(ready["images"]["uploads"].as_array().map(Vec::len), Some(1));
+    assert_eq!(ready["images"]["uploads"][0]["rect"], json!([12, 30, 2, 1]));
+    assert_eq!(
+        ready["images"]["uploads"][0]["words"],
+        json!([0x1234, 0x5678])
+    );
+
+    let empty = sessions
+        .map_textures(session, 1)
+        .expect("zero-size companion remains addressable");
+    assert_eq!(empty["state"], "ready");
+    assert_eq!(empty["file"], 0xBB);
+    assert_eq!(empty["indexed_size"], 0);
+    assert_eq!(empty["images"]["image_count"], 0);
+    assert_eq!(empty["images"]["uploads"], json!([]));
+    assert_eq!(empty["images"]["stop_reason"], "empty_file");
+}
+
 #[cfg(not(feature = "test-fixtures"))]
 #[test]
 fn default_build_rejects_the_invented_executable_identity() {
@@ -213,6 +297,14 @@ fn studio_protocol_opens_binary_pull_ranges_and_returns_map_components() {
     );
     assert_eq!(placeholder["ok"]["placeholder"], true);
     assert_eq!(placeholder["ok"]["component"], Value::Null);
+    let empty_textures = command(
+        &studio,
+        "field.map_textures",
+        json!({"session": session, "map": 1}),
+    );
+    assert_eq!(empty_textures["ok"]["state"], "ready");
+    assert_eq!(empty_textures["ok"]["images"]["stop_reason"], "empty_file");
+    assert_eq!(empty_textures["ok"]["images"]["uploads"], json!([]));
 
     let fixture_path = write_fixture(&fixture.image);
     let native = command(

@@ -22,6 +22,10 @@ export function sceneRows(state:SceneSnapshot):SceneRow[]{
 export interface FieldSceneModel extends SceneCanvasModel {diagnostics:string[]}
 export function makeSceneModel(assets:SceneAssets,state:SceneSnapshot,visible:Record<SceneLayer,boolean>,selected:string|null,actorPositions:Map<string,SceneVector>=new Map(),runtimePose:ScenePose|null=null):FieldSceneModel{
   const group=new THREE.Group(),objects=new Map<string,THREE.Object3D>(),sourceGeometryBounds=new THREE.Box3(),identityMarkers=new Set<THREE.Object3D>();group.userData.source=assets.source_sha256;
+  if(import.meta.env.VITE_XEM_STUDIO_TEST==='1'&&assets.map_stream){
+    const stream=assets.map_stream;
+    group.userData.map_stream={...stream.source,image_count:stream.image_count,source_bytes_read:stream.source_bytes_read,stop_reason:stream.stop_reason,upload_count:stream.uploads.length};
+  }
   const geometries=new Set<THREE.BufferGeometry>(),materials=new Set<THREE.Material>(),textures=new Set<THREE.Texture>(),diagnostics=new Set<string>();
   const rememberGeometry=<T extends THREE.BufferGeometry>(geometry:T):T=>{geometries.add(geometry);return geometry;};
   const rememberMaterial=<T extends THREE.Material>(material:T):T=>{materials.add(material);return material;};
