@@ -51,11 +51,16 @@ export async function readLivePc(request: (command: { [key: string]: GameValue }
   }
   return { disc, map, actor: index, pc, event: tag < 32 ? tag : null, component, packageAddress, bytecodeAddress };
 }
-export function resolveLivePc(live: LivePc, loaded: LoadedField): Selection {
+/** Shared source qualification; pose reads do not require an active script event. */
+export function assertLiveComponent(live: LivePc, loaded: LoadedField): FieldGraph {
   const graph = loaded.graph;
   if (!graph || !loaded.bytes || loaded.map === null || loaded.disc === null) throw new Error('Unavailable: no decoded event component is loaded');
   if (live.disc !== loaded.disc || live.map !== loaded.map) throw new Error('Unavailable: live disc/map differs from the loaded component');
   if (live.component.length !== graph.declared_size || live.component.some((byte, index) => byte !== loaded.bytes![index])) throw new Error('Unavailable: live event component bytes differ from the loaded map');
+  return graph;
+}
+export function resolveLivePc(live: LivePc, loaded: LoadedField): Selection {
+  const graph = assertLiveComponent(live, loaded);
   if (!graph.instructions.some(instruction => instruction.pc === live.pc)) throw new Error('Unavailable: live PC is in a gap, inline data, or an undecoded instruction');
   const owners = graph.entries.filter(entry => entry.actor === live.actor && reachableInstructionPcs(graph, entry.pc).has(live.pc));
   if (live.event !== null) {

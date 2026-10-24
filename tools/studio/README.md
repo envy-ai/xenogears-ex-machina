@@ -1040,3 +1040,20 @@ are retained in the ignored verification ledger. These results do not establish
 real original-map editing/playback, project lifecycle or NW acceptance; M7 is
 still in progress. Audit62/63 reports a HIGH direct Zod advisory, without a
 demonstrated current widget collection-schema path. No zero-audit claim is made.
+
+
+The runtime-pose integration uses the existing paused schema commands. Both
+Refresh and Bind explicitly pause the runtime and leave it paused; resume from
+Live game. Refresh reads signed16.16 actor XYZ and signed heading only after
+module/family/map/component and stable actor/package-order qualification. Binding
+vanilla source context reimports the same authored history and marks provenance
+unsaved. The orange observation marker is read-only. Seven reader/PC unit tests
+and source review pass, but actual runtime observations/playback remain pending.
+
+Scene project browser checks now cover imported redo/allocator state, shared
+history/save/reload and stale folder I/O. The actual actor/zone CRUD buttons and
+undo/redo have synthetic browser coverage, including immediate actor/script
+auto-selection and referenced-vertex refusal. Actor-order changes reset temporary
+numeric navigation; persisted source bindings/history remain stable. These are
+standalone editor checks, separate from real native/browser M7 gameplay and NW
+acceptance.

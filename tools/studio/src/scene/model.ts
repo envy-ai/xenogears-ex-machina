@@ -4,6 +4,7 @@ import type { SceneAssets } from '../backend/scene-assets';
 import type { SceneSnapshot, SceneVector } from '../backend/scenes';
 import type { SceneCanvasModel } from '../editor/SceneCanvas';
 import { SceneVram, facePixelsKnown } from './textures';
+import type { ScenePose } from '../game/scene-pose';
 export type SceneLayer='geometry'|'actors'|'collision'|'zones'|'entrances';
 export interface SceneRow {id:string;label:string;layer:SceneLayer;kind:'descriptor'|'actor'|'vertex'|'triangle'|'zone'|'entrance';position:SceneVector;rotation:SceneVector;index:number;parent?:string}
 export const toView=(point:readonly number[]):SceneVector=>[point[0],-point[1],point[2]];
@@ -19,7 +20,7 @@ export function sceneRows(state:SceneSnapshot):SceneRow[]{
   return rows;
 }
 export interface FieldSceneModel extends SceneCanvasModel {diagnostics:string[]}
-export function makeSceneModel(assets:SceneAssets,state:SceneSnapshot,visible:Record<SceneLayer,boolean>,selected:string|null,actorPositions:Map<string,SceneVector>=new Map()):FieldSceneModel{
+export function makeSceneModel(assets:SceneAssets,state:SceneSnapshot,visible:Record<SceneLayer,boolean>,selected:string|null,actorPositions:Map<string,SceneVector>=new Map(),runtimePose:ScenePose|null=null):FieldSceneModel{
   const group=new THREE.Group(),objects=new Map<string,THREE.Object3D>();group.userData.source=assets.source_sha256;
   const geometries=new Set<THREE.BufferGeometry>(),materials=new Set<THREE.Material>(),textures=new Set<THREE.Texture>(),diagnostics=new Set<string>();
   const rememberGeometry=<T extends THREE.BufferGeometry>(geometry:T):T=>{geometries.add(geometry);return geometry;};
@@ -85,6 +86,12 @@ export function makeSceneModel(assets:SceneAssets,state:SceneSnapshot,visible:Re
   }
   const entranceMaterial=rememberMaterial(new THREE.MeshBasicMaterial({color:0xf598bd,wireframe:true}));
   for(const row of rows.filter(row=>row.kind==='entrance')){const anchor=new THREE.Mesh(rememberGeometry(new THREE.ConeGeometry(8,20,4)),entranceMaterial);anchor.position.fromArray(toView(row.position));anchor.userData.entity=row.id;anchor.visible=visible.entrances;objects.set(row.id,anchor);group.add(anchor);}
+  if(runtimePose){
+    const material=rememberMaterial(new THREE.MeshBasicMaterial({color:0xffb15c,wireframe:true,depthTest:false}));
+    const marker=new THREE.Mesh(rememberGeometry(new THREE.CapsuleGeometry(6,16,2,6)),material);
+    marker.position.fromArray(toView(runtimePose.position));marker.position.y+=14;marker.renderOrder=2;group.add(marker);
+    diagnostics.add(`Read-only actor pose observed at VBlank ${runtimePose.vblank}; an identity marker, not evaluated sprite geometry.`);
+  }
   if(selected&&objects.has(selected)){const helper=new THREE.BoxHelper(objects.get(selected)!,0x05edeb);helper.material.depthTest=false;geometries.add(helper.geometry);materials.add(helper.material);group.add(helper);}
   diagnostics.add('Base source preview: original Y-down units; runtime lighting, texture windows/semitransparent blending, morphs and sprite VM poses are not evaluated. Wire actor markers are source identities.');
   if(state.entrances.length)diagnostics.add('Entry markers show source X/Z on the editor plane; collision-derived height is evaluated by the game.');

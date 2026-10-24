@@ -215,8 +215,8 @@ export function useFieldDraft(backend: Backend | null, folder: FilesAdapter | nu
   const sceneEdit=useCallback((action:SceneAction)=>{
     try {if (pendingRef.current) throw new Error('Wait for the pending project operation before editing');if (!current.current) throw new Error('No source is open');
       const next=current.current.editScene(action);publish(current.current);dirty(false);setEditorKey(value=>value+1);setError(null);return next;
-    }catch(error){return fail(error);}
-  },[dirty,fail]);
+    }catch(error){if(error instanceof StudioCommandError){setError(error);log('Validation',error.stack??error.message);throw error;}return fail(error);}
+  },[dirty,fail,log]);
   const openScene=useCallback(async(map:number,disc:DiscSession)=>{
     if (!guard()) return null;
     const active=current.current;if (!active || !backend) throw new Error('Open an original source map before Scene');
@@ -242,14 +242,37 @@ export function useFieldDraft(backend: Backend | null, folder: FilesAdapter | nu
       candidate=null;active.close();return current.current.snapshot;
     }catch(error){if(candidate)candidate.close();return fail(error);}finally{endPending();}
   },[backend,guard,savedRevision,fail]);
-  const openSceneInput=useCallback((input:SceneInput,entrances:number[])=>{
-    if (!guard(true) || !backend) throw new Error('The current project cannot be replaced');
-    const next=FieldAuthoring.scene(backend,input,entrances);
-    try {const assets=decodeSceneAssets(backend,input,entrances);const snapshot=adopt(next,false,input.context??null);setSceneAssets(assets);return snapshot;}
+  const openSceneInput=useCallback((input:SceneInput,entrances:number[],promoteExistingEvents=false)=>{
+    if (!guard(!promoteExistingEvents) || !backend) throw new Error('The current project cannot be replaced');
+    const previous=current.current;
+    const wasUnsaved=Boolean(promoteExistingEvents&&previous&&(previous.snapshot.modified||savedProjectRef.current)&&previous.snapshot.revision!==savedRevision);
+    const wasContextUnsaved=promoteExistingEvents&&(sourceContext.current!==(input.context??null)||contextGeneration.current!==savedContextGeneration.current);
+    const wasSavedProject=promoteExistingEvents&&savedProjectRef.current;
+    const document=promoteExistingEvents?previous?.export():undefined;
+    if(promoteExistingEvents&&(!document||!('base' in document)))throw new Error('Scene promotion requires the current original-root M6 event document');
+    const next=FieldAuthoring.scene(backend,input,entrances,document&&'base' in document?document:undefined);
+    try {const assets=decodeSceneAssets(backend,input,entrances);const snapshot=adopt(next,wasSavedProject,input.context??null);if(wasUnsaved)setSavedRevision(-1);if(wasContextUnsaved){savedContextGeneration.current=-1;setContextDirty(true);}setSceneAssets(assets);return snapshot;}
     catch(error){next.close();throw error;}
-  },[backend,guard,adopt]);
+  },[backend,guard,adopt,savedRevision]);
+  const bindSceneContext=useCallback(async()=>{
+    if(!guard())return null;
+    const active=current.current,document=active?.scene?.export(),handler=sourceHandler.current;
+    if(!active||!document?.input.source||!backend||!handler)throw new Error('Attach a vanilla runtime for the identified original Scene before binding source context');
+    const token=ownerToken();beginPending();let next:FieldAuthoring|null=null;
+    try {
+      const context=await handler(document.input.source);checkOwner(token);
+      const input={...document.input,context,module_sha256:context.module_sha256};
+      next=FieldAuthoring.importScene(backend,{...document,input});
+      const assets=decodeSceneAssets(backend,input,document.entrance_selectors);checkOwner(token);
+      const previous=current.current;current.current=next;next=null;sessionGeneration.current++;
+      sourceContext.current=context;contextGeneration.current++;setContextDirty(true);
+      publish(current.current);setSceneAssets(assets);setSavedRevision(-1);setEditorKey(value=>value+1);setError(null);
+      log('Scene','Bound measured original runtime source context; the project is unsaved.');
+      previous?.close();return current.current.snapshot;
+    }catch(error){if(next)next.close();return fail(error);}finally{endPending();}
+  },[backend,guard,fail,log]);
   const placement=useCallback((node:string)=>{const scene=current.current?.scene;if(!scene)throw new Error('No Scene is open');return scene.placement(node);},[]);
   const registerSource = useCallback((handler: ((source:SourceIdentity)=>Promise<SourceContext>)|null) => {sourceHandler.current=handler;}, []);
   const registerPlay = useCallback((handler: ((build: FieldBuild) => Promise<void>) | null) => { playHandler.current = handler; setCanPlay(Boolean(handler)); }, []);
-  return { snapshot, getSceneSnapshot:()=>current.current?.scene?.snapshot??null, sceneSnapshot, sceneAssets, sceneEdit, openScene, openSceneInput, placement, original:()=>current.current?.original??null, inlineDirty, dirty, mode, editorKey, error, pending, lastBuild, canPlay, savedRevision, hasSavedProject, contextDirty, guard, clear, capture: ownerToken, assertUnchanged: checkOwner, open, edit, history, cancel, begin, discard, validate, save, load, build, play, registerPlay, registerSource, inspect: () => current.current?.compile() ?? null, nodeAt: (pc: number) => current.current?.nodeAt(pc) ?? null };
+  return { snapshot, getSceneSnapshot:()=>current.current?.scene?.snapshot??null, sceneSnapshot, sceneDocument:()=>current.current?.scene?.export()??null, sceneAssets, sceneEdit, bindSceneContext, openScene, openSceneInput, placement, original:()=>current.current?.original??null, inlineDirty, dirty, mode, editorKey, error, pending, lastBuild, canPlay, savedRevision, hasSavedProject, contextDirty, guard, clear, capture: ownerToken, assertUnchanged: checkOwner, open, edit, history, cancel, begin, discard, validate, save, load, build, play, registerPlay, registerSource, inspect: () => current.current?.compile() ?? null, nodeAt: (pc: number) => current.current?.nodeAt(pc) ?? null };
 }

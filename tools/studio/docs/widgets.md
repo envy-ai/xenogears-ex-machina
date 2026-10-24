@@ -584,3 +584,13 @@ coordinate to a concise persistent reason beside inline Apply/Cancel. The Scene
 inspector separates a scrolling field area (with a native scrollbar gutter) from
 fixed diagnostics and actions. Actions never cover coordinate inputs. All four
 zone corners remain reachable without changing selection or the accepted scene.
+
+
+The Scene runtime block composes the existing controller and schema inspection
+commands. Its explicit pause/read controls and orange observation marker are
+read-only. Original actor origins qualify vanilla rows; edited rows require the
+exact current package/build order. Unresolved variable script coordinates retain
+the known descriptor preview with an explanation; no zero script pose is guessed.
+Source-context binding is explicit unsaved project provenance, never an implicit
+coordinate write. Reader/ownership verification is recorded separately from
+actual package/gameplay acceptance.

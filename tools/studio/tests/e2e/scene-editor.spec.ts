@@ -12,7 +12,8 @@ interface SceneSnapshot {
   descriptors: { id: string; value: { position: number[]; rotation: number[]; flags: number; model: number } }[];
   zones: { id: string; value: { corners: number[][] } }[];
   entrances: { selector: number }[];
-  events: { graph: { entries: { actor: number; event: number; pc: number }[]; instructions: { pc: number; operands: number[]; spec: { handler: string } }[] } };
+  collision_entities: { layers: { id: string; vertices: { id: string; value: number[] }[]; triangles: { id: string; value: { vertices: string[] } }[] }[] };
+  events: { bytes: number[]; bindings: Record<string, number>; graph: { entries: { actor: number; event: number; pc: number }[]; instructions: { pc: number; operands: number[]; spec: { handler: string } }[] } };
 }
 interface SceneTestHook {
   loadScene(input: unknown, entrances?: number[], map?: number): Promise<void>;
@@ -41,6 +42,25 @@ async function sceneSnapshot(page: Page): Promise<SceneSnapshot> {
     if (!state) throw new Error('The synthetic scene is not open');
     return state;
   });
+}
+
+async function expectSelectedActorEntry(page: Page): Promise<string> {
+  await expect.poll(async () => page.evaluate(() => {
+    const value = (window as unknown as { __xemStudioTest: SceneTestHook }).__xemStudioTest.snapshot();
+    const scene = value.scene;
+    const actor = scene?.actors[value.selection.actor];
+    const entry = scene?.events.graph.entries.find(item => item.actor === value.selection.actor && item.event === value.selection.event);
+    return Boolean(actor && entry && value.sceneSelection === actor.id && value.selection.pc === entry.pc);
+  })).toBe(true);
+  const value = await hookSnapshot(page);
+  const scene = await sceneSnapshot(page);
+  const actor = scene.actors[value.selection.actor];
+  expect(actor).toBeDefined();
+  expect(value.sceneSelection).toBe(actor!.id);
+  const entry = scene.events.graph.entries.find(item => item.actor === value.selection.actor && item.event === value.selection.event);
+  expect(entry).toBeDefined();
+  expect(value.selection.pc).toBe(entry!.pc);
+  return actor!.id;
 }
 
 async function projected(page: Page, method: 'project' | 'gizmo', value: string): Promise<ProjectedPoint> {
@@ -525,4 +545,156 @@ test('a qualified placement binding opens its owned command and script dirt bloc
   await page.getByRole('button', { name: 'Cancel', exact: true }).click();
   await page.getByRole('tab', { name: 'Scene', exact: true }).click();
   await expect(page.getByRole('tabpanel', { name: 'Scene' })).toBeVisible();
+});
+
+test('synthetic Scene CRUD keeps stable IDs and event ownership while refusing a referenced vertex delete', async ({ page }) => {
+  test.setTimeout(90_000);
+  const fixturePath = process.env.XEM_STUDIO_SCENE_UI_FIXTURE;
+  test.skip(!fixturePath, 'the native scene trace provides a synthetic-only source');
+  const fixture = JSON.parse(readFileSync(fixturePath!, 'utf8')) as SceneTrace;
+  expect(fixture.schema_version).toBe(1);
+  expect(fixture.synthetic_only).toBe(true);
+  const decoded = fixture.trace.find(step => {
+    const request = JSON.parse(step.request_json) as { op?: string };
+    return request.op === 'field.scene.decode' && typeof (step.response as { ok?: unknown }).ok !== 'undefined';
+  });
+  expect(decoded).toBeDefined();
+  const request = JSON.parse(decoded!.request_json) as { args: { input: unknown; entrances: number[] } };
+
+  await page.goto('/');
+  await expect(page.locator('[data-panel-id="backend"]')).toContainText('xem-studio 0.5.0');
+  await expect.poll(() => page.evaluate(() => typeof (window as unknown as { __xemStudioTest?: SceneTestHook }).__xemStudioTest?.loadScene)).toBe('function');
+  await loadScene(page, request.args.input, request.args.entrances, 23);
+  const initial = await sceneSnapshot(page);
+  const sourceActor = initial.actors[0];
+  const sourceEntry = initial.events.graph.entries.find(entry => entry.actor === 0);
+  const sourceZone = initial.zones[0];
+  expect(sourceActor).toBeDefined();
+  expect(sourceEntry).toBeDefined();
+  expect(sourceZone).toBeDefined();
+  expect(initial.collision_entities.layers).toHaveLength(1);
+  const collision = initial.collision_entities.layers[0]!;
+  expect(collision.triangles.some(face => face.value.vertices.includes(collision.vertices[0]!.id))).toBe(true);
+
+  await page.locator(`[data-scene-id="${sourceActor!.id}"]`).click();
+  await expect.poll(async () => (await hookSnapshot(page)).selection).toMatchObject(sourceEntry!);
+  const sourceActorId = sourceActor!.id;
+
+  // Actor Add/Duplicate must activate the returned stable actor identity and its
+  // actual runtime-table event entry without a compensating click on the new row.
+  await page.getByRole('button', { name: 'Add', exact: true }).click();
+  const afterActorAdd = await sceneSnapshot(page);
+  expect(afterActorAdd.actors).toHaveLength(initial.actors.length + 1);
+  const addedActor = afterActorAdd.actors.find(actor => !initial.actors.some(original => original.id === actor.id));
+  expect(addedActor).toBeDefined();
+  expect(await expectSelectedActorEntry(page)).toBe(addedActor!.id);
+  await page.getByRole('tab', { name: 'Command list' }).click();
+  await expect(page.getByRole('tab', { name: 'Command list' })).toHaveAttribute('aria-selected', 'true');
+  expect((await hookSnapshot(page)).view).toBe('list');
+  expect(await expectSelectedActorEntry(page)).toBe(addedActor!.id);
+  await page.getByRole('tab', { name: 'Scene', exact: true }).click();
+  await expect(page.getByRole('tabpanel', { name: 'Scene' })).toBeVisible();
+
+  await page.getByRole('button', { name: 'Duplicate', exact: true }).click();
+  const afterActorDuplicate = await sceneSnapshot(page);
+  expect(afterActorDuplicate.actors).toHaveLength(afterActorAdd.actors.length + 1);
+  const duplicatedActor = afterActorDuplicate.actors.find(actor => !afterActorAdd.actors.some(original => original.id === actor.id));
+  expect(duplicatedActor).toBeDefined();
+  expect(duplicatedActor!.id).not.toBe(addedActor!.id);
+  expect(await expectSelectedActorEntry(page)).toBe(duplicatedActor!.id);
+  await page.getByRole('tab', { name: 'Command list' }).click();
+  await expect(page.getByRole('tab', { name: 'Command list' })).toHaveAttribute('aria-selected', 'true');
+  expect((await hookSnapshot(page)).view).toBe('list');
+  expect(await expectSelectedActorEntry(page)).toBe(duplicatedActor!.id);
+  await page.getByRole('tab', { name: 'Scene', exact: true }).click();
+
+  await page.getByRole('button', { name: 'Undo', exact: true }).click();
+  const undoActorDuplicate = await sceneSnapshot(page);
+  expect(undoActorDuplicate.actors.some(actor => actor.id === duplicatedActor!.id)).toBe(false);
+  expect(await expectSelectedActorEntry(page)).toBeTruthy();
+  await page.getByRole('button', { name: 'Redo', exact: true }).click();
+  const redoActorDuplicate = await sceneSnapshot(page);
+  expect(redoActorDuplicate.actors.some(actor => actor.id === duplicatedActor!.id)).toBe(true);
+  expect(await expectSelectedActorEntry(page)).toBeTruthy();
+  await page.locator(`[data-scene-id="${duplicatedActor!.id}"]`).click();
+  await page.getByRole('button', { name: 'Delete', exact: true }).click();
+  expect((await sceneSnapshot(page)).actors.some(actor => actor.id === duplicatedActor!.id)).toBe(false);
+  await page.getByRole('button', { name: 'Undo', exact: true }).click();
+  const undoActorDelete = await sceneSnapshot(page);
+  expect(undoActorDelete.actors.some(actor => actor.id === duplicatedActor!.id)).toBe(true);
+  expect(await expectSelectedActorEntry(page)).toBeTruthy();
+  await page.getByRole('button', { name: 'Redo', exact: true }).click();
+  expect((await sceneSnapshot(page)).actors.some(actor => actor.id === duplicatedActor!.id)).toBe(false);
+  expect(await expectSelectedActorEntry(page)).toBeTruthy();
+  const afterActorHistory = await sceneSnapshot(page);
+  expect(afterActorHistory.actors.some(actor => actor.id === sourceActorId)).toBe(true);
+  expect(afterActorHistory.events.bindings).toMatchObject(initial.events.bindings);
+  expect(afterActorHistory.events.graph.entries.find(entry => entry.actor === 0 && entry.event === sourceEntry!.event)).toBeDefined();
+  const sourceEventBytes = afterActorHistory.events.bytes;
+  const sourceBindings = afterActorHistory.events.bindings;
+  const boundScript = await hookSnapshot(page);
+
+  // Add, duplicate, and delete use the visible hierarchy/editor controls and the Rust
+  // scene transaction owner. Generated IDs are discovered from the returned snapshots.
+  await page.locator(`[data-scene-id="${sourceZone!.id}"]`).click();
+  await page.getByRole('button', { name: 'Add', exact: true }).click();
+  const afterAdd = await sceneSnapshot(page);
+  expect(afterAdd.zones).toHaveLength(initial.zones.length + 1);
+  const added = afterAdd.zones.find(zone => !initial.zones.some(original => original.id === zone.id));
+  expect(added).toBeDefined();
+  await expect.poll(async () => (await hookSnapshot(page)).sceneSelection).toBe(added!.id);
+  expect(afterAdd.events.bytes).toEqual(sourceEventBytes);
+  expect(afterAdd.events.bindings).toEqual(sourceBindings);
+  expect((await hookSnapshot(page)).selection).toMatchObject(boundScript.selection);
+
+  await page.getByRole('button', { name: 'Duplicate', exact: true }).click();
+  const afterDuplicate = await sceneSnapshot(page);
+  expect(afterDuplicate.zones).toHaveLength(afterAdd.zones.length + 1);
+  const duplicate = afterDuplicate.zones.find(zone => !afterAdd.zones.some(original => original.id === zone.id));
+  expect(duplicate).toBeDefined();
+  expect(duplicate!.id).not.toBe(added!.id);
+  await expect.poll(async () => (await hookSnapshot(page)).sceneSelection).toBe(duplicate!.id);
+  expect(afterDuplicate.events.bytes).toEqual(sourceEventBytes);
+  expect(afterDuplicate.events.bindings).toEqual(sourceBindings);
+
+  await page.getByRole('button', { name: 'Delete', exact: true }).click();
+  const afterDelete = await sceneSnapshot(page);
+  expect(afterDelete.zones.some(zone => zone.id === duplicate!.id)).toBe(false);
+  expect(afterDelete.zones.some(zone => zone.id === added!.id)).toBe(true);
+  expect(afterDelete.events.bytes).toEqual(sourceEventBytes);
+  expect(afterDelete.events.bindings).toEqual(sourceBindings);
+  expect((await hookSnapshot(page)).selection).toMatchObject(boundScript.selection);
+
+  await page.getByRole('button', { name: 'Undo', exact: true }).click();
+  const undoDelete = await sceneSnapshot(page);
+  expect(undoDelete.zones.map(zone => zone.id)).toEqual(afterDuplicate.zones.map(zone => zone.id));
+  expect(undoDelete.events).toEqual(afterDuplicate.events);
+  await page.getByRole('button', { name: 'Undo', exact: true }).click();
+  const undoDuplicate = await sceneSnapshot(page);
+  expect(undoDuplicate.zones.map(zone => zone.id)).toEqual(afterAdd.zones.map(zone => zone.id));
+  expect(undoDuplicate.events).toEqual(afterAdd.events);
+  await page.getByRole('button', { name: 'Redo', exact: true }).click();
+  const redoDuplicate = await sceneSnapshot(page);
+  expect(redoDuplicate.zones.map(zone => zone.id)).toEqual(afterDuplicate.zones.map(zone => zone.id));
+  expect(redoDuplicate.events).toEqual(afterDuplicate.events);
+  await page.getByRole('button', { name: 'Redo', exact: true }).click();
+  const redoDelete = await sceneSnapshot(page);
+  expect(redoDelete.zones.map(zone => zone.id)).toEqual(afterDelete.zones.map(zone => zone.id));
+  expect(redoDelete.events).toEqual(afterDelete.events);
+  expect((await hookSnapshot(page)).selection).toMatchObject(boundScript.selection);
+
+  // The source triangle still owns this vertex. The UI surfaces the Rust refusal and
+  // adopts neither a partial mesh mutation nor a history/revision change.
+  const beforeRefusedDelete = await sceneSnapshot(page);
+  const referencedVertex = collision.vertices[0]!;
+  await page.locator(`[data-scene-id="${referencedVertex.id}"]`).click();
+  const owner = await sceneSnapshot(page);
+  await page.getByRole('button', { name: 'Delete', exact: true }).click();
+  const refusal = page.locator('.scene-property-actions [role="alert"]');
+  await expect(refusal).toContainText('collision vertex is still referenced by a triangle');
+  const afterRefusedDelete = await sceneSnapshot(page);
+  expect(afterRefusedDelete).toEqual(owner);
+  expect(afterRefusedDelete.collision_entities).toEqual(beforeRefusedDelete.collision_entities);
+  expect(afterRefusedDelete.events).toEqual(beforeRefusedDelete.events);
+  expect(afterRefusedDelete.revision).toBe(owner.revision);
 });

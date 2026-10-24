@@ -30,3 +30,6 @@
 
 // These rows have a single label, without the shared widget's optional icon/action slots.
 .scene-hierarchy .docker-item-select {grid-template-columns:minmax(0,1fr);}
+
+.scene-pose-values {display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:6px;margin:0;}
+.scene-pose-values dd {margin:0;overflow-wrap:anywhere;}

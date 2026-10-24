@@ -5,10 +5,11 @@ import type { DraftSnapshot } from '../backend/drafts';
 import type { SceneAction, SceneCorners, ScenePlacement, SceneVector } from '../backend/scenes';
 import type { SceneTool, SceneTransform } from '../editor/SceneCanvas';
 import { sceneRows, fromView } from './model';
+import type { ScenePose } from '../game/scene-pose';
 const handlers=new Set(['field_event_place','field_event_place_on_layer','field_event_place_at_height','field_event_set_position']);
 type Draft=ReturnType<typeof useFieldDraft>;
 const finite=(values:readonly number[],min:number,max:number)=>values.every(v=>Number.isSafeInteger(v)&&v>=min&&v<=max);
-export function useSceneEditor(draft:Draft,onSnapshot:(snapshot:DraftSnapshot|null)=>void,onScript:(actor:number,event:number,pc:number,reveal?:boolean)=>boolean,scriptSelection:{actor:number;event:number;pc:number|null}){
+export function useSceneEditor(draft:Draft,onSnapshot:(snapshot:DraftSnapshot|null)=>void,onScript:(actor:number,event:number,pc:number|null,reveal?:boolean,remember?:boolean)=>boolean,scriptSelection:{actor:number;event:number;pc:number|null}){
   const state=draft.sceneSnapshot;
   const rows=useMemo(()=>state?sceneRows(state):[],[state]);
   const [selected,setSelected]=useState<string|null>(null),[binding,setBinding]=useState('header');
@@ -19,6 +20,8 @@ export function useSceneEditor(draft:Draft,onSnapshot:(snapshot:DraftSnapshot|nu
   const [corners,setCorners]=useState<SceneCorners>([[0,0,0],[0,0,0],[0,0,0],[0,0,0]]);
   const [newFace,setNewFace]=useState(false),[faceVertices,setFaceVertices]=useState<[string,string,string]>(['','','']);
   const [failure,setFailure]=useState<Error|null>(null);
+  const [runtimePose,setRuntimePose]=useState<ScenePose|null>(null);
+  useEffect(()=>setRuntimePose(null),[state?.source_sha256,state?.revision,selected]);
   const row=rows.find(row=>row.id===selected)??null;
   useEffect(()=>{setSelected(state?.actors[scriptSelection.actor]?.id??state?.descriptors[0]?.id??null);setBinding('header');setFailure(null);},[state?.source_sha256]);
   const bindings=useMemo(()=>{
@@ -32,6 +35,12 @@ export function useSceneEditor(draft:Draft,onSnapshot:(snapshot:DraftSnapshot|nu
     return{values,errors};
   },[state,row?.id,draft.placement]);
   const placement=bindings.values.find(value=>value.node===binding)??null;
+  useEffect(()=>{
+    if(state&&selected&&!rows.some(row=>row.id===selected)){
+      setSelected(state.actors[scriptSelection.actor]?.id??state.actors[0]?.id??null);setBinding('header');setTool('select');
+    }
+  },[rows,selected,state?.revision,scriptSelection.actor]);
+  useEffect(()=>{if(row?.kind==='actor'&&binding!=='header'&&!bindings.values.some(value=>value.node===binding)){setBinding('header');setTool('select');}},[bindings,binding,row?.id]);
   useEffect(()=>{
     if(!row||!state)return;
     setPosition(placement?placement.position.map(axis=>axis.kind==='immediate'?axis.value:NaN) as SceneVector:row.kind==='zone'||row.kind==='triangle'?[0,0,0]:row.position);
@@ -52,8 +61,21 @@ export function useSceneEditor(draft:Draft,onSnapshot:(snapshot:DraftSnapshot|nu
     else if(invalidPosition.some(Boolean))validation='Coordinates/translations must be whole signed16 values';
   }
   if(newFace&&(!faceVertices.every(Boolean)||new Set(faceVertices).size!==3))validation='Choose three distinct source vertex identities';
-  const perform=(action:SceneAction)=>{try{onSnapshot(draft.sceneEdit(action));setFailure(null);setNewFace(false);const next=draft.getSceneSnapshot();if(next){const ids=new Set(rows.map(r=>r.id));const added=sceneRows(next).filter(r=>!ids.has(r.id));const first=added.find(r=>r.kind===row?.kind)??added[0];if(first)setSelected(first.id);else if(selected&&!sceneRows(next).some(r=>r.id===selected))setSelected(null);}}catch(cause){setFailure(cause instanceof Error?cause:new Error(String(cause)));}};
-  const select=(id:string)=>{if(id===selected)return;if(!draft.guard())return;setSelected(id);setBinding('header');setTool('select');setFailure(null);const actor=state?.actors.findIndex(actor=>actor.id===id)??-1;if(actor>=0){const entry=state!.events.graph.entries.find(entry=>entry.actor===actor);if(entry)onScript(actor,entry.event,entry.pc);}};
+  const activate=(id:string|null,namespace:NonNullable<typeof state>,remember=true)=>{
+    const actor=namespace.actors.findIndex(actor=>actor.id===id);
+    if(actor>=0){const entry=namespace.events.graph.entries.find(entry=>entry.actor===actor);onScript(actor,entry?.event??0,entry?.pc??null,false,remember);}
+    setSelected(id);setBinding('header');setTool('select');setFailure(null);
+  };
+  const perform=(action:SceneAction)=>{try{
+    onSnapshot(draft.sceneEdit(action));setFailure(null);setNewFace(false);
+    const next=draft.getSceneSnapshot();if(next){
+      const nextRows=sceneRows(next),ids=new Set(rows.map(r=>r.id)),added=nextRows.filter(r=>!ids.has(r.id));
+      const first=added.find(r=>r.kind===row?.kind)??added[0];
+      if(first)activate(first.id,next,false);
+      else if(selected&&!nextRows.some(r=>r.id===selected))activate(row?.kind==='actor'?next.actors[0]?.id??null:null,next,false);
+    }
+  }catch(cause){setFailure(cause instanceof Error?cause:new Error(String(cause)));}};
+  const select=(id:string)=>{if(id===selected)return;if(!draft.guard()||!state)return;activate(id,state);};
   const apply=()=>{
     if(!row||!state||validation||!draft.inlineDirty)return;
     if(newFace&&row.kind==='triangle'){const value=state.collision_entities.layers.find(layer=>layer.id===row.parent)!.triangles[row.index].value;perform({kind:'add_collision_triangle',layer:row.parent!,vertices:faceVertices,attribute:value.attribute,height_bump_raw:value.height_bump_raw});return;}
@@ -89,6 +111,6 @@ export function useSceneEditor(draft:Draft,onSnapshot:(snapshot:DraftSnapshot|nu
   };
   const changePosition=(axis:number,value:number)=>{setPosition(previous=>previous.map((v,i)=>i===axis?value:v) as SceneVector);draft.dirty(true);};
   const changeRotation=(axis:number,value:number)=>{setRotation(previous=>previous.map((v,i)=>i===axis?value:v) as SceneVector);draft.dirty(true);};
-  return{state,beginTransform:()=>{const token=draft.capture(),owner={selected,binding};return()=>{draft.assertUnchanged(token);if(selectionRef.current.selected!==owner.selected||selectionRef.current.binding!==owner.binding)throw new Error('Scene selection/source binding changed during the transform; fields were not adopted');};},invalidPosition,invalidRotation,invalidCorners,newFace,faceVertices,setFaceVertex:(axis:number,id:string)=>{setFaceVertices(previous=>previous.map((v,i)=>i===axis?id:v) as [string,string,string]);draft.dirty(true);},rows,row,selected,select,binding,placement,bindings,setBinding:(value:string)=>{if(draft.guard()){setBinding(value);setTool('select');}},tool,setTool,frame,frameSelection:()=>setFrame(v=>v+1),filter,setFilter,visible,setVisible,position,rotation,corners,changePosition,changeRotation,changeCorner:(corner:number,axis:number,value:number)=>{setCorners(previous=>previous.map((p,n)=>n===corner?p.map((v,i)=>i===axis?value:v):p) as SceneCorners);draft.dirty(true);},axes,canRotate,validation,failure,apply,preview,crud,syncScript:(selection:{actor:number;event:number;pc:number|null})=>{const actor=state?.actors[selection.actor];if(!actor)return;setSelected(actor.id);const node=selection.pc===null?null:Object.entries(state!.events.bindings).find(([,pc])=>pc===selection.pc)?.[0];const ins=state!.events.graph.instructions.find(i=>i.pc===selection.pc);setBinding(node&&ins&&handlers.has(ins.spec.handler)?node:'header');},openScript:()=>{if(!placement||!state||!row)return;const actor=state.actors.findIndex(a=>a.id===row.id),owner=placement.owners.find(o=>o.actor===row.id);if(owner)onScript(actor,owner.event,placement.pc,true);}};
+  return{state,runtimePose,setRuntimePose,beginTransform:()=>{const token=draft.capture(),owner={selected,binding};return()=>{draft.assertUnchanged(token);if(selectionRef.current.selected!==owner.selected||selectionRef.current.binding!==owner.binding)throw new Error('Scene selection/source binding changed during the transform; fields were not adopted');};},invalidPosition,invalidRotation,invalidCorners,newFace,faceVertices,setFaceVertex:(axis:number,id:string)=>{setFaceVertices(previous=>previous.map((v,i)=>i===axis?id:v) as [string,string,string]);draft.dirty(true);},rows,row,selected,select,binding,placement,bindings,setBinding:(value:string)=>{if(draft.guard()){setBinding(value);setTool('select');}},tool,setTool,frame,frameSelection:()=>setFrame(v=>v+1),filter,setFilter,visible,setVisible,position,rotation,corners,changePosition,changeRotation,changeCorner:(corner:number,axis:number,value:number)=>{setCorners(previous=>previous.map((p,n)=>n===corner?p.map((v,i)=>i===axis?value:v):p) as SceneCorners);draft.dirty(true);},axes,canRotate,validation,failure,apply,preview,crud,syncScript:(selection:{actor:number;event:number;pc:number|null})=>{const actor=state?.actors[selection.actor];if(!actor)return;setSelected(actor.id);const node=selection.pc===null?null:Object.entries(state!.events.bindings).find(([,pc])=>pc===selection.pc)?.[0];const ins=state!.events.graph.instructions.find(i=>i.pc===selection.pc);setBinding(node&&ins&&handlers.has(ins.spec.handler)?node:'header');},openScript:()=>{if(!placement||!state||!row)return;const actor=state.actors.findIndex(a=>a.id===row.id),owner=placement.owners.find(o=>o.actor===row.id);if(owner)onScript(actor,owner.event,placement.pc,true);}};
 }
 export type SceneEditor=ReturnType<typeof useSceneEditor>;

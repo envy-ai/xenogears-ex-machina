@@ -1364,12 +1364,14 @@ tools/studio/src/events/useWindowedRows.ts
 tools/studio/src/events/workspace.scss
 tools/studio/src/game/LiveGame.tsx
 tools/studio/src/game/README.md
+tools/studio/src/game/ScenePose.tsx
 tools/studio/src/game/browser.ts
 tools/studio/src/game/controller.ts
 tools/studio/src/game/live-game.scss
 tools/studio/src/game/native.ts
 tools/studio/src/game/pc.ts
 tools/studio/src/game/protocol.ts
+tools/studio/src/game/scene-pose.ts
 tools/studio/src/game/schema.ts
 tools/studio/src/main.tsx
 tools/studio/src/platform/browser-files.ts
@@ -1421,6 +1423,7 @@ tools/studio/tests/e2e/production-hook.spec.ts
 tools/studio/tests/e2e/real-parity.ts
 tools/studio/tests/e2e/remote-discs.spec.ts
 tools/studio/tests/e2e/scene-editor.spec.ts
+tools/studio/tests/e2e/scene-project.spec.ts
 tools/studio/tests/e2e/serve-built.mjs
 tools/studio/tests/e2e/studio-test-driver.ts
 tools/studio/tests/e2e/studio.spec.ts
@@ -1441,6 +1444,7 @@ tools/studio/tests/unit/game-ui-real.test.ts
 tools/studio/tests/unit/game.test.ts
 tools/studio/tests/unit/name-history.test.ts
 tools/studio/tests/unit/remote-discs.test.ts
+tools/studio/tests/unit/scene-pose.test.ts
 tools/studio/tests/unit/scene-textures.test.ts
 tools/studio/tests/unit/scenes.test.ts
 tools/studio/tests/unit/service.test.ts

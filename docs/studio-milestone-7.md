@@ -11,7 +11,7 @@ is retried by this milestone.
 
 Human M7 UI approval is received (record and exact images below). Backend
 native/WASM proofs and the first synthetic Scene UI increment are verified;
-original-map edited gameplay, project lifecycle and NW acceptance remain open.
+original-map edited gameplay, real project/runtime observations and NW acceptance remain open.
 The dated checkpoints below retain historical gate/failure statements.
 
 ## Result and authority
@@ -616,3 +616,50 @@ claimed. Real source/edited playback, save/reload and delayed ownership checks,
 read-only live observations, entrance selection and desktop acceptance remain
 required before M7 completion. The dependency audit retains a HIGH Zod advisory
 caveat; this increment does not claim zero audit findings.
+
+
+## Read-only runtime observation integration (verification pending)
+
+The Scene runtime surface uses the existing paused game controller/schema
+protocol, not a new game operation. Captured observations require the measured
+module identity, original disc family/current map and matching event component.
+Vanilla maps selected original actors by their source origin; an edited runtime
+requires exactly the current last-good package identity, authored revision/owner
+and stable actor/descriptor order. Added actors have no guessed vanilla binding.
+Unknown or stale identities refuse observation.
+
+Original field actor position is signed32 16.16 XYZ (`actors.h`); the heading
+field is signed16. Runtime clock observations use the actual u64 `vblanks`
+status field without rounding unsafe integers. Only status/inspect/read_memory
+commands read a pose, while the existing controller explicitly pauses execution
+and leaves it paused. Both controls state this effect; resume from Live game.
+A labelled orange identity marker is read-only; it is not an evaluated sprite.
+It never changes the authored descriptor or placement. Project/source/selection
+generations and the controller epoch reject stale asynchronous completion.
+These reads qualify the event namespace, not full unrelated-component package
+preservation; that remains a separate real acceptance proof.
+
+Explicit Bind original runtime source context acquires the existing measured
+vanilla loader provenance for maps whose original stream needed no extra tail.
+Rust validates a re-import with the exact existing history; this metadata change
+marks the project unsaved, retains the last-good build historically, and requires
+a fresh compatible build before edited-package observations. No file is silently
+written and no TLS/trust/runtime game code is changed.
+
+Reader and existing M4 PC unit checks pass7/7 in checkpoint76; they do not
+exercise caller package/stable-order ownership or an actual runtime. Browser77
+passes imported M6/Scene history, retained redo/IDs, project save/reload and
+delayed folder read/write/source ownership, plus two affected script-navigation
+regressions. The ordinary runtime UI source path still requires real acceptance.
+
+Browser78 passes actual actor and zone Add/Duplicate/Delete buttons and undo/redo,
+immediate auto-selected stable actor/event identity across Scene-to-List
+switching, and atomic refusal of a referenced collision vertex deletion. The
+normal/automatic selection path now uses the fresh namespace; history removes
+dangling selected IDs/bindings. Structural actor changes clear temporary numeric
+PC navigation, and automatic selection does not seed it with a deleted actor.
+Placement/source-binding regression also passes. Expected structured Scene
+refusals remain local with retained original technical details.
+
+Actual browser/native runtime observations, package/gameplay and desktop checks
+remain unfinished; no such pass is inferred from these synthetic tests.

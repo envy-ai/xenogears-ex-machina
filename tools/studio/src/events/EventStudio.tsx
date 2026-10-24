@@ -18,6 +18,8 @@ import { DraftEditor } from './DraftEditor';
 import { useSceneEditor } from '../scene/useSceneEditor';
 import { FieldScene, SceneHierarchy, SceneProperties } from '../scene/FieldScene';
 import type { SceneInput } from '../backend/scenes';
+import type { ScenePoseSource } from '../game/scene-pose';
+import type { GameIdentity } from '../game/schema';
 import type { DraftSnapshot } from '../backend/drafts';
 import './events.scss';
 import './workspace.scss';
@@ -246,8 +248,10 @@ function useStudio(backend: Backend | null, folder: FilesAdapter | null, report:
     if (!next) return;
     const oldId = selection.pc === null ? null : Object.entries(draft.snapshot?.bindings ?? {}).find(([,pc]) => pc === selection.pc)?.[0];
     structures.current.clear(); setGraph(next.graph); setStructure(null); setLanes(null);
-    const oldActor=draft.sceneSnapshot?.actors[selection.actor]?.id;
+    const previousActors=draft.sceneSnapshot?.actors;
+    const oldActor=previousActors?.[selection.actor]?.id;
     const actors=draft.getSceneSnapshot()?.actors;
+    if(previousActors&&actors&&(previousActors.length!==actors.length||previousActors.some((actor,index)=>actor.id!==actors[index]?.id)))navigation.current={items:[],at:-1};
     const actor=actors&&oldActor?Math.max(0,actors.findIndex(a=>a.id===oldActor)):selection.actor;
     const entry = next.graph.entries.find(entry => entry.actor === actor && entry.event === selection.event);
     const placed=oldId?next.bindings[oldId]:undefined;
@@ -312,7 +316,7 @@ function useStudio(backend: Backend | null, folder: FilesAdapter | null, report:
     };
     window.addEventListener('keydown', key); return () => window.removeEventListener('keydown', key);
   });
-  const sceneEditor=useSceneEditor(draft,applySnapshot,(actor,event,pc,reveal=false)=>{const accepted=select({actor,event,pc},true);if(accepted&&reveal)void setView('list').catch(report);return accepted;},selection);
+  const sceneEditor=useSceneEditor(draft,applySnapshot,(actor,event,pc,reveal=false,remember=true)=>{const accepted=select({actor,event,pc},remember);if(accepted&&reveal)void setView('list').catch(report);return accepted;},selection);
   sceneSelectionChanged.current=sceneEditor.syncScript;
   const displayNames=useMemo(()=>{
     const original=history.value;if(!draft.sceneSnapshot||map===null)return original;
@@ -330,9 +334,9 @@ function useStudio(backend: Backend | null, folder: FilesAdapter | null, report:
       openNativePath: (path: string) => latest.current.openNativePath(path),
       selectMap: (discId: number, number: number) => latest.current.loadMap(discId, number),
       setView: (next: View) => latest.current.setView(next),
-      loadScene:async(input:SceneInput,entrances:number[]=[],number=0)=>{
-        const s=latest.current,next=s.draft.openSceneInput(input,entrances),original=s.draft.original()!,source=s.draft.getSceneSnapshot()!;
-        structures.current.clear();navigation.current={items:[],at:-1};setBaseGraph(original);setComponentBytes(source.events.bytes);setMap(number);setGraph(next.graph);setStructure(null);setLanes(null);setViewState('scene');
+      loadScene:async(input:SceneInput,entrances:number[]=[],number=0,promoteExistingEvents=false)=>{
+        const s=latest.current,next=s.draft.openSceneInput(input,entrances,promoteExistingEvents),original=s.draft.original()!,source=s.draft.getSceneSnapshot()!;
+        structures.current.clear();navigation.current={items:[],at:-1};setBaseGraph(original);setComponentBytes(promoteExistingEvents?s.componentBytes:source.events.bytes);setMap(number);setGraph(next.graph);setStructure(null);setLanes(null);setViewState('scene');
         const first=next.graph.entries[0];setSelection(first?{actor:first.actor,event:first.event,pc:first.pc}:{actor:0,event:0,pc:null});await paintedView('scene');
       },
       snapshot: () => { const s = latest.current; return { view: s.view, selection: s.selection, map: s.map, scene:s.draft.getSceneSnapshot(), sceneSelection:s.sceneEditor.selected, instructions: s.graph?.instructions.length ?? 0, draft: s.draft.snapshot ? { revision: s.draft.snapshot.revision, bindings: s.draft.snapshot.bindings, graph: s.draft.snapshot.graph, bytes: s.draft.inspect()?.bytes ?? [] } : null, discs: s.discs.map(disc => ({ id: disc.session.id, disc: disc.session.status.identity?.disc, mapCount: disc.maps.length, placeholders: disc.maps.filter(map => map.placeholder).length })), renderTimes: [...s.renderTimes.current] }; },
@@ -527,11 +531,70 @@ export function useEventPackagePlay() {
   return { register: draft.registerPlay, registerSource: draft.registerSource };
 }
 
+/** A paused observation is bound to source, package order and a stable actor. */
+export function useSceneRuntime() {
+  const state = useEvents();
+  const latest = useRef(state); latest.current = state;
+  return {
+    active: state.view === 'scene', folder: state.folder,
+    session: state.draft.snapshot?.draft, revision: state.draft.snapshot?.revision,
+    selected: state.sceneEditor.selected, source: state.draft.sceneSnapshot?.source_sha256,
+    pending: state.draft.pending || Boolean(state.busy), inlineDirty: state.draft.inlineDirty,
+    actor: state.sceneEditor.row?.kind === 'actor', pose: state.sceneEditor.runtimePose,
+    publish: state.sceneEditor.setRuntimePose,
+    async bindContext(){const s=latest.current;const next=await s.draft.bindSceneContext();if(next)s.applySnapshot(next);},
+    capture(identity: GameIdentity) {
+      const s = latest.current;
+      const scene = s.draft.getSceneSnapshot(), document = s.draft.sceneDocument();
+      const row = s.sceneEditor.row, disc = s.discs.find(item => item.session.id === s.activeDisc)?.session;
+      const originalIdentity = disc?.status.identity;
+      if (!scene || !document || row?.kind !== 'actor' || !originalIdentity || originalIdentity.test_fixture || !document.input.source || s.map === null) {
+        throw new Error('Unavailable: select an actor in an identified original disc Scene');
+      }
+      const source = document.input.source;
+      if (source.disc !== originalIdentity.disc || source.boot_sha256 !== originalIdentity.boot_sha256 || source.map !== s.map) {
+        throw new Error('Unavailable: the Scene source differs from the selected original disc/map');
+      }
+      const module = document.input.module_sha256 ?? document.input.context?.module_sha256;
+      if (!module) throw new Error('Unavailable: this Scene has no measured game-module identity; acquire its original source context first');
+      const family = originalIdentity.package_discs.map(disc => disc.serial).sort().join('+');
+      if (identity.module !== module || identity.disc !== family) throw new Error('Unavailable: runtime module/disc family differs from the measured Scene source');
+      let loaded = { disc: source.disc, map: s.map, graph: s.baseGraph, bytes: s.componentBytes };
+      let actor: number;
+      if (!identity.packages.length) {
+        const original = scene.actors.find(item => item.id === row.id);
+        if (original?.origin.kind !== 'original') throw new Error('Unavailable: this authored actor has no vanilla runtime identity');
+        actor = original.origin.actor;
+      } else {
+        const build = s.draft.lastBuild, owner = s.draft.snapshot;
+        if (!build || identity.packages.length !== 1 || identity.packages[0] !== build.identity ||
+            build.revision !== scene.revision || build.draft !== owner?.draft ||
+            !build.actors || build.actors.length !== scene.actors.length || build.actors.some((id, index) => id !== scene.actors[index].id) ||
+            !build.descriptors || build.descriptors.length !== scene.descriptors.length || build.descriptors.some((id, index) => id !== scene.descriptors[index].id)) {
+          throw new Error('Unavailable: runtime packages do not match the current Scene build and stable actor/descriptor order');
+        }
+        actor = scene.actors.findIndex(item => item.id === row.id);
+        loaded = { disc: source.disc, map: s.map, graph: scene.events.graph, bytes: scene.events.bytes };
+      }
+      const token = s.draft.capture(), selected = row.id, binding = s.sceneEditor.binding;
+      return {
+        source: { entity: selected, actor, identity: { module, disc: family, packages: [...identity.packages] }, loaded } satisfies ScenePoseSource,
+        assertCurrent() {
+          s.draft.assertUnchanged(token);
+          if (latest.current.sceneEditor.selected !== selected || latest.current.sceneEditor.binding !== binding) {
+            throw new Error('The Scene actor or source binding changed during pose observation; no observation was adopted');
+          }
+        },
+      };
+    },
+  };
+}
+
 /** Keep the schema inspector mounted while the approved Scene tab is shown. */
-export function EventInspector({children}:{children:ReactNode}){
+export function EventInspector({children,runtime}:{children:ReactNode;runtime?:ReactNode}){
   const s=useEvents();const [tab,setTab]=useState<'scene'|'schema'>('schema');
   useEffect(()=>{if(s.view==='scene'&&s.draft.sceneSnapshot)setTab('scene');},[s.view,s.draft.sceneSnapshot?.source_sha256]);
-  return <div className="scene-inspector-host">{s.draft.sceneSnapshot&&<div className="scene-inspector-tabs" role="tablist" aria-label="Inspector views"><button className="editor-button" role="tab" aria-selected={tab==='scene'} onClick={()=>setTab('scene')}>Scene inspector</button><button className="editor-button" role="tab" aria-selected={tab==='schema'} onClick={()=>setTab('schema')}>Schema inspector</button></div>}<div className="scene-inspector-content" hidden={tab!=='scene'||!s.draft.sceneSnapshot}>{s.draft.sceneSnapshot&&<SceneProperties editor={s.sceneEditor} draft={s.draft} active={s.view==='scene'}/>}</div><div className="scene-inspector-content" hidden={tab!=='schema'&&Boolean(s.draft.sceneSnapshot)}>{children}</div></div>;
+  return <div className="scene-inspector-host">{s.draft.sceneSnapshot&&<div className="scene-inspector-tabs" role="tablist" aria-label="Inspector views"><button className="editor-button" role="tab" aria-selected={tab==='scene'} onClick={()=>setTab('scene')}>Scene inspector</button><button className="editor-button" role="tab" aria-selected={tab==='schema'} onClick={()=>setTab('schema')}>Schema inspector</button></div>}<div className="scene-inspector-content" hidden={tab!=='scene'||!s.draft.sceneSnapshot}>{s.draft.sceneSnapshot&&<SceneProperties editor={s.sceneEditor} draft={s.draft} runtime={runtime} active={s.view==='scene'}/>}</div><div className="scene-inspector-content" hidden={tab!=='schema'&&Boolean(s.draft.sceneSnapshot)}>{children}</div></div>;
 }
 
 /** Project metadata stays reachable without displacing Scene layers. */

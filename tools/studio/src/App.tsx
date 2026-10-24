@@ -12,6 +12,7 @@ import type { FilesAdapter, FileEntry } from './platform/files';
 import { selectFolder, nativeHost } from './platform/host';
 import { runNativeSmoke } from './smoke';
 import { LiveGameProvider, LiveControls, SchemaInspector } from './game/LiveGame';
+import { SceneRuntimePose } from './game/ScenePose';
 import { EventStudioProvider, EventInspector, ProjectFiles, DiscBrowser, EventViews } from './events/EventStudio';
 
 interface LogEntry { id: number; time: string; kind: string; text: string }
@@ -159,7 +160,7 @@ export function App() {
       </WorkspacePanel>
       <WorkspaceCenter><EventViews /></WorkspaceCenter>
       <WorkspacePanel id="live" title="Live game"><LiveControls report={report} /></WorkspacePanel>
-      <WorkspacePanel id="inspector" title="Schema inspector"><EventInspector><SchemaInspector report={report} /></EventInspector></WorkspacePanel>
+      <WorkspacePanel id="inspector" title="Schema inspector"><EventInspector runtime={<SceneRuntimePose report={report}/>}><SchemaInspector report={report} /></EventInspector></WorkspacePanel>
       <WorkspacePanel id="backend" title="Backend"><section className="studio-backend" data-studio-panel="backend" aria-label="Backend commands" tabIndex={-1}>
         <p className="editor-text"><span className="studio-ready" aria-hidden="true" />{version ? `xem-studio ${version.version} · Operations: ${version.operations.join(', ')}` : 'Loading backend…'}</p>
         <label className="editor-field-label"><span>Command (JSON)</span><textarea className="editor-control editor-control--textarea editor-control--code studio-command" spellCheck={false} value={command} onChange={event => setCommand(event.target.value)} /></label>

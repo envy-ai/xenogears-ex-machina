@@ -74,7 +74,7 @@ test('edits inline fields, guards selection, and keeps list, graph, insert and h
   await operand.fill('9');
   await selectPc(page, 4);
   expect((await snapshot(page)).selection.pc).toBe(0);
-  await expect(page.locator('.event-draft-diagnostic')).toContainText('Apply or Cancel the inline instruction fields');
+  await expect(page.locator('.event-draft-diagnostic')).toContainText('Apply or Cancel the inline fields before changing selection or view');
   await editor.getByRole('button', { name: 'Cancel' }).click();
   await expect(operand).toHaveValue('1');
 
@@ -135,7 +135,7 @@ test('Alt+Left/Right keep navigation history and inline fields owned until Apply
   await page.keyboard.press('Alt+ArrowLeft');
   expect((await snapshot(page)).selection.pc).toBe(4);
   await expect(operand).toHaveValue('9');
-  await expect(page.locator('.event-draft-diagnostic')).toContainText('Apply or Cancel the inline instruction fields');
+  await expect(page.locator('.event-draft-diagnostic')).toContainText('Apply or Cancel the inline fields before changing selection or view');
 
   await editor.getByRole('button', { name: 'Cancel' }).click();
   await page.keyboard.press('Alt+ArrowLeft');
@@ -147,7 +147,7 @@ test('Alt+Left/Right keep navigation history and inline fields owned until Apply
   await page.keyboard.press('Alt+ArrowRight');
   expect((await snapshot(page)).selection.pc).toBe(0);
   await expect(firstOperand).toHaveValue('7');
-  await expect(page.locator('.event-draft-diagnostic')).toContainText('Apply or Cancel the inline instruction fields');
+  await expect(page.locator('.event-draft-diagnostic')).toContainText('Apply or Cancel the inline fields before changing selection or view');
 
   await editor.getByRole('button', { name: 'Cancel' }).click();
   await page.keyboard.press('Alt+ArrowRight');

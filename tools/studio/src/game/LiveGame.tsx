@@ -15,7 +15,7 @@ import type { SourceContext } from '../backend/discs';
 import './live-game.scss';
 
 const Context = createContext<GameController | null>(null);
-function useGame() {
+export function useLiveGame() {
   const controller = useContext(Context);
   if (!controller) throw new Error('Missing live game provider');
   const state = useSyncExternalStore(controller.subscribe, controller.getSnapshot);
@@ -29,7 +29,7 @@ export function LiveGameProvider({ report, log, children }: { report(error: unkn
 function errorText(error: unknown) { return error instanceof Error ? error.stack ?? error.message : String(error); }
 
 export function LiveControls({ report }: { report(error: unknown): void }) {
-  const { controller, state } = useGame();
+  const { controller, state } = useLiveGame();
   const navigation = useEventNavigation();
   const eventPackage = useEventPackagePlay();
   const [url, setUrl] = useState('/runtime/');
@@ -152,7 +152,7 @@ export function LiveControls({ report }: { report(error: unknown): void }) {
 }
 
 export function SchemaInspector({ report }: { report(error: unknown): void }) {
-  const { controller, state } = useGame();
+  const { controller, state } = useLiveGame();
   const [filter, setFilter] = useState('');
   const [limit, setLimit] = useState(128);
   const [expanded, setExpanded] = useState(new Set<string>());
