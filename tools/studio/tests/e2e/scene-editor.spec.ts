@@ -8,15 +8,22 @@ interface SceneSnapshot {
   revision: number;
   can_undo: boolean;
   can_redo: boolean;
+  modified: boolean;
+  source_sha256: string;
+  reference_diagnostics: string[];
   actors: { id: string; event_source_row: number }[];
   descriptors: { id: string; value: { position: number[]; rotation: number[]; flags: number; model: number } }[];
   zones: { id: string; value: { corners: number[][] } }[];
-  entrances: { selector: number }[];
+  entrances: { selector: number; source_span: number[]; x: number; z: number; layer: number; camera_raw: number; facing_raw: number }[];
   collision_entities: { layers: { id: string; vertices: { id: string; value: number[] }[]; triangles: { id: string; value: { vertices: string[] } }[] }[] };
-  events: { bytes: number[]; bindings: Record<string, number>; graph: { entries: { actor: number; event: number; pc: number }[]; instructions: { pc: number; operands: number[]; spec: { handler: string } }[] } };
+  events: { bytes: number[]; bindings: Record<string, number>; graph: { bytecode_offset: number; entries: { actor: number; event: number; pc: number }[]; instructions: { pc: number; operands: number[]; spec: { handler: string } }[] } };
 }
 interface SceneTestHook {
   loadScene(input: unknown, entrances?: number[], map?: number): Promise<void>;
+  inspectScene(): {
+    document: { entrance_selectors: number[]; [key: string]: unknown };
+    compiled: { bundle: number[]; bundle_sha256: string; events: { bytes: number[]; bindings: Record<string, number> } };
+  } | null;
   snapshot(): { view: string; scene: SceneSnapshot | null; sceneSelection: string | null; selection: { actor: number; event: number; pc: number | null } };
 }
 interface ProjectedPoint { x: number; y: number; z: number; visible: boolean }
@@ -42,6 +49,19 @@ async function sceneSnapshot(page: Page): Promise<SceneSnapshot> {
     if (!state) throw new Error('The synthetic scene is not open');
     return state;
   });
+}
+
+async function inspectScene(page: Page): Promise<NonNullable<ReturnType<SceneTestHook['inspectScene']>>> {
+  const value = await page.evaluate(() => (window as unknown as { __xemStudioTest: SceneTestHook }).__xemStudioTest.inspectScene());
+  if (!value) throw new Error('The Rust-owned Scene document is not open');
+  return value;
+}
+
+async function inspectEntrance(page: Page, selector: number): Promise<void> {
+  await page.getByText('Inspect existing entrance selector', { exact: true }).click();
+  const picker = page.locator('.scene-entrance-picker');
+  await picker.getByRole('spinbutton', { name: 'Existing entrance selector' }).fill(String(selector));
+  await picker.getByRole('button', { name: 'Inspect entrance', exact: true }).click();
 }
 
 async function expectSelectedActorEntry(page: Page): Promise<string> {
@@ -697,4 +717,126 @@ test('synthetic Scene CRUD keeps stable IDs and event ownership while refusing a
   expect(afterRefusedDelete.collision_entities).toEqual(beforeRefusedDelete.collision_entities);
   expect(afterRefusedDelete.events).toEqual(beforeRefusedDelete.events);
   expect(afterRefusedDelete.revision).toBe(owner.revision);
+});
+
+test('synthetic Scene inspects only selected entrance records without changing bytes, then edits X/Z transactionally', async ({ page }) => {
+  test.setTimeout(60_000);
+  const fixturePath = process.env.XEM_STUDIO_SCENE_UI_FIXTURE;
+  test.skip(!fixturePath, 'the native scene trace provides explicit synthetic entrance selectors');
+  const fixture = JSON.parse(readFileSync(fixturePath!, 'utf8')) as SceneTrace;
+  expect(fixture.schema_version).toBe(1);
+  expect(fixture.synthetic_only).toBe(true);
+  const opened = fixture.trace.find(step => {
+    const request = JSON.parse(step.request_json) as { op?: string; args?: { kind?: string; entrances?: number[] } };
+    return request.op === 'field.scene.draft' && request.args?.kind === 'open'
+      && request.args.entrances?.length === 2 && typeof (step.response as { ok?: unknown }).ok !== 'undefined';
+  });
+  expect(opened, 'fixture records an explicitly selected pair of existing selectors').toBeDefined();
+  const request = JSON.parse(opened!.request_json) as { args: { input: unknown; entrances: number[] } };
+  expect(request.args.entrances).toEqual([0, 1]);
+  const expected = (opened!.response as { ok: { state: SceneSnapshot } }).ok.state.entrances;
+  expect(expected.map(entry => entry.selector)).toEqual([0, 1]);
+
+  await page.goto('/');
+  await expect(page.locator('[data-panel-id="backend"]')).toContainText('xem-studio 0.5.0');
+  await expect.poll(() => page.evaluate(() => typeof (window as unknown as { __xemStudioTest?: SceneTestHook }).__xemStudioTest?.inspectScene)).toBe('function');
+  await loadScene(page, request.args.input, [], 23);
+  const initial = await sceneSnapshot(page);
+  expect(initial.entrances).toEqual([]);
+  expect(initial.can_undo).toBe(false);
+  const sourceScene = await inspectScene(page);
+  expect(sourceScene.document.entrance_selectors).toEqual([]);
+
+  for (const selector of request.args.entrances) {
+    const before = await sceneSnapshot(page);
+    const beforeCompiled = await inspectScene(page);
+    await inspectEntrance(page, selector);
+    await expect(page.locator(`[data-scene-id="entrance:${selector}"]`)).toBeVisible();
+    const after = await sceneSnapshot(page);
+    const inspected = after.entrances.find(entry => entry.selector === selector);
+    const expectedRecord = expected.find(entry => entry.selector === selector);
+    expect(inspected).toEqual(expectedRecord);
+    expect(after.entrances.map(entry => entry.selector)).toEqual(request.args.entrances.slice(0, selector + 1));
+    expect(after.revision).toBe(before.revision);
+    expect(after.can_undo).toBe(false);
+    expect(after.can_redo).toBe(false);
+    expect(after.modified).toBe(false);
+    expect(after.events.bytes).toEqual(before.events.bytes);
+    expect(after.events.bindings).toEqual(before.events.bindings);
+    const afterCompiled = await inspectScene(page);
+    expect(afterCompiled.document.entrance_selectors).toEqual(request.args.entrances.slice(0, selector + 1));
+    const { entrance_selectors: _selectors, ...beforeDocument } = beforeCompiled.document;
+    const { entrance_selectors: _afterSelectors, ...afterDocument } = afterCompiled.document;
+    expect(afterDocument).toEqual(beforeDocument);
+    expect(afterCompiled.compiled.bundle_sha256).toBe(beforeCompiled.compiled.bundle_sha256);
+    expect(afterCompiled.compiled.bundle.length).toBe(beforeCompiled.compiled.bundle.length);
+    expect(afterCompiled.compiled.bundle.every((byte, index) => byte === beforeCompiled.compiled.bundle[index])).toBe(true);
+    expect(afterCompiled.compiled.events.bytes).toEqual(beforeCompiled.compiled.events.bytes);
+    expect(afterCompiled.compiled.events.bindings).toEqual(beforeCompiled.compiled.events.bindings);
+    expect(after.source_sha256).toBe(initial.source_sha256);
+    expect(after.reference_diagnostics).toEqual(initial.reference_diagnostics);
+  }
+
+  const selectorOne = expected[1]!;
+  await expect(page.getByText(`Source selector ${selectorOne.selector}; layer ${selectorOne.layer}. Raw camera/facing bytes ${selectorOne.camera_raw}/${selectorOne.facing_raw}. Height is evaluated by the game.`, { exact: true })).toBeVisible();
+  const entranceFooter = page.locator('.scene-property-actions');
+  await expect(entranceFooter.getByText('Entrance structural CRUD has no proven count/reference closure.', { exact: true })).toBeVisible();
+  for (const action of ['Add', 'Duplicate', 'Delete']) {
+    const button = page.getByRole('button', { name: action, exact: true });
+    await expect(button).toBeDisabled();
+    await expect(button).toHaveAttribute('title', 'Entrance structural CRUD is unavailable: no proven count/reference closure');
+  }
+  const x = page.getByRole('spinbutton', { name: 'Scene position X' });
+  const y = page.getByRole('spinbutton', { name: 'Scene position Y' });
+  const z = page.getByRole('spinbutton', { name: 'Scene position Z' });
+  await expect(x).toBeEnabled();
+  await expect(y).toBeDisabled();
+  await expect(z).toBeEnabled();
+  await expect(page.getByRole('spinbutton', { name: 'Layer' })).toHaveCount(0);
+  await expect(page.getByRole('spinbutton', { name: 'Camera' })).toHaveCount(0);
+  await expect(page.getByRole('spinbutton', { name: 'Facing' })).toHaveCount(0);
+
+  const beforeEdit = await sceneSnapshot(page);
+  const beforeEditCompiled = await inspectScene(page);
+  const original = beforeEdit.entrances.find(entry => entry.selector === selectorOne.selector)!;
+  const editedX = original.x < 32767 ? original.x + 1 : original.x - 1;
+  const editedZ = original.z < 32767 ? original.z + 1 : original.z - 1;
+  await x.fill(String(editedX));
+  await z.fill(String(editedZ));
+  await page.getByRole('button', { name: 'Apply scene fields' }).click();
+  const afterEdit = await sceneSnapshot(page);
+  expect(afterEdit.revision).toBe(beforeEdit.revision + 1);
+  expect(afterEdit.entrances.find(entry => entry.selector === selectorOne.selector)).toEqual({ ...original, x: editedX, z: editedZ });
+  expect(afterEdit.entrances.find(entry => entry.selector === 0)).toEqual(beforeEdit.entrances.find(entry => entry.selector === 0));
+  const entranceWordStart = beforeEdit.events.graph.bytecode_offset + original.source_span[0];
+  const changedEventBytes = afterEdit.events.bytes.flatMap((value, offset) => value === beforeEdit.events.bytes[offset] ? [] : [offset]);
+  expect(changedEventBytes.length).toBeGreaterThan(0);
+  expect(changedEventBytes.every(offset => offset >= entranceWordStart && offset < entranceWordStart + 4)).toBe(true);
+  expect(afterEdit.events.bindings).toEqual(beforeEdit.events.bindings);
+  expect(afterEdit.events.graph.instructions).toEqual(beforeEdit.events.graph.instructions);
+  const editedCompiled = await inspectScene(page);
+  expect(editedCompiled.compiled.bundle_sha256).not.toBe(beforeEditCompiled.compiled.bundle_sha256);
+
+  await page.getByRole('button', { name: 'Undo', exact: true }).click();
+  expect((await sceneSnapshot(page)).entrances).toEqual(beforeEdit.entrances);
+  expect((await sceneSnapshot(page)).events.bytes).toEqual(beforeEdit.events.bytes);
+  expect((await sceneSnapshot(page)).events.bindings).toEqual(beforeEdit.events.bindings);
+  expect((await inspectScene(page)).compiled.bundle_sha256).toBe(beforeEditCompiled.compiled.bundle_sha256);
+  await page.getByRole('button', { name: 'Redo', exact: true }).click();
+  expect((await sceneSnapshot(page)).entrances).toEqual(afterEdit.entrances);
+  expect((await sceneSnapshot(page)).events.bytes).toEqual(afterEdit.events.bytes);
+  expect((await sceneSnapshot(page)).events.bindings).toEqual(afterEdit.events.bindings);
+  expect((await inspectScene(page)).compiled.bundle_sha256).toBe(editedCompiled.compiled.bundle_sha256);
+
+  const beforeInvalid = await sceneSnapshot(page);
+  const invalidDocument = await inspectScene(page);
+  await inspectEntrance(page, 65535);
+  const diagnostic = page.locator('.scene-entrance-picker [role="alert"]');
+  await expect(diagnostic).toContainText('entrance selector list exceeds bounded prefix capacity');
+  expect(await sceneSnapshot(page)).toEqual(beforeInvalid);
+  const afterInvalidDocument = await inspectScene(page);
+  expect(afterInvalidDocument.document).toEqual(invalidDocument.document);
+  expect(afterInvalidDocument.compiled.bundle_sha256).toBe(invalidDocument.compiled.bundle_sha256);
+  expect(afterInvalidDocument.compiled.bundle.length).toBe(invalidDocument.compiled.bundle.length);
+  expect(afterInvalidDocument.compiled.bundle.every((byte, index) => byte === invalidDocument.compiled.bundle[index])).toBe(true);
 });

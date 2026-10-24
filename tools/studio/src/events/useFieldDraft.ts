@@ -254,6 +254,33 @@ export function useFieldDraft(backend: Backend | null, folder: FilesAdapter | nu
     try {const assets=decodeSceneAssets(backend,input,entrances);const snapshot=adopt(next,wasSavedProject,input.context??null);if(wasUnsaved)setSavedRevision(-1);if(wasContextUnsaved){savedContextGeneration.current=-1;setContextDirty(true);}setSceneAssets(assets);return snapshot;}
     catch(error){next.close();throw error;}
   },[backend,guard,adopt,savedRevision]);
+  const inspectEntrance=useCallback((selector:number)=>{
+    if(!guard())return null;
+    if(!Number.isSafeInteger(selector)||selector<0||selector>65535)throw new Error('An existing entrance selector must be a whole unsigned16 value');
+    const active=current.current,document=active?.scene?.export();
+    if(!active?.scene||!document||!backend)throw new Error('Open the original Scene before inspecting an entrance selector');
+    if(document.entrance_selectors.includes(selector))return active.snapshot;
+    let next:FieldAuthoring|null=null;
+    try {
+      const selectors=[...document.entrance_selectors,selector].sort((a,b)=>a-b);
+      next=FieldAuthoring.importScene(backend,{...document,entrance_selectors:selectors});
+      const before=active.scene.compile(),after=next.scene!.compile();
+      if(before.bundle.length!==after.bundle.length||before.bundle.some((byte,index)=>byte!==after.bundle[index])||
+          Object.keys(before.events.bindings).length!==Object.keys(after.events.bindings).length||
+          Object.entries(before.events.bindings).some(([id,pc])=>after.events.bindings[id]!==pc)){
+        throw new Error('Entrance inspection changed authored bytes or bindings; the previous Scene is preserved');
+      }
+      const assets=decodeSceneAssets(backend,document.input,selectors),previous=active.snapshot;
+      const unsaved=(previous.modified||savedProjectRef.current)&&previous.revision!==savedRevision;
+      current.current=next;next=null;sessionGeneration.current++;publish(current.current);setSceneAssets(assets);
+      setSavedRevision(unsaved?-1:current.current.snapshot.revision);setEditorKey(value=>value+1);setError(null);
+      if(lastBuild?.draft===previous.draft&&lastBuild.revision===previous.revision){
+        setLastBuild({...lastBuild,draft:current.current.snapshot.draft,revision:current.current.snapshot.revision});
+      }
+      log('Scene',`Inspected existing entrance selector ${selector}; authored bytes and bindings are unchanged.`);
+      active.close();return current.current.snapshot;
+    }catch(error){if(next)next.close();if(error instanceof StudioCommandError){setError(error);log('Validation',error.stack??error.message);throw error;}return fail(error);}
+  },[backend,guard,savedRevision,lastBuild,fail,log]);
   const bindSceneContext=useCallback(async()=>{
     if(!guard())return null;
     const active=current.current,document=active?.scene?.export(),handler=sourceHandler.current;
@@ -274,5 +301,5 @@ export function useFieldDraft(backend: Backend | null, folder: FilesAdapter | nu
   const placement=useCallback((node:string)=>{const scene=current.current?.scene;if(!scene)throw new Error('No Scene is open');return scene.placement(node);},[]);
   const registerSource = useCallback((handler: ((source:SourceIdentity)=>Promise<SourceContext>)|null) => {sourceHandler.current=handler;}, []);
   const registerPlay = useCallback((handler: ((build: FieldBuild) => Promise<void>) | null) => { playHandler.current = handler; setCanPlay(Boolean(handler)); }, []);
-  return { snapshot, getSceneSnapshot:()=>current.current?.scene?.snapshot??null, sceneSnapshot, sceneDocument:()=>current.current?.scene?.export()??null, sceneAssets, sceneEdit, bindSceneContext, openScene, openSceneInput, placement, original:()=>current.current?.original??null, inlineDirty, dirty, mode, editorKey, error, pending, lastBuild, canPlay, savedRevision, hasSavedProject, contextDirty, guard, clear, capture: ownerToken, assertUnchanged: checkOwner, open, edit, history, cancel, begin, discard, validate, save, load, build, play, registerPlay, registerSource, inspect: () => current.current?.compile() ?? null, nodeAt: (pc: number) => current.current?.nodeAt(pc) ?? null };
+  return { snapshot, getSceneSnapshot:()=>current.current?.scene?.snapshot??null, sceneSnapshot, sceneOwner:()=>current.current?.scene?.scene??null, sceneDocument:()=>current.current?.scene?.export()??null, sceneCompile:()=>current.current?.scene?.compile()??null, sceneAssets, sceneEdit, inspectEntrance, bindSceneContext, openScene, openSceneInput, placement, original:()=>current.current?.original??null, inlineDirty, dirty, mode, editorKey, error, pending, lastBuild, canPlay, savedRevision, hasSavedProject, contextDirty, guard, clear, capture: ownerToken, assertUnchanged: checkOwner, open, edit, history, cancel, begin, discard, validate, save, load, build, play, registerPlay, registerSource, inspect: () => current.current?.compile() ?? null, nodeAt: (pc: number) => current.current?.nodeAt(pc) ?? null };
 }

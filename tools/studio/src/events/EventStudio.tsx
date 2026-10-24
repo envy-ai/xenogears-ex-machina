@@ -164,14 +164,17 @@ function useStudio(backend: Backend | null, folder: FilesAdapter | null, report:
     if (!backend) { await reader.close(); throw new Error('The backend is not ready'); }
     setBusy(`Opening ${reader.name}`);
     let session: DiscSession | undefined;
+    // DiscSession retains default progress callbacks for later range requests.
+    // Only the opening operation owns this global busy indicator.
+    let opening = true;
     try {
-      session = await openDiscSession(backend, reader, { onProgress: progress => setBusy(`${reader.name}: ${progress.phase ?? progress.state}`) });
+      session = await openDiscSession(backend, reader, { onProgress: progress => { if (opening) setBusy(`${reader.name}: ${progress.phase ?? progress.state}`); } });
       const maps = await session.maps({ onProgress: progress => setBusy(`Indexing maps ${progress.completed ?? 0}/${progress.total ?? '?'}`) });
       const opened = { session, maps };
       setDiscs(current => [...current, opened]); selectDisc(session.id);
       log('Disc', `${reader.name}: recognized disc ${session.status.identity?.disc}; ${maps.length} map slots`);
     } catch (error) { if (session) await session.close().catch(report); throw error; }
-    finally { setBusy(''); }
+    finally { opening = false; setBusy(''); }
   }, [backend, log, report, selectDisc]);
   const openFiles = useCallback(async (files: File[]) => {
     if (!backend) throw new Error('The backend is not ready');
@@ -330,6 +333,7 @@ function useStudio(backend: Backend | null, folder: FilesAdapter | null, report:
     if (import.meta.env.VITE_XEM_STUDIO_TEST !== '1' || !backend) return;
     const hook = {
       command: (json: string) => backend.command(json),
+      inspectScene:()=>({owner:latest.current.draft.sceneOwner(),document:latest.current.draft.sceneDocument(),compiled:latest.current.draft.sceneCompile()}),
       loadComponent: async (bytes: number[], declared_size: number, number = 0) => { await latest.current.install(bytes, declared_size, number); },
       openNativePath: (path: string) => latest.current.openNativePath(path),
       selectMap: (discId: number, number: number) => latest.current.loadMap(discId, number),

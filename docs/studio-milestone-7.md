@@ -663,3 +663,51 @@ refusals remain local with retained original technical details.
 
 Actual browser/native runtime observations, package/gameplay and desktop checks
 remain unfinished; no such pass is inferred from these synthetic tests.
+
+
+## Explicit entrance inspection UI (verification pending)
+
+The Scene hierarchy can inspect a caller-established unsigned16 entrance selector
+through the original ff-prefix reader. It never enumerates a guessed count. A
+valid inspection enriches the read-only view namespace and does not add an
+authored action; it verifies the entire current compiled bundle and event
+bindings remain byte-identical before adoption. Known-good package ownership
+can transfer only across that byte-preserving inspection. The existing history,
+allocator IDs, context dirty state and unsaved authored state are preserved.
+Saving records the inspected selector list; inspection alone is optional view
+qualification, unlike measured runtime context required to reproduce a build.
+
+A supported X/Z change enters the shared authored history and makes the project
+unsaved. Y/camera/facing/layer remain read-only here, with raw bytes shown.
+Structural entrance CRUD is disabled with its reason beside the actions: no
+proven count/incoming-reference closure. Invalid selectors preserve the prior
+scene/document and expose the original source error. These controls use existing
+NumberField/native details/form patterns; focused UI and persistence checks are
+prepared separately from original-map gameplay acceptance.
+
+### Original-disc observation increment (checkpoint83)
+
+The original Disc1/map23 Scene opens through real pull/range-fill transport after
+both discs are recognized. Its measured context validates all nine complete
+component outputs, including component8's78 bytes rather than only its72 logical
+bytes. Normal Bind imports a new validated owner, preserves authored history and
+bytes, and marks provenance unsaved. Starting the real browser runtime Running
+before Bind/Refresh proves both controls pause it and leave VBlank stable.
+Original actor descriptor:3 has the explicit pc:1076 placement binding; the
+read-only observed signed16.16 position converts to29/0/1270 and heading-32768.
+This is caller-level original browser observation, not edited-package or native
+runtime-pose acceptance. Exact command/source/scope evidence is local in83.
+
+Checkpoint82 exposed a UI ownership bug: DiscSession retains its default progress
+callback for later reads, so a completed Scene mapBundle request reused the old
+opening callback and left global busy set to 'disc1.bin: ready'. The callback now
+updates global busy only during its opening lifetime. Runtime observation
+controls keep their guards and explain unavailable operations in their titles.
+The corrected83 actual journey asserts normal busy completion before and after
+Scene; all preflight/browser/source checks pass. Failed81/82 logs remain intact.
+
+Root reviewed the new83 M7 captures. They show a tightly framed actor marker and
+an opening 'Fei?' game prompt, so they are discovery evidence, not the required
+usable real scene/edited-gameplay visual proof. Initial selection framing and
+meaningful real package/save/reload/Play/native/browser evidence are still being
+completed. No M7 completion or new full-runtime-suite pass is claimed.

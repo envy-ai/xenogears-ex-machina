@@ -29,17 +29,25 @@ export function SceneRuntimePose({ report }: { report(error: unknown): void }) {
     } finally { setReading(false); }
   };
   const run = (operation: () => Promise<void>) => {
+    scene.publish(null);
     void operation().catch(cause => {
       const error = cause instanceof Error ? cause : new Error(String(cause));
       setError(error); report(error);
     });
   };
-  const blocked = !scene.active || !state.connected || Boolean(state.busy) || reading || scene.pending || scene.inlineDirty;
+  const blockedReason = !scene.active ? 'Open the Scene view before observing its runtime source.'
+    : !state.connected ? 'Attach a matching runtime first.'
+    : state.busy ? 'Wait for the current runtime operation.'
+    : reading ? 'Wait for the current pose observation.'
+    : scene.pending ? 'Wait for the current project or map operation.'
+    : scene.inlineDirty ? 'Apply or Cancel the inline fields first.' : null;
+  const bindReason = blockedReason ?? (state.schema?.identity.packages.length ? 'Source context requires a vanilla runtime with no enabled packages.' : null);
+  const refreshReason = blockedReason ?? (!scene.actor ? 'Select an actor with a qualified runtime identity.' : null);
   return <div className="editor-field-list">
     <p className="editor-text editor-text--caption">Both actions pause the runtime and leave it paused; resume from Live game. Live values never write authored placement.</p>
-    <button className="editor-button" disabled={blocked || Boolean(state.schema?.identity.packages.length)} onClick={() => run(scene.bindContext)}>Bind original runtime source context</button>
+    <button className="editor-button" disabled={Boolean(bindReason)} title={bindReason??undefined} onClick={() => run(scene.bindContext)}>Bind original runtime source context</button>
     <p className="editor-text editor-text--caption">Binding requires a vanilla runtime and records measured provenance as unsaved project data.</p>
-    <button className="editor-button" disabled={blocked || !scene.actor} onClick={() => run(refresh)}>Refresh observed actor pose</button>
+    <button className="editor-button" disabled={Boolean(refreshReason)} title={refreshReason??undefined} onClick={() => run(refresh)}>Refresh observed actor pose</button>
     {scene.pose ? <>
       <p className="editor-text editor-text--caption">Observed VBlank {scene.pose.vblank} · Actor {scene.pose.actor} · {scene.pose.entity}</p>
       <dl className="scene-pose-values">{scene.pose.position.map((value, axis) => <div key={axis}><dt className="editor-text editor-text--caption">{['X', 'Y', 'Z'][axis]} · source units</dt><dd className="editor-text editor-text--code">{value}</dd></div>)}</dl>

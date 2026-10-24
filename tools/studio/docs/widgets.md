@@ -594,3 +594,11 @@ the known descriptor preview with an explanation; no zero script pose is guessed
 Source-context binding is explicit unsaved project provenance, never an implicit
 coordinate write. Reader/ownership verification is recorded separately from
 actual package/gameplay acceptance.
+
+
+Existing entrance inspection composes NumberField, native details and a labelled
+submit action in the hierarchy. It accepts explicitly established selectors,
+never an inferred entrance count. It closes on a successful read so the entity
+list regains space; original errors remain expandable on refusal. Inspection
+does not write game bytes/history. Supported coordinate Apply uses the existing
+fixed actions; structural-action refusal is visible beside disabled buttons.

@@ -33,3 +33,6 @@
 
 .scene-pose-values {display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:6px;margin:0;}
 .scene-pose-values dd {margin:0;overflow-wrap:anywhere;}
+
+.scene-entrance-picker {flex:0 0 auto;max-height:150px;overflow:auto;}
+.scene-entrance-picker summary {cursor:pointer;}

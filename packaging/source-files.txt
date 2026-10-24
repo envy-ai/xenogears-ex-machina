@@ -1424,6 +1424,8 @@ tools/studio/tests/e2e/real-parity.ts
 tools/studio/tests/e2e/remote-discs.spec.ts
 tools/studio/tests/e2e/scene-editor.spec.ts
 tools/studio/tests/e2e/scene-project.spec.ts
+tools/studio/tests/e2e/scene-real.spec.ts
+tools/studio/tests/e2e/scene-real.ts
 tools/studio/tests/e2e/serve-built.mjs
 tools/studio/tests/e2e/studio-test-driver.ts
 tools/studio/tests/e2e/studio.spec.ts

@@ -36,7 +36,7 @@ declare global {
   interface Window { __sceneProjectFolderControl?: SceneProjectFolderControl }
 }
 
-function sceneProjectSeed(): SceneProjectSeed {
+function sceneProjectSeed(expectedEntrances?: number[]): SceneProjectSeed {
   const fixturePath = process.env.XEM_STUDIO_SCENE_UI_FIXTURE;
   if (!fixturePath) throw new Error('XEM_STUDIO_SCENE_UI_FIXTURE is required for the synthetic Scene project test');
   const trace = JSON.parse(readFileSync(fixturePath, 'utf8')) as SceneTrace;
@@ -44,6 +44,7 @@ function sceneProjectSeed(): SceneProjectSeed {
   for (const step of trace.trace) {
     const request = JSON.parse(step.request_json) as { op?: string; args?: { kind?: string; input?: SceneInput; entrances?: number[] } };
     if (request.op !== 'field.scene.draft' || request.args?.kind !== 'open' || !request.args.input) continue;
+    if (expectedEntrances && JSON.stringify(request.args.entrances ?? []) !== JSON.stringify(expectedEntrances)) continue;
     const events = step.response.ok?.state?.events;
     if (!events) continue;
     return { input: request.args.input, entrances: request.args.entrances ?? [], events };
@@ -72,14 +73,21 @@ async function waitReady(page: Page): Promise<void> {
   await expect.poll(() => page.evaluate(() => typeof (window as Window & { __xemStudioTest?: SceneProjectDriver }).__xemStudioTest?.loadScene)).toBe('function');
 }
 
-async function loadM6AndScene(page: Page, seed: SceneProjectSeed, promoteExistingEvents: boolean): Promise<void> {
+async function loadM6AndScene(page: Page, seed: SceneProjectSeed, promoteExistingEvents: boolean, entrances: number[] = seed.entrances): Promise<void> {
   await page.evaluate(async ({ bytes, declaredSize, input, entrances, promote }) => {
     const hook = (window as Window & { __xemStudioTest?: SceneProjectDriver }).__xemStudioTest;
     if (!hook) throw new Error('The explicit synthetic Studio test driver is unavailable');
     await hook.loadComponent(bytes, declaredSize, 23);
     await hook.loadScene(input, entrances, 23, promote);
-  }, { bytes: seed.events.bytes, declaredSize: seed.events.declared_size, input: seed.input, entrances: seed.entrances, promote: promoteExistingEvents });
+  }, { bytes: seed.events.bytes, declaredSize: seed.events.declared_size, input: seed.input, entrances, promote: promoteExistingEvents });
   await expect(page.getByRole('tabpanel', { name: 'Scene' })).toBeVisible();
+}
+
+async function inspectEntrance(page: Page, selector: number): Promise<void> {
+  await page.getByText('Inspect existing entrance selector', { exact: true }).click();
+  const picker = page.locator('.scene-entrance-picker');
+  await picker.getByRole('spinbutton', { name: 'Existing entrance selector' }).fill(String(selector));
+  await picker.getByRole('button', { name: 'Inspect entrance', exact: true }).click();
 }
 
 async function loadM6Component(page: Page, seed: SceneProjectSeed): Promise<void> {
@@ -398,4 +406,47 @@ test('Scene project delayed reads and writes cannot adopt across folder or sourc
   await expect(page.locator('.studio-errors')).toContainText('The project, source map or authored revision changed during the operation');
   expect((await snapshot(page)).map).toBe(23);
   expect(await sceneSnapshot(page)).toEqual(savedInB);
+});
+
+test('Scene project saves inspected entrance selectors and their authored coordinates', async ({ page }) => {
+  const seed = sceneProjectSeed([0, 1]);
+  expect(seed.entrances).toEqual([0, 1]);
+  await installProjectFolders(page, ['scene-project-A']);
+  await waitReady(page);
+  await loadM6AndScene(page, seed, true, []);
+  await openFolder(page, 'scene-project-A');
+
+  await inspectEntrance(page, 0);
+  await inspectEntrance(page, 1);
+  await page.locator('[data-scene-id="entrance:1"]').click();
+  const before = await sceneSnapshot(page);
+  expect(before.entrances.map(entry => entry.selector)).toEqual([0, 1]);
+  const original = before.entrances.find(entry => entry.selector === 1)!;
+  const editedX = original.x < 32767 ? original.x + 1 : original.x - 1;
+  const editedZ = original.z < 32767 ? original.z + 1 : original.z - 1;
+  await page.getByRole('spinbutton', { name: 'Scene position X' }).fill(String(editedX));
+  await page.getByRole('spinbutton', { name: 'Scene position Z' }).fill(String(editedZ));
+  await page.getByRole('button', { name: 'Apply scene fields' }).click();
+  await page.getByRole('button', { name: 'Save project' }).click();
+  await waitForSaved(page);
+
+  const saved = await readProject(page, 'scene-project-A') as {
+    schema_version: number;
+    document: { schema_version: number; entrance_selectors: number[]; actions: unknown[]; cursor: number };
+  } | null;
+  expect(saved?.schema_version).toBe(2);
+  expect(saved?.document.schema_version).toBe(4);
+  expect(saved?.document.entrance_selectors).toEqual([0, 1]);
+  expect(saved?.document.actions).toHaveLength(1);
+  expect(saved?.document.cursor).toBe(1);
+
+  await page.reload();
+  await waitReady(page);
+  await loadM6AndScene(page, seed, false, []);
+  await openFolder(page, 'scene-project-A');
+  await page.getByRole('button', { name: 'Load project' }).click();
+  await waitForSaved(page);
+  const reloaded = await sceneSnapshot(page);
+  expect(reloaded.entrances.map(entry => entry.selector)).toEqual([0, 1]);
+  expect(reloaded.entrances.find(entry => entry.selector === 1)).toEqual({ ...original, x: editedX, z: editedZ });
 });
