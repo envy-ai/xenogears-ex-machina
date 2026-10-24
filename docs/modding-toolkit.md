@@ -219,6 +219,9 @@ Each one ends usable and tested. UI mockups come before each editor's UI work.
    the authored scene; the packaged changes play correctly in both hosts.
    Unedited content stays byte-identical, invalid references or unsupported edits
    are rejected before mutation, and failures preserve the user's draft/work.
+   This supported-scene acceptance is verified, including Windows NW desktop
+   persistence; see the [M7 acceptance record](studio-milestone-7.md) for evidence
+   and explicit format/capability boundaries.
 8. **Presentation replacements.** Texture packs and 3D models in place of
    sprites (first: Fei's field sprite as a glTF model in Lahan) in the render
    layer, presentation only, so RAM and timing stay unchanged.

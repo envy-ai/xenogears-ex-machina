@@ -1,7 +1,7 @@
-# Studio milestone 7 — Field scene acceptance and implementation plan
+# Studio milestone 7 — Field scene acceptance record
 
 Baseline: accepted M6 `d9598adea55d40c8e3005dad11b030d2e54f0100`, branch
-`modding-toolkit`, worktree `/home/bart/xenogears_toolkit-modding`.
+`modding-toolkit`. Private verification artifacts stay outside published sources.
 The parent independently accepted M6. Its original full-suite exit 1, focused
 passing corrections and independent editor-layout screenshot limitation remain
 historical evidence, not a newly green full-suite claim. No denied M6 capture
@@ -9,11 +9,14 @@ is retried by this milestone.
 
 ## Current checkpoint
 
-Human M7 UI approval is received (record and exact images below). Backend
-native/WASM proofs and the first synthetic Scene UI increment are verified;
-original-browser project save/reload, Build/Play and authored placement readback now pass. Exact-package native/browser playback and untouched-map/Disc2 comparisons now pass; saved-project framing now passes with reviewed real pixels. General development/production NW smokes pass; Scene NW is environment-blocked
-by missing GLX and WebGL2 blocklisting. M7 acceptance remains incomplete.
-The dated checkpoints below retain historical gate/failure statements.
+M7 is accepted for the roadmap's supported-scene scope. Human-approved UI,
+shared native/WASM semantics, guarded browser and Windows desktop persistence,
+exact-package native/browser playback, untouched-content preservation and reviewed
+real-scene framing are verified. Windows NW.js 0.113.0 with supported WebGL2 closed
+the final desktop criterion on 2026-10-24. The final checklist, format boundaries,
+reproduction details and artifact identities are recorded at the end of this file.
+The dated checkpoints below retain historical gates and failed/partial results;
+Linux graphics failures are not rewritten as passes.
 
 Current publication direction: Bart has authorized one normal, non-force push to
 `origin` (`https://github.com/envy-ai/xenogears-ex-machina.git`), branch
@@ -860,3 +863,121 @@ complete. Five protected main PR46 files retain their exact baseline hashes;
 their separate changes are not part of the outgoing editor patch. Publication
 is a separate authorized checkpoint action, with exact remote/CI receipts kept
 locally and reported in-session; it does not waive this remaining acceptance.
+
+## Windows desktop closure and final acceptance (2026-10-24)
+
+The supported-scene M7 acceptance checklist is complete against application
+commit `54fb46b887449fff7f6c5450bd0403533b2e2764`. The final missing desktop
+edit/save/reload journey passed on Windows with official NW.js **0.113.0 normal**,
+WebGL 2.0, and ANGLE's NVIDIA GeForce RTX 3090 / Direct3D11 renderer. This closes
+the acceptance gap; it does not make the previously failing Linux display
+configurations supported or change their recorded outcomes.
+
+The unchanged application opened both recognized original discs, selected
+Disc 1/map 23, loaded the hash-qualified saved Scene project through the actual
+NodeFilesAdapter and selected actor `descriptor:3` / placement `pc:1076`.
+Normal inline Apply changed authored X61 to62; Undo/Redo restored the expected
+values. Normal Save and Load adopted a new Rust owner with equal saved document
+and compiled-bundle identities. Source descriptor X stayed0. The test verified
+a live WebGL2 context (1197×598 canvas), exact source/module identity and the
+expected two project files, then exited normally. Only the OS directory-chooser
+selection was intercepted; file reads/writes and editor actions used the real
+application paths. No graphics, sandbox, blocklist, TLS or origin bypass was used.
+The harness did not capture a Windows screenshot; reviewed real browser images
+at86/90 remain the visual acceptance evidence.
+
+The first Windows attempt failed before edits because its isolated configuration
+used `sourceHeaderX:29`. The original descriptor word is actually0: source header
+0x190 + descriptor3×16 + X offset8 = **0x1c8**, little-endian bytes0000.
+`scene/formats.rs::decode_header` establishes that layout. Independent original
+and saved-document decoding through the verified shared backend both returned
+descriptor XYZ0/0/0, while the separate `field_event_place` instruction returned
+original X29 and saved X61. The successful retry changed only that isolated
+configuration expectation to0, with fresh output/project paths. All preservation,
+edit, history and persistence assertions were retained. The failed run remains
+evidence; process exit0 alone was not considered a pass because the driver can
+write an error result before normal application exit.
+
+### Checklist evidence and supported boundaries
+
+| Acceptance item | Verified evidence |
+|---|---|
+| Bounded decode, no-edit bytes and opaque/source preservation | Synthetic02/11–13 and original-map26–28/54; full unrelated outputs and untouched-map preservation at86/89. |
+| CRUD, reference closure/refusal, stable IDs and shared history | Backend35–61, including26 native cases and141 complete native/WASM command envelopes; actual actor/zone Add/Duplicate/Delete and script-selection checks at78. |
+| Picking, transforms and properties/scripts | Browser71 covers real move/rotate gestures, Apply/Cancel, source origin/high bits and stale-drag rejection;78 covers actor/script synchronization;80 covers explicit entrance inspection and X/Z edit persistence. |
+| Dirty state, validation, delayed ownership and recovery | Visible/accessible validation and all corner inputs74; imported history and delayed file I/O77; actual invalid draft and WebGL context-loss recovery retain the last-good package86. |
+| Authored/live distinction | Reader/PC tests76 and real original/edited observations83/86 enforce source/module/package/order identity. Observation pauses and leaves the game paused; it does not write authored state or game memory. |
+| Saved scene and cross-host package behavior | Browser86 normal Save/Load/Build/Play;89 exact-set native/browser absent/disabled/enabled matrix;90 reload/rebuild/framing; Windows closure above verifies native file persistence. |
+| Current checks and provenance | Strict Rust lint/format89; fresh builds and ordinary NW development/production91; metadata/type/source96; exact production assets and test-hook absence97. Windows app/assets and private inputs were independently hash-checked before/after. |
+| Scope and preservation | Human UI approval recorded above; no decomp or protected main-checkout changes, original disc writes, private artifact publication or security bypass. Five protected file hashes and clean application HEAD were rechecked after Windows validation. |
+
+Completion is limited to the roadmap's **supported entity kinds**, not every
+possible field encoding. Actor Add/Duplicate use qualified source templates and
+independently qualified event copies; unrestricted construction and unresolved
+party/dynamic/reference cases remain atomic refusals. Static model instances,
+zones and qualified collision topology have their documented operations.
+Entrances support explicit selector inspection and same-selector X/Z changes;
+destructive entrance CRUD lacks reference closure and stays disabled with its
+reason. Sprite VM evaluation, runtime lighting/morph fidelity, inherited VRAM
+dependencies, invented scale and a guessed game-camera transform are not claimed.
+These are the documented capability boundaries, not substitutes for the verified
+supported CRUD/transform/history requirements.
+
+### Portable reproduction and identities
+
+Use your own recognized disc inputs and the qualified private map23 project;
+neither is distributed with this repository. Keep all outputs in fresh ignored
+storage. The recorded Windows sequence was:
+
+1. Verify the official normal Windows archive against
+   [NW.js0.113.0 SHA-256 manifest](https://dl.nwjs.io/v0.113.0/SHASUMS256.txt),
+   then unpack it side by side with any existing runtime.
+2. Build the application at the recorded commit with
+   `VITE_XEM_STUDIO_TEST=1`, the verified Studio WASM, and a fresh test-dist
+   output. Copy the canonical package manifest unchanged: `main=dist/index.html`,
+   no `node-remote` and no additional trust anchors. Compare every copied asset.
+3. Configure the existing `src/events/test-driver.ts` Scene journey with both
+   disc paths, a fresh `output`, `disc:1`, `map:23`, and a `scene` object
+   containing fresh `folder`, private `seedProject`, the seed hash below,
+   `actorId:"descriptor:3"`, `placementNode:"pc:1076"`,
+   `sourceHeaderX:0`, `initialX:61`, `editedX:62`, and the original bundle
+   hash below as `expectedSourceSha256`. At the recorded commit the Linux
+   `nw-smoke.mjs --scene` configuration still assumes header X29; do not confuse
+   it with the opcode placement. This verification corrected the isolated config,
+   not application code.
+4. Launch the pinned normal executable with the copied app directory,
+   `--studio-events-test=<config.json>` and a fresh
+   `--user-data-dir=<private-profile>`. The existing driver calls
+   `nw.App.quit()` in its finalizer. No renderer/security override is required
+   on the verified Windows host.
+5. Require a `kind:"scene"` result with no `error`, actual WebGL2, saved X62,
+   unchanged header X0, a changed owner on reload and matching document/compiled
+   hashes. Verify the real saved file independently; retain failures as well as
+   the passing result.
+
+| Artifact | SHA-256 |
+|---|---|
+| Official `nwjs-v0.113.0-win-x64.zip` | `2fff537d37e827ddc0149cd3c17f5a15f71bef782d3795f7870a73b1f6cea4b1` |
+| Windows `nw.exe` | `933feff7344b57f3eacb6f961194e81d496362543c0bc4bb33bbe4faa766edc1` |
+| Studio backend WASM | `b6e7a3a55ee482135e6dbf386e622bd0cde1681a72bec707b291fbfd26a662a6` |
+| Measured game module | `613c3a747e1c07e0e0e2632710eae1f873e4b14dda880cd6ce1c556b31c152a8` |
+| Original indexed map23 bundle | `0f0a131acdf052cae070a64912fc09eb00e0b5e6a81f9d8cb4719d6416213add` |
+| Input saved project | `3cffb561e775730c7152a83d524729e02bdbcaeff13a57007763752a37581f9a` |
+| Windows saved project | `fda0309fd16766fe18913565989bcc2355c381259750cae8f8ce86c9c819f5b9` |
+| Windows saved document | `7a983173ce3bea1e9ada10cec4bf27e9d23db72e9a7b75c6f1c42a980a9a0471` |
+| Windows compiled bundle | `d28ec7604d797e133aea9211f297343a3132d919442f648ac95cccba4ba09a1f` |
+
+Local evidence includes `provisioning-receipt.json`, `transfer-receipt.json`,
+`fixture-correction.json`, the failed and successful `smoke-result.json` files,
+`final-validation-receipt.json` and `remote-final-preservation.json`. They are
+private local verification artifacts, not repository assets. Original input
+hashes, all14 copied public app files, the executable, five protected main files
+and clean published application commit matched after the run; no test process
+remained. The older NW installation was retained.
+
+No full runtime suite was rerun: runtime/decomp inputs are unchanged. Earlier
+M6 full-suite exit1 and its passing targeted retests, existing Zod advisory,
+independent M6 screenshot limitation and separate asset-permission boundary
+remain unchanged. GitHub showed zero workflow/check/status contexts for the
+application branch push; that is not a CI pass. The Windows evidence closes M7's
+desktop criterion without rewriting any earlier failed or skipped result.

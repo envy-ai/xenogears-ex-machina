@@ -824,8 +824,9 @@ or primitive groups / 1048576 control words; 32 MiB indexed bundle and original
 logical+16 component allocation within 2 MiB. The 32 sprite slots and 32 event
 slots per actor do not establish an actor-count maximum.
 
-Scene UI and packaged M7 playback remain pending. M7 mockups require separate
-actual human approval; the approved M6 editor/inline inspector are unchanged.
+Scene UI and packaged playback are verified within the supported M7 scope.
+The human UI approval and final acceptance evidence are recorded in
+[studio-milestone-7.md](../../docs/studio-milestone-7.md).
 See `docs/studio-milestone-7.md` for the implementation/acceptance sequence.
 
 `scene::bindings` captures source-owned canonical operands and repairs stable
@@ -852,7 +853,7 @@ public M6 actor-table bounds are unchanged. Scene packing now shares M6's exact
 packing-tail activation refusal. Complete unrelated component outputs and the
 original measured source guard are verified before container adoption.
 
-#### Scene document protocol (M7 backend, UI still gated)
+#### Scene document protocol (M7 shared backend)
 
 `field.scene.draft` is the typed document boundary. Its `args.kind` is one of
 `open`, `import`, `edit`, `undo`, `redo`, `snapshot`, `placement`, `compile`,
@@ -885,8 +886,8 @@ For example, after opening a document and receiving `scene:1,revision:0`:
 These are illustrative values, not claims that zone0 exists in every map. Compile
 returns the deterministic authored bundle/hash, immutable source hash, stable
 entity ID order and event graph/bindings. It does not write a disc or a project.
-The frontend will own its guarded local project save after M7 human UI approval;
-exported source-derived documents and packages remain private local data.
+The frontend owns guarded local project persistence through the shared Scene
+owner; exported source-derived documents and packages remain private local data.
 
 Collision snapshots expose `collision_entities` (stable layer/vertex/triangle IDs)
 and a resolved numeric collision view derived from those same entities. New
@@ -897,8 +898,9 @@ vertices with new identities. Structural preparation preserves old opaque bytes
 and exact pre-table storage; conditional `triangle[-1]` plane dependencies return
 `unsupported_scene_collision` until their vertex-reference closure is proven.
 Same-layout vertex edits retain the original storage and reference identities.
-Actor-row CRUD/script placement, destructive entrance renumbering, scene UI and
-actual edited M7 native/browser gameplay are not claimed by this backend surface.
+Qualified actor-row CRUD and script placement compose through this protocol;
+UI and actual package playback have separate acceptance evidence below.
+Destructive entrance renumbering remains unsupported.
 
 The pure `scene::actor_rows` primitive can rebind source event rows without moving
 or normalizing code storage. Synthetic56-row checks do not imply a32-actor maximum.
@@ -971,8 +973,8 @@ The nonvisual TypeScript adapter is `src/backend/scenes.ts`:
 `SceneDraftSession.open/import`, `edit`, `history`, `placement`, `compile`,
 `export`, `close` and `nodeAt`. It retains its scene handle separately from M6
 draft handles and adopts a returned revision/state only after a successful Rust
-response. It creates no second event compiler or editable script copy. UI/project
-ownership still needs the guarded integration described in the M7 plan.
+response. It creates no second event compiler or editable script copy. The
+frontend integrates it under the guarded shared UI/project owner.
 
 To inspect and explicitly transform a qualified source placement instruction:
 
@@ -1007,7 +1009,7 @@ not assert a universal original actor-count maximum; wider sources remain
 losslessly readable. Original actor0 is fixed for engine events2/3.
 
 
-## M7 Scene UI — checked increment, acceptance ongoing
+## M7 Scene UI — supported-scene acceptance complete
 
 Choose Scene (Ctrl+4) for the selected original map. Its source-qualified bundle
 may require measured context from an attached vanilla runtime, as described for
@@ -1036,9 +1038,9 @@ asset interpretation and package preparation remain in shared Rust.
 Focused synthetic interaction71 and visible/accessibility layout74 pass; actual
 clean/invalid1440x900 PNGs are under ignored milestone-7/checkpoint-74/screenshots.
 Source/SCSS/type/design audits passed with that source. Earlier failed attempts
-are retained in the ignored verification ledger. These results do not establish
-real original-map editing/playback, project lifecycle or NW acceptance; M7 is
-still in progress. Audit62/63 reports a HIGH direct Zod advisory, without a
+are retained in the ignored verification ledger. These synthetic results alone
+do not establish real editing/playback or persistence; the later original-map
+and desktop evidence below supplies that coverage. Audit62/63 reports a HIGH direct Zod advisory, without a
 demonstrated current widget collection-schema path. No zero-audit claim is made.
 
 
@@ -1077,11 +1079,12 @@ selected object after project/renderer replacement. View→Reset workspace layou
 adopts the new default inspector proportions without replacing saved user layouts.
 Three's exact MIT notice accompanies builds at licenses/three/LICENSE.
 
-The ordinary development and production NW smokes pass. Scene desktop acceptance
-is blocked on this test host: its Xvfb has no GLX, and an explicit normal Mesa
-Vulkan selection is WebGL2-blocklisted. Scene NW editing, Save and subsequent
-reload therefore remain unverified; M7 is not fully accepted. No graphics,
-sandbox, blocklist or TLS bypass was applied. Smoke runs can retain their
+The ordinary development and production NW smokes pass. Earlier Linux Scene
+attempts failed: Xvfb lacked GLX, normal Mesa Vulkan was WebGL2-blocklisted, and
+the existing desktop could not provide a suitable EGL configuration. These
+failures remain recorded. Windows desktop Scene acceptance subsequently passed
+on NW.js 0.113.0 normal with ANGLE/NVIDIA RTX 3090 Direct3D11 WebGL2, without any
+graphics, sandbox, blocklist or TLS bypass. Smoke runs can retain their
 fresh filesystem fixtures and result artifacts with npm run test:nw --
 --keep-artifacts (add --dev for the existing strict-TLS development launcher).
 This option changes artifact retention only, not Node/TLS permissions.
@@ -1096,13 +1099,22 @@ canonical package/launcher/TLS helper and hash-checked assets. The optional
 renderer; set VK_ICD_FILENAMES to the existing pinned XEM_LAVAPIPE_ICD when
 reproducing that measured test configuration. That attempted configuration
 failed on this host and is retained as a diagnostic, not a successful recipe.
-A working normal WebGL2 desktop environment is still needed for this case.
+Use a normal supported WebGL2 desktop environment. The verified Windows run
+used the unchanged app/test driver with a fresh local configuration and profile.
+It corrected only the fixture's `sourceHeaderX` from29 to0: descriptor3's original
+word at0x1c8 is0, distinct from its original script placement X29 and saved X61.
+The first Windows failure remains retained. See the milestone record for the
+exact configuration, input/artifact hashes and official runtime verification.
 
 
 Final focused checks through97 pass: current typecheck/design/source/provenance
 and opcode/access/model/scene-binding consistency checks, production assets and
 Third-party notice identity, and the real production-browser test-hook absence
 case. Matching-source Rust/native/WASM and unit proofs are reused; no unchanged
-runtime rebuild/full-suite repeat is claimed. Failed Scene NW attempts remain
-retained and explicitly incomplete. The current acceptance record is
+runtime rebuild/full-suite repeat is claimed. The final Windows run verifies
+placement61 to62, Undo/Redo, real NodeFilesAdapter Save/Load, new-owner adoption
+and equal saved-document/compiled-bundle identities, with original descriptor
+X0 preserved. Application exit0 alone is insufficient: require a successful
+Scene result without an error. Failed earlier attempts remain retained. The
+supported-scene acceptance record, including format limitations, is
 [studio-milestone-7.md](../../docs/studio-milestone-7.md).
