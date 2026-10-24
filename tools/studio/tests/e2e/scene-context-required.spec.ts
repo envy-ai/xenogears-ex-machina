@@ -1,5 +1,5 @@
 import { createHash, randomUUID } from 'node:crypto';
-import { realpath, stat, writeFile } from 'node:fs/promises';
+import { readFile, realpath, stat, writeFile } from 'node:fs/promises';
 import { resolve, sep } from 'node:path';
 import { expect, test, type Page } from '@playwright/test';
 import type { SceneActor } from '../../src/backend/scenes';
@@ -55,6 +55,27 @@ interface PackageSummary {
   file: { kind: string; disc: string; slot: number; source_sha256: string; result_sha256: string; result_size: number };
 }
 
+interface OfflineMapFixture {
+  map: number;
+  slot: number;
+  lba: number;
+  indexedSize: number;
+  sourceSha256: string;
+  actorId: string;
+  placementNode: string;
+  originalX: number;
+  originalY: number | null;
+  yEnabled: boolean;
+  editedX: number;
+  originalZ: number;
+}
+
+const offlineMapFixtures: OfflineMapFixture[] = [
+  { map: 23, slot: 652, lba: 124528, indexedSize: 110052, sourceSha256: '0f0a131acdf052cae070a64912fc09eb00e0b5e6a81f9d8cb4719d6416213add', actorId: 'descriptor:3', placementNode: 'pc:1076', originalX: 29, originalY: null, yEnabled: false, editedX: 61, originalZ: 1270 },
+  { map: 0, slot: 606, lba: 120698, indexedSize: 105980, sourceSha256: 'c7cdbefd834e1d0405482d95204c822c8f4ef35249eee62c54a3af09cfd52921', actorId: 'descriptor:18', placementNode: 'pc:2327', originalX: 0, originalY: 0, yEnabled: true, editedX: 32, originalZ: 420 },
+  { map: 145, slot: 896, lba: 144302, indexedSize: 45056, sourceSha256: 'faa4ff0fa1754af3180a48f7a786d6086dc4f5d9e926ca91b69f703a98506619', actorId: 'descriptor:11', placementNode: 'pc:124', originalX: 382, originalY: null, yEnabled: false, editedX: 366, originalZ: 322 },
+];
+
 const enabled = process.env.XEM_STUDIO_CONTEXT_UX_REAL === '1';
 const disc1Path = process.env.XEM_STUDIO_CONTEXT_UX_DISC1_PATH;
 const artifactPath = process.env.XEM_STUDIO_CONTEXT_UX_OUTPUT_DIR;
@@ -108,11 +129,11 @@ async function installOpfsProjectFolder(page: Page, folder: string): Promise<voi
   }, folder);
 }
 
-async function savedProjectSummary(page: Page, folder: string): Promise<SavedProjectSummary> {
-  return page.evaluate(async name => {
+async function savedProjectSummary(page: Page, folder: string, map: number): Promise<SavedProjectSummary> {
+  return page.evaluate(async ({ name, map }) => {
     const root = await navigator.storage.getDirectory();
     const directory = await root.getDirectoryHandle(name);
-    const file = await directory.getFileHandle('field-map-23.json');
+    const file = await directory.getFileHandle(`field-map-${map}.json`);
     const text = await (await file.getFile()).text();
     const project = JSON.parse(text) as {
       schema_version: number; map: number; disc: number;
@@ -136,7 +157,7 @@ async function savedProjectSummary(page: Page, folder: string): Promise<SavedPro
       source_sha256: project.document.input.source?.source_sha256 ?? '',
       revision: project.document.cursor,
     };
-  }, folder);
+  }, { name: folder, map });
 }
 
 async function projectPackageSummary(page: Page, folder: string, filename: string): Promise<PackageSummary> {
@@ -210,8 +231,7 @@ test('hashes the exact package member view instead of its whole backing buffer',
   expect(summary.file_count).toBe(1);
 });
 
-test('opens and builds qualified original Map 23 offline with a self-contained Scene package', async ({ page }) => {
-  test.skip(!enabled, 'set XEM_STUDIO_CONTEXT_UX_REAL=1 with the explicit local Disc 1 BIN for offline Map 23 acceptance');
+async function buildOfflineScenePackage(page: Page, fixture: OfflineMapFixture): Promise<void> {
   test.setTimeout(10 * 60 * 1000);
   if (!disc1Path) throw new Error('XEM_STUDIO_CONTEXT_UX_DISC1_PATH must name the existing local Disc 1 BIN image');
   if (!artifactPath) throw new Error('XEM_STUDIO_CONTEXT_UX_OUTPUT_DIR must name a fresh ignored artifact directory');
@@ -246,12 +266,11 @@ test('opens and builds qualified original Map 23 offline with a self-contained S
   const discButton = page.getByRole('button', { name: /^Disc 1 · \d+ maps$/ });
   await expect(discButton).toBeVisible({ timeout: 120_000 });
   await discButton.click();
-  await expect(page.locator('[data-map="23"]')).toBeVisible({ timeout: 120_000 });
-  const map23 = page.locator('[data-map="23"]');
-  await map23.click();
+  await expect(page.locator(`[data-map="${fixture.map}"]`)).toBeVisible({ timeout: 120_000 });
+  await page.locator(`[data-map="${fixture.map}"]`).click();
   await expect.poll(() => page.evaluate(() => (window as unknown as { __xemStudioTest: SceneDriver }).__xemStudioTest.snapshot().map), {
     timeout: 120_000,
-  }).toBe(23);
+  }).toBe(fixture.map);
   await expect(page.getByRole('tabpanel', { name: 'Command list' })).toBeVisible();
   const listOwner = await page.evaluate(() => {
     const driver = (window as unknown as { __xemStudioTest?: SceneDriver }).__xemStudioTest;
@@ -265,31 +284,37 @@ test('opens and builds qualified original Map 23 offline with a self-contained S
   await expect(live.getByRole('status')).toHaveText('Disconnected');
   expect(page.context().pages()).toHaveLength(1);
   const opened = await inspectScene(page);
-  expect(opened.map).toBe(23);
+  expect(opened.map).toBe(fixture.map);
   expect(opened.schema_version).toBe(4);
   expect(opened.context_present).toBe(false);
-  expect(opened.source).toMatchObject({ disc: 1, map: 23, slot: 652, lba: 124528, indexed_size: 110052, source_sha256: '0f0a131acdf052cae070a64912fc09eb00e0b5e6a81f9d8cb4719d6416213add' });
+  expect(opened.source).toMatchObject({ disc: 1, map: fixture.map, slot: fixture.slot, lba: fixture.lba, indexed_size: fixture.indexedSize, source_sha256: fixture.sourceSha256 });
   expect(opened.compiled_source_sha256).toBe(opened.source?.source_sha256);
   expect(opened.compiled_sha256).toBe(opened.source?.source_sha256);
   expect(opened.actions).toBe(0);
   expect(await page.evaluate(() => (window as unknown as { __sceneSourceContextCalls: number }).__sceneSourceContextCalls)).toBe(0);
-  const candidate = await findEditablePlacement(page, { actors: opened.actors });
-  expect(candidate.actorId).toBe('descriptor:3');
-  expect(candidate.placementNode).toBe('pc:1076');
+  const candidate = await findEditablePlacement(page, { actors: opened.actors }, { actorId: fixture.actorId, placementNode: fixture.placementNode });
+  expect(candidate.actorId).toBe(fixture.actorId);
+  expect(candidate.placementNode).toBe(fixture.placementNode);
   const authoredAxes = new Map(candidate.axes.map(axis => [axis.axis, axis]));
-  expect(authoredAxes.get('X')).toMatchObject({ enabled: true, value: 29 });
-  expect(authoredAxes.get('Y')?.enabled).toBe(false);
-  expect(authoredAxes.get('Z')).toMatchObject({ enabled: true, value: 1270 });
+  expect(authoredAxes.get('X')).toMatchObject({ enabled: true, value: fixture.originalX });
+  expect(authoredAxes.get('Y')?.enabled).toBe(fixture.yEnabled);
+  expect(authoredAxes.get('Y')?.value).toBe(fixture.originalY);
+  expect(authoredAxes.get('Z')).toMatchObject({ enabled: true, value: fixture.originalZ });
   const authoredY = page.getByRole('spinbutton', { name: 'Scene position Y', exact: true });
-  await expect(authoredY).toBeDisabled();
-  await expect(authoredY).toHaveValue('');
+  if (fixture.yEnabled) {
+    await expect(authoredY).toBeEnabled();
+    await expect(authoredY).toHaveValue(String(fixture.originalY));
+  } else {
+    await expect(authoredY).toBeDisabled();
+    await expect(authoredY).toHaveValue('');
+  }
   const targetId = candidate.actorId;
   const originalX = authoredAxes.get('X')!.value!;
-  const editedX = 61;
+  const editedX = fixture.editedX;
   const sourceHeaderX = opened.descriptors.find(item => item.id === targetId)?.position[0];
   expect(Number.isInteger(sourceHeaderX)).toBe(true);
 
-  const opfsFolder = `m7-offline-map23-${randomUUID()}`;
+  const opfsFolder = `m7-offline-map${fixture.map}-${randomUUID()}`;
   await installOpfsProjectFolder(page, opfsFolder);
   const projectFiles = page.locator('.studio-project-files');
   const projectSummary = projectFiles.locator('summary');
@@ -300,8 +325,8 @@ test('opens and builds qualified original Map 23 offline with a self-contained S
   await expect(save).toBeEnabled();
   await save.click();
   await expect(page.locator('.event-draft-toolbar')).toContainText('Saved');
-  const originalProject = await savedProjectSummary(page, opfsFolder);
-  expect(originalProject).toMatchObject({ schema_version: 4, map: 23, disc: 1, context_present: false, source_sha256: opened.source?.source_sha256, revision: 0 });
+  const originalProject = await savedProjectSummary(page, opfsFolder, fixture.map);
+  expect(originalProject).toMatchObject({ schema_version: 4, map: fixture.map, disc: 1, context_present: false, source_sha256: opened.source?.source_sha256, revision: 0 });
 
   const filter = page.getByRole('textbox', { name: 'Filter scene entities' });
   await filter.fill(targetId);
@@ -321,13 +346,22 @@ test('opens and builds qualified original Map 23 offline with a self-contained S
   expect(edited.cursor).toBe(1);
   expect(edited.compiled_sha256).not.toBe(opened.compiled_sha256);
   expect(edited.descriptors.find(item => item.id === targetId)?.position[0]).toBe(sourceHeaderX);
+  await page.getByRole('button', { name: 'Undo', exact: true }).click();
+  const undone = await inspectScene(page);
+  expect(undone.compiled_sha256).toBe(opened.compiled_sha256);
+  expect(undone.actions).toBe(1);
+  expect(undone.cursor).toBe(0);
+  await page.getByRole('button', { name: 'Redo', exact: true }).click();
+  const redone = await inspectScene(page);
+  expect(redone.compiled_sha256).toBe(edited.compiled_sha256);
+  expect(redone.cursor).toBe(1);
   await expect(live.getByRole('status')).toHaveText('Disconnected');
   const popupCountBeforeBuild = page.context().pages().length;
 
   await save.click();
   await expect(page.locator('.event-draft-toolbar')).toContainText('Saved');
-  const saved = await savedProjectSummary(page, opfsFolder);
-  expect(saved).toMatchObject({ schema_version: 4, map: 23, disc: 1, context_present: false, source_sha256: opened.source?.source_sha256, revision: 1 });
+  const saved = await savedProjectSummary(page, opfsFolder, fixture.map);
+  expect(saved).toMatchObject({ schema_version: 4, map: fixture.map, disc: 1, context_present: false, source_sha256: opened.source?.source_sha256, revision: 1 });
   expect(saved.document_sha256).toBe(await inspectScene(page).then(value => value.document_sha256));
   const beforeLoad = await inspectScene(page);
   await page.getByRole('button', { name: 'Load project', exact: true }).click();
@@ -342,17 +376,32 @@ test('opens and builds qualified original Map 23 offline with a self-contained S
   await expect(build).toBeEnabled();
   await build.click();
   await expect(page.locator('.event-workspace')).toContainText(/Last successful build:/, { timeout: 180_000 });
-  const outputName = await page.evaluate(async folder => {
+  const outputName = await page.evaluate(async ({ folder, map }) => {
     const root = await navigator.storage.getDirectory();
     const directory = await root.getDirectoryHandle(folder);
     const names: string[] = [];
     for await (const entry of directory.values()) names.push(entry.name);
-    return names.find(name => /^field-map-23-[0-9a-f]{64}\.xemmods$/.test(name)) ?? null;
-  }, opfsFolder);
+    return names.find(name => new RegExp(`^field-map-${map}-[0-9a-f]{64}\\.xemmods$`).test(name)) ?? null;
+  }, { folder: opfsFolder, map: fixture.map });
   expect(outputName).not.toBeNull();
+  const artifactBytes = await page.evaluate(async ({ folder, filename, map }) => {
+    const root = await navigator.storage.getDirectory();
+    const directory = await root.getDirectoryHandle(folder);
+    const projectFile = await directory.getFileHandle(`field-map-${map}.json`);
+    const projectText = await (await projectFile.getFile()).text();
+    const packageFile = await directory.getFileHandle(filename);
+    const packageBytes = new Uint8Array(await (await packageFile.getFile()).arrayBuffer());
+    return { projectText, packageBytes: Array.from(packageBytes) };
+  }, { folder: opfsFolder, filename: outputName!, map: fixture.map });
+  const projectArtifact = resolve(resolvedArtifactPath, `offline-map${fixture.map}-scene.json`);
+  const packageArtifact = resolve(resolvedArtifactPath, `offline-map${fixture.map}-edited.xemmods`);
+  const packageBuffer = Buffer.from(artifactBytes.packageBytes);
+  await writeFile(projectArtifact, artifactBytes.projectText, { flag: 'wx' });
+  await writeFile(packageArtifact, packageBuffer, { flag: 'wx' });
+  const packageSha256 = createHash('sha256').update(packageBuffer).digest('hex');
   const pkg = await projectPackageSummary(page, opfsFolder, outputName!);
   expect(pkg.file_count).toBe(1);
-  expect(pkg.file).toMatchObject({ kind: 'delta', disc: 'SLUS-00664', slot: 652, source_sha256: opened.source?.source_sha256, result_sha256: loaded.compiled_sha256 });
+  expect(pkg.file).toMatchObject({ kind: 'delta', disc: 'SLUS-00664', slot: fixture.slot, source_sha256: opened.source?.source_sha256, result_sha256: loaded.compiled_sha256 });
   expect(pkg.file.result_size).toBeGreaterThan(0);
   expect(page.context().pages()).toHaveLength(popupCountBeforeBuild);
   await expect(live.getByRole('status')).toHaveText('Disconnected');
@@ -369,32 +418,18 @@ test('opens and builds qualified original Map 23 offline with a self-contained S
       input: { bundle: inspection.compiled.bundle, context: null, source: null, module_sha256: null },
       entrances: inspection.document.entrance_selectors,
     } }));
-    const response = JSON.parse(raw) as { ok?: { components: { index: number; logical_size: number; output_size: number; output_sha256: string; optional_tail_bytes?: number }[] }; error?: { kind?: string } };
+    const response = JSON.parse(raw) as { ok?: { components: { index: number; logical_size: number; output_size: number; output_sha256: string; optional_tail_bytes?: number; offline_stream_completion?: boolean }[] }; error?: { kind?: string } };
     if (!response.ok) throw new Error(`The self-contained offline candidate failed strict decode (${response.error?.kind ?? 'unknown error'})`);
     return response.ok.components;
   });
   expect(decodedCandidate).toHaveLength(9);
   expect(decodedCandidate.map(component => component.index)).toEqual([0, 1, 2, 3, 4, 5, 6, 7, 8]);
-  expect(decodedCandidate[8]).toMatchObject({ logical_size: 72, output_size: 72 });
-  expect(decodedCandidate[8]?.optional_tail_bytes).toBeUndefined();
+  expect(decodedCandidate.every(component => component.offline_stream_completion === undefined && component.optional_tail_bytes === undefined)).toBe(true);
+  if (fixture.map === 0) expect(decodedCandidate[8]).toMatchObject({ logical_size: 0, output_size: 0 });
+  if (fixture.map === 23) expect(decodedCandidate[8]).toMatchObject({ logical_size: 72, output_size: 72 });
+  if (fixture.map === 145) expect(decodedCandidate[7]?.output_size).toBe(decodedCandidate[7]?.logical_size);
 
-  const artifactBytes = await page.evaluate(async ({ folder, filename }) => {
-    const root = await navigator.storage.getDirectory();
-    const directory = await root.getDirectoryHandle(folder);
-    const projectFile = await directory.getFileHandle('field-map-23.json');
-    const projectText = await (await projectFile.getFile()).text();
-    const packageFile = await directory.getFileHandle(filename);
-    const packageBytes = new Uint8Array(await (await packageFile.getFile()).arrayBuffer());
-    return { projectText, packageBytes: Array.from(packageBytes) };
-  }, { folder: opfsFolder, filename: outputName! });
-  const projectArtifact = resolve(resolvedArtifactPath, 'offline-map23-scene.json');
-  const packageArtifact = resolve(resolvedArtifactPath, 'offline-map23-edited.xemmods');
-  const packageBuffer = Buffer.from(artifactBytes.packageBytes);
-  await writeFile(projectArtifact, artifactBytes.projectText, { flag: 'wx' });
-  await writeFile(packageArtifact, packageBuffer, { flag: 'wx' });
-  const packageSha256 = createHash('sha256').update(packageBuffer).digest('hex');
   expect(packageSha256).toBe(pkg.set_sha256);
-  expect(packageSha256.startsWith('d242')).toBe(false);
   const summaryArtifact = {
     schema_version: 1,
     scene_document_sha256: saved.document_sha256,
@@ -402,10 +437,86 @@ test('opens and builds qualified original Map 23 offline with a self-contained S
     package_sha256: packageSha256,
     package_member_sha256: pkg.member_sha256,
     package_size: packageBuffer.byteLength,
+    map: fixture.map,
+    slot: fixture.slot,
     original_source_sha256: opened.source?.source_sha256,
     original_compiled_bundle_sha256: opened.compiled_sha256,
     edited_compiled_bundle_sha256: loaded.compiled_sha256,
     source_context_handler_calls: await page.evaluate(() => (window as unknown as { __sceneSourceContextCalls: number }).__sceneSourceContextCalls),
   };
-  await writeFile(resolve(resolvedArtifactPath, 'offline-map23-summary.json'), `${JSON.stringify(summaryArtifact, null, 2)}\n`, { flag: 'wx' });
+  await writeFile(resolve(resolvedArtifactPath, `offline-map${fixture.map}-summary.json`), `${JSON.stringify(summaryArtifact, null, 2)}\n`, { flag: 'wx' });
+}
+
+test('opens and builds qualified original Map 23 offline with a self-contained Scene package', async ({ page }) => {
+  test.skip(!enabled, 'set XEM_STUDIO_CONTEXT_UX_REAL=1 with an explicit local Disc 1 BIN for offline Scene acceptance');
+  await buildOfflineScenePackage(page, offlineMapFixtures[0]!);
+});
+
+for (const fixture of offlineMapFixtures.slice(1)) {
+  test(`opens and builds qualified original Map ${fixture.map} offline with a self-contained Scene package`, async ({ page }) => {
+    test.skip(!enabled, 'set XEM_STUDIO_CONTEXT_UX_REAL=1 with an explicit local Disc 1 BIN for offline Scene acceptance');
+    await buildOfflineScenePackage(page, fixture);
+  });
+}
+
+test('replays the saved Map 0 and Map 145 Scene projects through the current browser backend', async ({ page }) => {
+  test.skip(process.env.XEM_STUDIO_M7_OFFLINE_SAVED_REPLAY !== '1', 'set XEM_STUDIO_M7_OFFLINE_SAVED_REPLAY=1 for current-WASM saved-project replay');
+  const artifactPath = process.env.XEM_STUDIO_M7_OFFLINE_REPLAY_DIR;
+  if (!artifactPath) throw new Error('XEM_STUDIO_M7_OFFLINE_REPLAY_DIR must identify checkpoint13 saved Scene artifacts');
+  const resolvedArtifactPath = await realpath(artifactPath);
+  const artifactPrefix = resolve(repositoryRoot, 'tmp/studio/context-ux') + sep;
+  if (!resolvedArtifactPath.startsWith(artifactPrefix)) throw new Error('Replay inputs must stay under ignored context-ux artifacts');
+
+  await page.goto('/');
+  await expect.poll(() => page.evaluate(() => typeof (window as unknown as { __xemStudioTest?: SceneDriver }).__xemStudioTest?.command)).toBe('function');
+  for (const map of [0, 145]) {
+    const projectText = await readFile(resolve(resolvedArtifactPath, `offline-map${map}-scene.json`), 'utf8');
+    const project = JSON.parse(projectText) as {
+      map: number;
+      document: {
+        schema_version: number;
+        input: { source?: { source_sha256?: string } | null; context?: unknown | null };
+        actions: unknown[];
+        cursor: number;
+      };
+    };
+    const expected = JSON.parse(await readFile(resolve(resolvedArtifactPath, `offline-map${map}-summary.json`), 'utf8')) as {
+      saved_project_sha256: string;
+      original_source_sha256: string;
+      edited_compiled_bundle_sha256: string;
+    };
+    expect(createHash('sha256').update(projectText).digest('hex')).toBe(expected.saved_project_sha256);
+    expect(project.map).toBe(map);
+    expect(project.document.schema_version).toBe(4);
+    expect(project.document.input.context ?? null).toBeNull();
+    expect(project.document.input.source?.source_sha256).toBe(expected.original_source_sha256);
+    expect(project.document.actions).toHaveLength(1);
+    expect(project.document.cursor).toBe(1);
+
+    const replay = await page.evaluate(document => {
+      const driver = (window as unknown as { __xemStudioTest?: SceneDriver }).__xemStudioTest;
+      if (!driver) throw new Error('The current WASM backend test bridge is unavailable');
+      const execute = (request: Record<string, unknown>) => JSON.parse(driver.command(JSON.stringify(request))) as {
+        ok?: Record<string, unknown>;
+        error?: { kind?: string };
+      };
+      const imported = execute({ op: 'field.scene.draft', args: { kind: 'import', document } });
+      if (!imported.ok || typeof imported.ok.scene !== 'number') {
+        throw new Error(`saved scene import rejected (${imported.error?.kind ?? 'unknown error'})`);
+      }
+      const handle = imported.ok.scene;
+      try {
+        const compiled = execute({ op: 'field.scene.draft', args: { kind: 'compile', scene: handle } });
+        if (!compiled.ok || typeof compiled.ok.bundle_sha256 !== 'string' || typeof compiled.ok.source_sha256 !== 'string') {
+          throw new Error(`saved scene compile rejected (${compiled.error?.kind ?? 'unknown error'})`);
+        }
+        return { bundle_sha256: compiled.ok.bundle_sha256, source_sha256: compiled.ok.source_sha256 };
+      } finally {
+        const closed = execute({ op: 'field.scene.draft', args: { kind: 'close', scene: handle } });
+        if (!closed.ok) throw new Error(`saved scene close rejected (${closed.error?.kind ?? 'unknown error'})`);
+      }
+    }, project.document);
+    expect(replay.source_sha256).toBe(expected.original_source_sha256);
+    expect(replay.bundle_sha256).toBe(expected.edited_compiled_bundle_sha256);
+  }
 });

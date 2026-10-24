@@ -180,11 +180,16 @@ export async function startPublicFieldRoute(gamePage: Page, discPath: string): P
   });
 }
 
-export async function findEditablePlacement(page: Page, scene: Pick<SceneSnapshot, 'actors'>): Promise<CandidatePlacement> {
+export async function findEditablePlacement(
+  page: Page,
+  scene: Pick<SceneSnapshot, 'actors'>,
+  expected?: { actorId: string; placementNode: string },
+): Promise<CandidatePlacement> {
   const filter = page.getByRole('textbox', { name: 'Filter scene entities' });
   const axes = ['X', 'Y', 'Z'];
   for (let actorIndex = 0; actorIndex < scene.actors.length; actorIndex++) {
     const actor = scene.actors[actorIndex]!;
+    if (expected && actor.id !== expected.actorId) continue;
     if (actor.origin.kind !== 'original') continue;
     await filter.fill(actor.id);
     const row = page.locator(`[data-scene-id="${actor.id}"]`);
@@ -192,14 +197,16 @@ export async function findEditablePlacement(page: Page, scene: Pick<SceneSnapsho
     await row.click();
     const binding = page.getByRole('combobox', { name: 'Authored placement source' });
     const choices = await binding.locator('option').evaluateAll(options => options.map(option => ({ value: (option as HTMLOptionElement).value, text: option.textContent ?? '' })));
-    for (const choice of choices.filter(choice => choice.value !== 'header')) {
+    for (const choice of choices.filter(choice => choice.value !== 'header'
+      && (!expected || choice.value === expected.placementNode))) {
       await binding.selectOption(choice.value);
       const openCommand = page.getByRole('button', { name: `Open bound command · ${choice.value}`, exact: true });
       if (!(await openCommand.isVisible())) continue;
       const fields = await Promise.all(axes.map(async axis => {
         const input = page.getByRole('spinbutton', { name: `Scene position ${axis}` });
-        const value = Number(await input.inputValue());
-        return { axis, enabled: await input.isEnabled(), value: Number.isFinite(value) ? value : null };
+        const raw = await input.inputValue();
+        const value = raw.trim() === '' ? null : Number(raw);
+        return { axis, enabled: await input.isEnabled(), value: value !== null && Number.isFinite(value) ? value : null };
       }));
       if (fields.some(field => field.enabled && field.value !== null)) {
         return {

@@ -2,8 +2,8 @@
 //!
 //! Measured context is verified against original source/module/disc identity
 //! before any append. Header growth relocates packed source bytes together;
-//! unchanged streams must reproduce their complete original outputs, except for
-//! the explicitly qualified no-context Map23 component8 logical-prefix policy.
+//! unchanged streams reproduce their complete known outputs. Offline truncated
+//! streams require validated logical data and explicit authored completion on edit.
 use super::formats::{Header, decode_header};
 use crate::field::FieldError;
 use serde::{Deserialize, Serialize};
@@ -71,8 +71,10 @@ pub struct Component {
     pub bytes: Vec<u8>,
     pub source_offset: usize,
     pub source_bytes_read: usize,
-    /// Explicit source-qualified optional suffix; never measured RAM.
+    /// Advertised suffix omitted by offline prefix decoding; never measured RAM.
     pub optional_tail_bytes: usize,
+    /// Missing original source reads require a complete authored stream on edit.
+    pub needs_stream_completion: bool,
 }
 #[derive(Clone, Debug)]
 pub struct Replacement {
@@ -118,22 +120,202 @@ fn decode(
     }
     Ok(result)
 }
-// This is a bounded policy for one verified indexed source, not a map-number
-// exception or a general relaxation of missing source/context validation.
-fn optional_map23_tail(input: &Input, header: &Header) -> bool {
-    input.context.is_none()
-        && input.source.as_ref().is_some_and(|source| {
-            source.disc == 1
-                && source.map == 23
-                && source.slot == 652
-                && source.lba == 124_528
-                && source.indexed_size == 110_052
-                && source.source_sha256
-                    == "0f0a131acdf052cae070a64912fc09eb00e0b5e6a81f9d8cb4719d6416213add"
-        })
-        && header.logical_sizes[8] == 72
-        && header.offsets[8] == 109_992
-        && xem_disc::field_context::word(&input.bundle, header.offsets[8]).ok() == Some(78)
+// Boundary validation only: no glyph translation or message authoring. Sources:
+// text_get_resource_entry/text_get_message_columns/text_get_message_rows and
+// window_reveal_text in resident/text_windows_and_pads.c, mirrored by
+// tools.analysis.text_control.text_table/decode_token. Input carries no verified
+// loaded-font context: every non-control glyph is conservatively allowed to
+// consume either one or two bytes. Both paths must terminate within the payload;
+// a zero second glyph byte must not be mistaken for a message terminator.
+fn message_prefix_complete(data: &[u8]) -> Result<(), FieldError> {
+    let half = |at: usize| -> Result<usize, FieldError> {
+        let bytes = super::span(data, at, 2)
+            .ok_or_else(|| invalid("message table header/offset is truncated"))?;
+        Ok(usize::from(u16::from_le_bytes([bytes[0], bytes[1]])))
+    };
+    let count = half(0)?;
+    if half(2)? != 0 {
+        return Err(invalid("message table reserved halfword is not zero"));
+    }
+    if count == 0xffff {
+        return Ok(()); // Explicit original no-messages sentinel; four bytes suffice.
+    }
+    let table_end = 6 + 4 * count; // count+1 offsets, then count dimension pairs.
+    if table_end > data.len() {
+        return Err(invalid(
+            "message table offsets/dimensions exceed logical size",
+        ));
+    }
+    let text_end = half(4 + 2 * count)?;
+    if text_end < table_end || text_end > data.len() {
+        return Err(invalid(
+            "message table final offset exceeds its logical payload",
+        ));
+    }
+    // Backward boundary proof bounds work to payload length + entry count.
+    // It deliberately over-approximates any font threshold: different glyphs
+    // may take either width, so success does not assume canonical font bytes.
+    // The reader uses start offsets, not the final offset as an execution
+    // fence. A terminator at that final offset is valid if still in the known
+    // logical payload. Never read beyond that payload or invent font bytes.
+    let mut terminates = vec![false; data.len()];
+    for at in (table_end..data.len()).rev() {
+        let next = |size: usize| terminates.get(at + size).copied().unwrap_or(false);
+        let byte = data[at];
+        terminates[at] = match byte {
+            0 => true,
+            1..=3 => next(1),
+            0x0f => match data.get(at + 1) {
+                Some(3) => next(4),
+                // Unsupported selection categories re-read 04 as a glyph.
+                Some(4) => next(2) && next(1),
+                // 0F 0B checks its operand but reads it again as text.
+                Some(11) if at + 2 < data.len() => next(2),
+                Some(0..=15) => next(3),
+                _ => false,
+            },
+            _ => next(1) && next(2),
+        };
+    }
+    for index in 0..count {
+        let at = half(4 + 2 * index)?;
+        if at < table_end || at >= data.len() {
+            return Err(invalid(
+                "message entry offset is outside its bounded text region",
+            ));
+        }
+        if !terminates[at] {
+            return Err(FieldError::new(
+                "source_context_required",
+                "component 7: message termination cannot be proved within the known payload without qualified loaded-font/source context",
+            ));
+        }
+    }
+    Ok(())
+}
+
+// Strict decoding has validated every available complete token. Inspect only
+// their compressed framing to prove an absent continuation could fit the header:
+// a known flag must not hide inevitable overflow behind a missing token byte.
+fn unfinished_stream_fits(source: &[u8], remaining: usize, known_output: usize) -> bool {
+    let future_groups_fit = |size: usize| size == 0 || size == 8 || size >= 10;
+    let remaining_group_fits = |flags: u8, tokens: usize| {
+        if known_output == 0 && flags & 1 != 0 {
+            return false; // First output cannot be a backward reference.
+        }
+        let mask = ((1_u16 << tokens) - 1) as u8;
+        let references = (flags & mask).count_ones() as usize;
+        let literals = tokens - references;
+        let minimum = literals + 3 * references;
+        let maximum = literals + 18 * references;
+        if remaining < minimum {
+            return false;
+        }
+        // Reference lengths span 3..18; literal widths are fixed. Remaining
+        // complete groups add 0, 8, or any size >=10 (never 1..7 or 9).
+        remaining <= maximum
+            || remaining - minimum >= 10
+            || remaining
+                .checked_sub(8)
+                .is_some_and(|n| (minimum..=maximum).contains(&n))
+    };
+    let mut at = 4;
+    loop {
+        let Some(&flags) = source.get(at) else {
+            return future_groups_fit(remaining);
+        };
+        at += 1;
+        for token in 0..8 {
+            let Some(&low) = source.get(at) else {
+                return remaining_group_fits(flags >> token, 8 - token);
+            };
+            at += 1;
+            if flags & (1 << token) != 0 {
+                if source.get(at).is_none() {
+                    // A missing high byte cannot repair an already impossible
+                    // low distance. Zero low requires a distance of at least256.
+                    let minimum_distance = if low == 0 { 256 } else { usize::from(low) };
+                    return minimum_distance <= known_output
+                        && remaining_group_fits(flags >> token, 8 - token);
+                }
+                at += 1;
+            }
+        }
+    }
+}
+
+// Only absent source reads can qualify for offline completion. Malformed
+// references/output bounds are never swallowed. A terminal flag can be missing
+// even when every advertised output byte is known; retain that complete output.
+fn offline_component(
+    data: &[u8],
+    index: usize,
+    logical: usize,
+    start: usize,
+) -> Result<(packed::PackedBlock, bool, usize), FieldError> {
+    let source = data
+        .get(start..)
+        .ok_or_else(|| invalid("component source offset exceeds bundle"))?;
+    let limit = logical
+        .checked_add(16)
+        .ok_or_else(|| invalid("component allocation overflow"))?;
+    match packed::decode_block(source, limit) {
+        Ok(block) if block.data.len() >= logical => Ok((block, false, 0)),
+        Ok(_) => Err(invalid(format!(
+            "component {index}: complete output is shorter than logical size"
+        ))),
+        Err(packed::PackedError::Truncated { ref output, .. }) => {
+            let declared =
+                xem_disc::field_context::word(source, 0).map_err(|e| invalid(e.to_string()))?;
+            let remaining = declared
+                .checked_sub(output.len())
+                .ok_or_else(|| invalid("known output exceeds advertised size"))?;
+            if !unfinished_stream_fits(source, remaining, output.len()) {
+                return Err(invalid(format!(
+                    "component {index}: incomplete eight-token flag group cannot fit advertised output"
+                )));
+            }
+            // This validates the length header, all required tokens/distances,
+            // and full advertised bounds of a copy straddling the logical end.
+            let prefix = packed::decode_prefix(source, logical, limit).map_err(|e| {
+                FieldError::new(
+                    if matches!(e, packed::PackedError::Truncated { .. }) {
+                        "source_context_required"
+                    } else {
+                        "invalid_scene_bundle"
+                    },
+                    format!("component {index}: required logical-prefix decode failed: {e}"),
+                )
+            })?;
+            if output.len() == declared {
+                let complete = packed::decode_prefix(source, declared, limit)
+                    .map_err(|e| invalid(format!("component {index}: {e}")))?;
+                return Ok((complete, true, 0));
+            }
+            // Logical availability alone is not semantic qualification.
+            // Only validated message tables and whole zone records have a
+            // bounded consumer here. Events can traverse retained tails;
+            // sprite/encounter/other opaque suffixes remain context-required.
+            match index {
+                7 => message_prefix_complete(&prefix.data)?,
+                8 => {
+                    super::formats::decode_zones(&prefix.data, logical)?;
+                }
+                _ => {
+                    return Err(FieldError::new(
+                        "source_context_required",
+                        format!(
+                            "component {index}: unavailable output suffix has no qualified offline consumer boundary; source context is required"
+                        ),
+                    ));
+                }
+            }
+            Ok((prefix, true, declared - logical))
+        }
+        Err(e) => Err(invalid(format!(
+            "component {index}: complete original source decode failed: {e}"
+        ))),
+    }
 }
 impl Source {
     pub fn load(input: Input) -> Result<Self, FieldError> {
@@ -160,27 +342,22 @@ impl Source {
         };
         let mut measured = input.bundle.clone();
         measured.extend_from_slice(&guard);
-        let optional_tail = optional_map23_tail(&input, &header);
         let mut components = Vec::with_capacity(9);
         for index in 0..9 {
             let logical = header.logical_sizes[index];
             let start = header.offsets[index];
-            let prefix_only = optional_tail && index == 8;
-            let block = if prefix_only {
-                packed::decode_prefix(&measured[start..], logical, logical + 16).map_err(|e| {
-                    invalid(format!(
-                        "component {index}: required logical-prefix decode failed: {e}"
-                    ))
-                })?
+            let (block, needs_stream_completion, optional_tail_bytes) = if input.context.is_none() {
+                offline_component(&measured, index, logical, start)?
             } else {
-                decode(&measured, index, logical, start)?
+                (decode(&measured, index, logical, start)?, false, 0)
             };
             components.push(Component {
                 logical_size: logical,
                 bytes: block.data,
                 source_offset: start,
                 source_bytes_read: block.source_bytes_read,
-                optional_tail_bytes: if prefix_only { 6 } else { 0 },
+                optional_tail_bytes,
+                needs_stream_completion,
             });
         }
         Ok(Self {
@@ -198,8 +375,8 @@ impl Source {
     /// authorize reference-changing edits; the domain transaction validates them.
     /// New packing may add an explicit authored tail (at most logical+16), never
     /// a fabricated original-source guard. Complete unaffected outputs are exact;
-    /// the qualified offline c8 instead retains its logical payload and authors a
-    /// self-contained stream whenever any part of the bundle changes.
+    /// admitted offline prefixes retain their known payload and author complete
+    /// self-contained streams whenever any part of the bundle changes.
     pub fn repack(
         &self,
         header: &Header,
@@ -266,28 +443,28 @@ impl Source {
             result[0x130 + index * 4..0x134 + index * 4].copy_from_slice(&value.to_le_bytes());
         }
         let mut expected = BTreeMap::new();
-        // Every edited prefix-qualified bundle redirects c8 to a complete
-        // authored stream, even when another component/header alone changed.
-        // The original compressed suffix must never consume appended data.
-        let optional_replacement = Replacement {
-            logical_size: self.components[8].logical_size,
-            bytes: if self.components[8].optional_tail_bytes > 0 {
-                self.components[8].bytes.clone()
-            } else {
-                Vec::new()
-            },
-        };
-        let extra = if self.components[8].optional_tail_bytes > 0 && !replacements.contains_key(&8)
-        {
-            Some((8, &optional_replacement))
-        } else {
-            None
-        };
-        for (index, value) in replacements
+        // Every admitted incomplete source stream is redirected on ANY edit,
+        // including sparse replacements and header-only changes. Otherwise its
+        // original missing read could consume newly appended authored bytes.
+        let completions: BTreeMap<usize, Replacement> = self
+            .components
             .iter()
-            .map(|(&index, value)| (index, value))
-            .chain(extra)
-        {
+            .enumerate()
+            .filter(|(index, component)| {
+                component.needs_stream_completion && !replacements.contains_key(index)
+            })
+            .map(|(index, component)| {
+                (
+                    index,
+                    Replacement {
+                        logical_size: component.logical_size,
+                        bytes: component.bytes.clone(),
+                    },
+                )
+            })
+            .collect();
+        for (index, value) in replacements.iter().chain(&completions) {
+            let index = *index;
             if self.components[index].optional_tail_bytes > 0
                 && value.bytes.len() != value.logical_size
             {
@@ -303,7 +480,7 @@ impl Source {
                     "component {index}: replacement exceeds logical+16 allocation"
                 )));
             }
-            if self.components[index].optional_tail_bytes == 0
+            if !self.components[index].needs_stream_completion
                 && value.logical_size == self.components[index].logical_size
                 && value.bytes == self.components[index].bytes
             {

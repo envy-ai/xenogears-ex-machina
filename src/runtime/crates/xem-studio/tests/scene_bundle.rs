@@ -91,6 +91,121 @@ fn bundle_fixture(descriptor_count: usize, truncate_last_terminal_flag: bool) ->
     bundle
 }
 
+fn empty_terminal_c8_fixture(descriptor_count: usize) -> Vec<u8> {
+    let mut bundle = bundle_fixture(descriptor_count, false);
+    let offset = u32::from_le_bytes(
+        bundle[0x130 + 8 * 4..0x134 + 8 * 4]
+            .try_into()
+            .expect("c8 source offset"),
+    ) as usize;
+    put_u32(&mut bundle, 0x10c + 8 * 4, 0);
+    put_u32(&mut bundle, offset, 0);
+    bundle.truncate(offset + 4);
+    bundle
+}
+
+fn message_table(text: &[u8], entry: usize, text_end: usize, count_word: u16) -> Vec<u8> {
+    let mut bytes = Vec::new();
+    bytes.extend_from_slice(&count_word.to_le_bytes());
+    bytes.extend_from_slice(&0u16.to_le_bytes());
+    if count_word != u16::MAX {
+        bytes.extend_from_slice(&(entry as u16).to_le_bytes());
+        bytes.extend_from_slice(&(text_end as u16).to_le_bytes());
+        bytes.extend_from_slice(&[1, 1]); // one message, one by one layout
+        bytes.resize(text_end, 0x55);
+        bytes[entry..entry + text.len()].copy_from_slice(text);
+    }
+    bytes
+}
+
+fn with_truncated_c7(logical: &[u8]) -> Vec<u8> {
+    let advertised_size = (logical.len() + 1).div_ceil(8) * 8;
+    assert!(advertised_size > logical.len());
+    assert!(advertised_size <= logical.len() + 16);
+    let mut advertised = logical.to_vec();
+    advertised.resize(advertised_size, 0xA7);
+    let encoded = packed::encode_literals(&advertised, MAX_COMPONENT).expect("encode C7 fixture");
+    let prefix = packed::decode_prefix(&encoded, logical.len(), MAX_COMPONENT)
+        .expect("logical C7 prefix is source-available");
+    let stream = &encoded[..prefix.source_bytes_read];
+
+    let mut bundle = bundle_fixture(1, false);
+    let offset = bundle.len();
+    put_u32(&mut bundle, 0x10c + 7 * 4, logical.len() as u32);
+    put_u32(&mut bundle, 0x130 + 7 * 4, offset as u32);
+    bundle.extend_from_slice(stream);
+    bundle
+}
+
+fn missing_logical_c8_output() -> Vec<u8> {
+    let mut bundle = bundle_fixture(0, false);
+    let offset = formats::decode_header(&bundle).unwrap().offsets[8];
+    put_u32(&mut bundle, 0x10c + 8 * 4, 24);
+    let mut packed = packed::encode_literals(&[0; 24], MAX_COMPONENT).expect("literal pack");
+    packed.truncate(packed.len() - 2); // 23 output bytes; final token and terminal flag absent.
+    bundle.truncate(offset);
+    bundle.extend_from_slice(&packed);
+    bundle
+}
+
+fn full_c8_output_missing_terminal_flag() -> Vec<u8> {
+    let mut bundle = bundle_fixture(1, false);
+    let offset = formats::decode_header(&bundle).unwrap().offsets[8];
+    put_u32(&mut bundle, 0x10c + 8 * 4, 24);
+    let mut packed = packed::encode_literals(&[0; 24], MAX_COMPONENT).expect("literal pack");
+    packed.pop(); // All 24 advertised outputs are available; only the terminal lookahead is absent.
+    bundle.truncate(offset);
+    bundle.extend_from_slice(&packed);
+    bundle
+}
+
+fn c8_advertised_output_truncated_mid_flag_group() -> Vec<u8> {
+    let mut bundle = empty_terminal_c8_fixture(1);
+    let offset = formats::decode_header(&bundle).expect("header").offsets[8];
+    put_u32(&mut bundle, offset, 10);
+    // The first group is complete. Two more literals provide all ten declared
+    // bytes, but the second group's remaining six token decisions are absent.
+    bundle.extend_from_slice(&[
+        0, 0x41, 0x42, 0x43, 0x44, 0x45, 0x46, 0x47, 0x48, 0, 0x49, 0x4A,
+    ]);
+    bundle
+}
+
+fn c8_full_output_back_reference_missing_terminal() -> Vec<u8> {
+    let mut bundle = empty_terminal_c8_fixture(1);
+    let offset = formats::decode_header(&bundle).expect("header").offsets[8];
+    put_u32(&mut bundle, offset, 10);
+    // Seven literals followed by a three-byte back-reference completes all
+    // eight tokens and ten advertised outputs, but omits the next flag.
+    bundle.extend_from_slice(&[0x80, 0x41, 0x42, 0x43, 0x44, 0x45, 0x46, 0x47, 0x01, 0x00]);
+    bundle
+}
+
+fn c8_partial_group_cannot_reach_advertised_output() -> Vec<u8> {
+    let mut bundle = empty_terminal_c8_fixture(1);
+    let offset = formats::decode_header(&bundle).expect("header").offsets[8];
+    put_u32(&mut bundle, offset, 10);
+    // Nine literal outputs are available. Completing this second eight-token
+    // group needs seven more tokens, so even seven one-byte literals exceed
+    // the advertised length of ten.
+    bundle.extend_from_slice(&[0, 0x41, 0x42, 0x43, 0x44, 0x45, 0x46, 0x47, 0, 0x48]);
+    bundle
+}
+
+fn missing_opaque_c6_suffix() -> Vec<u8> {
+    let mut bundle = bundle_fixture(1, false);
+    let logical = [0x6A; 8];
+    let mut packed = packed::encode_literals(&[0x6A; 16], MAX_COMPONENT).expect("literal pack");
+    let prefix = packed::decode_prefix(&packed, logical.len(), MAX_COMPONENT)
+        .expect("C6 logical prefix is source-available");
+    packed.truncate(prefix.source_bytes_read);
+    let offset = bundle.len();
+    put_u32(&mut bundle, 0x10c + 6 * 4, logical.len() as u32);
+    put_u32(&mut bundle, 0x130 + 6 * 4, offset as u32);
+    bundle.extend_from_slice(&packed);
+    bundle
+}
+
 fn input(bundle: Vec<u8>) -> bundle::Input {
     bundle::Input {
         bundle,
@@ -370,14 +485,336 @@ fn descriptor_growth_respects_the_bundle_file_limit_before_allocating_output() {
 
 #[test]
 fn missing_source_guard_requests_measured_context_instead_of_fabricating_tail_bytes() {
-    let truncated = bundle_fixture(0, true);
+    let truncated = missing_logical_c8_output();
     let error = bundle::Source::load(input(truncated)).expect_err("final source bytes are absent");
     assert_eq!(error.kind, "source_context_required");
 }
 
 #[test]
-fn nonqualified_disc1_map23_identity_does_not_enable_optional_tail_prefix_decode() {
-    let truncated = bundle_fixture(0, true);
+fn final_empty_component_is_a_valid_offline_source_and_no_edit_is_exact() {
+    let original = empty_terminal_c8_fixture(1);
+    let header = formats::decode_header(&original).expect("header remains complete");
+    assert_eq!(header.offsets[8] + 4, original.len());
+    assert_eq!(header.logical_sizes[8], 0);
+
+    let source = bundle::Source::load(input(original.clone()))
+        .expect("an empty final packed component has no missing payload");
+    let component = &source.components[8];
+    assert_eq!(component.logical_size, 0);
+    assert!(component.bytes.is_empty());
+    assert!(component.needs_stream_completion);
+    assert_eq!(component.optional_tail_bytes, 0);
+
+    let unchanged = source
+        .repack(&source.header, &BTreeMap::new())
+        .expect("no edit preserves original source");
+    assert_eq!(hash(&unchanged), hash(&original));
+}
+
+#[test]
+fn full_advertised_zone_output_survives_missing_terminal_lookahead() {
+    let original = full_c8_output_missing_terminal_flag();
+    let source = bundle::Source::load(input(original.clone()))
+        .expect("the full advertised zone output is known without its terminal flag");
+    assert_eq!(source.components[8].logical_size, 24);
+    assert_eq!(source.components[8].bytes.len(), 24);
+    assert!(source.components[8].needs_stream_completion);
+    assert_eq!(source.components[8].optional_tail_bytes, 0);
+    assert!(formats::decode_zones(&source.components[8].bytes, 24).is_ok());
+
+    let mut edited = source.header.clone();
+    edited.descriptors.push(descriptor(1));
+    let candidate = source
+        .repack(&edited, &BTreeMap::new())
+        .expect("an edit authors a strict terminal flag");
+    let reloaded = bundle::Source::load(input(candidate)).expect("strict candidate reloads");
+    assert_eq!(reloaded.components[8].bytes.len(), 24);
+    assert!(!reloaded.components[8].needs_stream_completion);
+    assert_eq!(
+        hash(&reloaded.components[8].bytes),
+        hash(&source.components[8].bytes)
+    );
+}
+
+#[test]
+fn full_advertised_output_inside_an_incomplete_flag_group_is_rejected() {
+    let malformed = c8_advertised_output_truncated_mid_flag_group();
+    let error = bundle::Source::load(input(malformed))
+        .expect_err("known literal byte does not prove the missing flag-group framing");
+    assert_eq!(error.kind, "invalid_scene_bundle");
+    assert!(error.message.contains("incomplete eight-token flag group"));
+}
+
+#[test]
+fn complete_back_reference_flag_group_is_admitted_without_terminal_lookahead() {
+    let original = c8_full_output_back_reference_missing_terminal();
+    let source = bundle::Source::load(input(original.clone()))
+        .expect("a complete eight-token back-reference group has known output");
+    let component = &source.components[8];
+    assert_eq!(component.logical_size, 0);
+    assert_eq!(
+        component.bytes,
+        [0x41, 0x42, 0x43, 0x44, 0x45, 0x46, 0x47, 0x47, 0x47, 0x47]
+    );
+    assert!(component.needs_stream_completion);
+    assert_eq!(component.optional_tail_bytes, 0);
+    assert_eq!(
+        source.repack(&source.header, &BTreeMap::new()).unwrap(),
+        original
+    );
+}
+
+#[test]
+fn remaining_flag_group_tokens_cannot_exceed_advertised_output() {
+    let malformed = c8_partial_group_cannot_reach_advertised_output();
+    let error = bundle::Source::load(input(malformed))
+        .expect_err("mandatory remaining tokens exceed the declared length");
+    assert_eq!(error.kind, "invalid_scene_bundle");
+}
+
+#[test]
+fn unqualified_opaque_missing_suffix_still_requires_measured_context() {
+    let error = bundle::Source::load(input(missing_opaque_c6_suffix()))
+        .expect_err("available logical bytes do not qualify an opaque C6 suffix");
+    assert_eq!(error.kind, "source_context_required");
+}
+
+#[test]
+fn any_header_edit_normalizes_an_empty_terminal_to_a_strict_stream() {
+    let original = empty_terminal_c8_fixture(1);
+    let source = bundle::Source::load(input(original.clone())).expect("load empty terminal");
+    let before: Vec<Vec<u8>> = source.components.iter().map(|c| c.bytes.clone()).collect();
+    let mut edited_header = source.header.clone();
+    edited_header.descriptors.push(descriptor(1));
+
+    let candidate = source
+        .repack(&edited_header, &BTreeMap::new())
+        .expect("descriptor growth completes the missing terminal read");
+    assert_eq!(hash(&source.input().bundle), hash(&original));
+    let final_header = formats::decode_header(&candidate).expect("candidate header");
+    let c8 = packed::decode_block(&candidate[final_header.offsets[8]..], 16)
+        .expect("authored empty stream contains its terminal flag");
+    assert!(c8.data.is_empty());
+
+    let reloaded =
+        bundle::Source::load(input(candidate)).expect("all candidate streams strict-load");
+    assert_eq!(reloaded.header.descriptors.len(), 2);
+    assert!(!reloaded.components[8].needs_stream_completion);
+    for (index, old) in before.iter().enumerate() {
+        if source.components[index].needs_stream_completion {
+            assert_eq!(
+                hash(&reloaded.components[index].bytes[..old.len()]),
+                hash(old)
+            );
+            assert!(reloaded.components[index].bytes.len() - old.len() <= 16);
+        } else {
+            assert_eq!(hash(&reloaded.components[index].bytes), hash(old));
+        }
+    }
+}
+
+#[test]
+fn other_component_edit_also_normalizes_the_empty_terminal() {
+    let original = empty_terminal_c8_fixture(1);
+    let source = bundle::Source::load(input(original.clone())).expect("load empty terminal");
+    let mut replacement = source.components[0].bytes.clone();
+    replacement[0] ^= 1;
+    let replacements = BTreeMap::from([(
+        0,
+        bundle::Replacement {
+            logical_size: source.components[0].logical_size,
+            bytes: replacement.clone(),
+        },
+    )]);
+
+    let candidate = source
+        .repack(&source.header, &replacements)
+        .expect("a sparse replacement normalizes every incomplete stream");
+    let reloaded = bundle::Source::load(input(candidate)).expect("all streams strict-load");
+    assert!(!reloaded.components[8].needs_stream_completion);
+    assert_eq!(
+        hash(&reloaded.components[0].bytes[..replacement.len()]),
+        hash(&replacement)
+    );
+    for index in 1..8 {
+        assert_eq!(
+            hash(&reloaded.components[index].bytes),
+            hash(&source.components[index].bytes)
+        );
+    }
+    let reverted = source
+        .repack(
+            &source.header,
+            &BTreeMap::from([(
+                0,
+                bundle::Replacement {
+                    logical_size: source.components[0].logical_size,
+                    bytes: source.components[0].bytes.clone(),
+                },
+            )]),
+        )
+        .expect("reverting the source replacement is an exact no-op");
+    assert_eq!(hash(&reverted), hash(&original));
+}
+
+#[test]
+fn empty_terminal_admission_does_not_accept_malformed_or_missing_output() {
+    let empty = empty_terminal_c8_fixture(1);
+    let offset = formats::decode_header(&empty).unwrap().offsets[8];
+
+    let short_header = empty[..offset + 3].to_vec();
+    assert_eq!(
+        bundle::Source::load(input(short_header)).unwrap_err().kind,
+        "invalid_scene"
+    );
+
+    let mut logical_without_declared_output = empty.clone();
+    put_u32(&mut logical_without_declared_output, 0x10c + 8 * 4, 1);
+    assert_eq!(
+        bundle::Source::load(input(logical_without_declared_output))
+            .unwrap_err()
+            .kind,
+        "invalid_scene_bundle"
+    );
+
+    let missing_declared_output = missing_logical_c8_output();
+    assert_eq!(
+        bundle::Source::load(input(missing_declared_output))
+            .unwrap_err()
+            .kind,
+        "source_context_required"
+    );
+
+    let mut terminal_present = empty_terminal_c8_fixture(1);
+    terminal_present.push(0);
+    let source = bundle::Source::load(input(terminal_present))
+        .expect("a present terminal flag follows the strict decoder path");
+    assert!(!source.components[8].needs_stream_completion);
+}
+
+#[test]
+fn empty_zone_prefix_can_omit_a_bounded_advertised_tail_but_not_exceed_allocation() {
+    let empty = empty_terminal_c8_fixture(1);
+    let offset = formats::decode_header(&empty).unwrap().offsets[8];
+    for declared in [8u32, 16] {
+        let mut source_bytes = empty.clone();
+        put_u32(&mut source_bytes, offset, declared);
+        let source = bundle::Source::load(input(source_bytes))
+            .expect("zero complete zones need no absent optional zone suffix");
+        assert!(source.components[8].bytes.is_empty());
+        assert!(source.components[8].needs_stream_completion);
+        assert_eq!(source.components[8].optional_tail_bytes, declared as usize);
+    }
+
+    let mut oversized = empty;
+    put_u32(&mut oversized, offset, 17);
+    assert_eq!(
+        bundle::Source::load(input(oversized)).unwrap_err().kind,
+        "invalid_scene_bundle",
+        "an omitted suffix cannot exceed the original logical+16 allocation"
+    );
+}
+
+#[test]
+fn impossible_nonempty_packed_outputs_are_rejected_before_prefix_admission() {
+    let empty = empty_terminal_c8_fixture(1);
+    let offset = formats::decode_header(&empty).unwrap().offsets[8];
+    for declared in [1u32, 2, 3, 4, 5, 6, 7, 9] {
+        let mut malformed = empty.clone();
+        put_u32(&mut malformed, offset, declared);
+        let error = bundle::Source::load(input(malformed))
+            .expect_err("no complete nonempty eight-token groups fit this output length");
+        assert_eq!(error.kind, "invalid_scene_bundle", "declared={declared}");
+    }
+}
+
+#[test]
+fn measured_context_still_supplies_the_terminal_flag_for_empty_component() {
+    let original = empty_terminal_c8_fixture(1);
+    let module = "cd".repeat(32);
+    let context = measured_context(&original, &[0], &module);
+    let source = bundle::Source::load(bundle::Input {
+        bundle: original,
+        context: Some(context),
+        source: Some(identity(&empty_terminal_c8_fixture(1))),
+        module_sha256: Some(module),
+    })
+    .expect("measured one-byte source tail validates and completes the stream");
+    assert!(source.components[8].bytes.is_empty());
+    assert!(!source.components[8].needs_stream_completion);
+    assert_eq!(source.components[8].optional_tail_bytes, 0);
+}
+
+#[test]
+fn incomplete_c7_prefix_accepts_the_font_independent_terminator_proofs() {
+    let cases = [
+        (
+            "one_byte_and_two_byte_paths",
+            message_table(&[0x44, 0, 0], 10, 13, 1),
+        ),
+        ("final_offset_is_a_logical_nul", {
+            let mut bytes = message_table(&[], 12, 12, 1);
+            bytes.resize(13, 0x55);
+            bytes[12] = 0;
+            bytes
+        }),
+        (
+            "selection_control_rereads_04",
+            message_table(&[0x0F, 0x04, 0, 0], 10, 14, 1),
+        ),
+        (
+            "set_6d_operand_is_text",
+            message_table(&[0x0F, 0x0B, 0], 10, 13, 1),
+        ),
+        (
+            "no_message_sentinel_needs_only_four_bytes",
+            vec![0xFF, 0xFF, 0, 0],
+        ),
+    ];
+    for (label, logical) in cases {
+        let source = bundle::Source::load(input(with_truncated_c7(&logical)))
+            .unwrap_or_else(|error| panic!("{label}: {} ({})", error.kind, error.message));
+        assert!(source.components[7].needs_stream_completion, "{label}");
+        assert_eq!(source.components[7].logical_size, logical.len(), "{label}");
+    }
+}
+
+#[test]
+fn incomplete_c7_prefix_rejects_ambiguous_or_incomplete_message_boundaries() {
+    let cases = [
+        (
+            "truncated_unsupported_selection_reread",
+            message_table(&[0x0F, 0x04, 0], 10, 13, 1),
+        ),
+        (
+            "single_zero_only_proves_one_glyph_width",
+            message_table(&[0x44, 0], 10, 12, 1),
+        ),
+        (
+            "truncated_extended_control_subcode",
+            message_table(&[0x0F], 10, 11, 1),
+        ),
+        (
+            "truncated_two_byte_glyph",
+            message_table(&[0xFE], 10, 11, 1),
+        ),
+    ];
+    for (label, logical) in cases {
+        let error = bundle::Source::load(input(with_truncated_c7(&logical)))
+            .expect_err("one possible message path lacks a logical terminator");
+        assert_eq!(error.kind, "source_context_required", "{label}");
+    }
+
+    let mut malformed = message_table(&[0], 10, 11, 1);
+    malformed[2..4].copy_from_slice(&1u16.to_le_bytes());
+    let error = bundle::Source::load(input(with_truncated_c7(&malformed)))
+        .expect_err("reserved message-table halfword must stay zero");
+    assert_eq!(error.kind, "invalid_scene_bundle");
+}
+
+#[test]
+fn source_identity_does_not_fabricate_missing_logical_component_output() {
+    let truncated = missing_logical_c8_output();
     let near_match = identity(&truncated); // Correct disc and map, but synthetic index location/size.
     let error = bundle::Source::load(bundle::Input {
         bundle: truncated,

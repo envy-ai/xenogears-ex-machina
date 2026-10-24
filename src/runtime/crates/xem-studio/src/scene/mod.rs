@@ -47,6 +47,11 @@ pub struct ComponentSummary {
     pub output_sha256: String,
     #[serde(skip_serializing_if = "is_zero")]
     pub optional_tail_bytes: usize,
+    #[serde(skip_serializing_if = "is_false")]
+    pub offline_stream_completion: bool,
+}
+fn is_false(value: &bool) -> bool {
+    !*value
 }
 fn is_zero(value: &usize) -> bool {
     *value == 0
@@ -130,12 +135,20 @@ pub fn decode(args: DecodeArgs) -> Result<Decoded, FieldError> {
             source_bytes_read: c.source_bytes_read,
             output_sha256: hash(&c.bytes),
             optional_tail_bytes: c.optional_tail_bytes,
+            offline_stream_completion: c.needs_stream_completion,
         })
         .collect();
     let mut diagnostics=vec!["Actor sprite VM frames and script-derived placements are not evaluated by this asset decoder; use explicit script bindings or a labelled live observation.".into(),
         "Entrances list contains only supplied selectors; variable/saved-state references can prevent structural reference closure.".into()];
-    if c[8].optional_tail_bytes > 0 {
-        diagnostics.push("Qualified Disc 1 Map 23 offline policy: component 8 verifies its 72 logical bytes; six decoded tail bytes are not preserved. Edited packages author a self-contained stream from known logical data. This policy is not measured runtime context.".into());
+    for (index, component) in c
+        .iter()
+        .enumerate()
+        .filter(|(_, c)| c.needs_stream_completion)
+    {
+        diagnostics.push(format!(
+            "Offline component {index}: {} known output bytes retained; {} advertised tail bytes are not preserved. Missing source reads are not synthesized. Any edited bundle authors a complete self-contained stream. This policy is not measured runtime context.",
+            component.bytes.len(), component.optional_tail_bytes,
+        ));
     }
     if !images.shared_slots.is_empty() {
         diagnostics.push("Shared image slots require an identified inherited VRAM source; missing pixels are not synthesized.".into());

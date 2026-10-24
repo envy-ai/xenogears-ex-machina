@@ -1019,11 +1019,12 @@ separate coordination boundaries, not part of this isolated implementation.
 
 ### Qualified offline contract and verified isolated result
 
-This exception is selected only after ordinary source validation and the exact
+The initial isolated exception (superseded by the general structural policy
+below) was selected only after ordinary source validation and the exact
 Disc1/boot identity, Map23/slot652/LBA124528, indexed size110052 and bundle SHA256
 `0f0a131acdf052cae070a64912fc09eb00e0b5e6a81f9d8cb4719d6416213add` match.
 Component8 must start at109992, declare logical72 and advertise packed output78.
-No other map/source is admitted by this policy. Without context, its decoded
+That initial policy admitted no other map/source. Without context, its decoded
 asset summary reports output_size72 and optional_tail_bytes6, and diagnostics
 explicitly distinguish this policy from measured runtime context. Those six
 bytes are not preserved; their use and the developers' intent are not established.
@@ -1087,3 +1088,242 @@ Exact local commands, source/tool/input identities, stage results, full hashes
 and explicit missing outer telemetry are recorded in ignored
 `tmp/studio/context-ux/commands-and-results.md`. No live checkout/HMR/service
 change or push forms part of this isolated result.
+
+
+## General offline Scene stream completion (2026-10-24; active plan)
+
+Bart expanded the isolated Map0 bugfix to a format-level policy after encountering
+context-required errors on multiple maps. This supersedes the Map23-only
+allowlist for newly admitted offline inputs; it does not change strict runtime
+decoding or establish that output beyond logical sizes is unused. Work stays in
+the isolated worktree. The user's live checkout and preview remain untouched.
+
+1. Audit every available map/component on both private original discs. Separate
+   strict successes, complete output missing only terminal lookahead, empty
+   terminal streams, available logical prefixes with unavailable output suffixes,
+   missing required logical bytes, and malformed references/bounds. Record exact
+   per-disc coverage and representative diagnostics without committing game data.
+2. Define admission from validated stream structure, not map numbers or source
+   hashes. Preserve complete known outputs when only terminal lookahead is absent.
+   A missing suffix requires validated required tokens and declared output bounds,
+   including a token crossing the logical boundary. Event execution can traverse
+   retained tails, so missing event data must not be declared optional merely
+   from its logical length. Malformed streams remain errors.
+3. Keep measured-context loading/import strict and original input immutable.
+   No-edit and edit then undo return the exact indexed source. On every actual
+   edit, materialize every admitted incomplete stream as a complete authored
+   stream, even when its payload is unchanged. Strict-decode all final streams;
+   protect unaffected complete outputs and disclose any omitted optional suffix.
+4. Add structural and malformed boundary regressions plus both-disc conformance,
+   disconnected original Scene open/edit/save/reload/Build, and fresh identical
+   edited-package native/browser playback. Reuse compatible evidence, retain
+   failures, and verify current production WASM/test-hook boundaries. Independent
+   review and a scoped local commit precede publication; preview integration is
+   a separate authorization boundary.
+
+
+### Both-disc boundary audit and native conformance
+
+The retained Python inventory inspected all730 Disc1 map bundles and205 Disc2
+bundles; the other525 Disc2 slots are short-header placeholders confirmed against
+the raw index. Across8415 real components:7308 strict successes,682 empty terminal
+streams,160 complete outputs missing terminal lookahead, and265 available logical
+prefixes missing advertised suffixes. No missing logical data or malformed packed
+references/output bounds occurred in these original inputs. Synthetic regressions
+cover those rejection paths. Missing output suffixes occurred only in components7
+and8:115 message tables and150 whole-zone prefixes.
+
+Component7 is the message table (`field_load.h:BUNDLE_MESSAGES`), not arbitrary
+opaque data. The resident `text_get_resource_entry` reads starts at4+2*index;
+`text_get_message_columns/rows` use count-based dimension pairs. The final table
+offset is not a runtime execution fence. The bounded offline proof follows the
+original `window_reveal_text` controls within the known logical payload, allowing
+both glyph widths without assuming a loaded font. All115 candidates decode using
+the analysis tool's separately verified original-font threshold0xFE, but that alone
+does not qualify arbitrary Scene input. The font-independent proof admits106
+(74 Disc1,32 Disc2). Nine Disc1 maps remain context-required:54,84,128,140,162,168,
+183,453,473. Opaque sprite/encounter suffixes and genuinely incomplete event output
+are also refused. All real event components decode strictly; this is not proof of
+an arbitrary event execution boundary at logical size.
+
+Native checkpoint09 passed20 container regressions and the raw-index public-API
+sweep in one bounded16GiB/no-swap user scope. Of935 real bundles inspected,926
+(721 Disc1,205 Disc2) load offline, preserve exact no-edit indexed bytes, and
+strictly reload the authored header-edit candidate with known outputs protected.
+The other9 are the explicit message-proof refusals above; placeholders are not
+counted as successful containers or Scenes.
+
+Public `field.scene.decode` and `field.scene.draft` were checked separately for
+every real map. Decode succeeds for923 (719 Disc1,204 Disc2), with the9 context
+refusals plus three `invalid_scene_texture` results: Disc1 maps164/165 and Disc2
+map164, each "texture offset table exceeds component". Draft open succeeds for926
+(721+205); every opened handle closes. These additional texture-parser limitations
+remain explicit; container conformance is not a935-map UI/gameplay claim.
+
+Disc1 Map0 is accepted by both operations. Its raw-index source is slot606,
+LBA120698,105980 bytes, SHA256
+`c7cdbefd834e1d0405482d95204c822c8f4ef35249eee62c54a3af09cfd52921`;
+component8 is a complete logical0/declared0 header at offset105976, exactly EOF.
+The historical Map23 context-free sparse-repack regression also passes: invalid
+source SHA/size/boot still reject, but in-range map/slot/LBA labels alone no longer
+select an allowlist and do not independently prove a raw-index relationship.
+Measured-context exact identity checks remain unchanged.
+
+Ignored artifacts live under `tmp/studio/offline-components/`. Earlier failed
+setup attempts remain recorded; no game bytes enter source. Fresh UI/package and
+native/browser execution acceptance is recorded separately below when completed.
+
+
+### Final backend and offline UI replay
+
+The final continuation check rejects a missing token when known flag bits prove
+that completing the group cannot fit the advertised output, including partially
+read references with an impossible low distance. At a fresh group boundary the
+only possible remaining sizes are0,8,or>=10. This is a feasibility check on known
+framing, without manufacturing a source continuation or claiming original RAM.
+The strict `decode_block` and bounded `decode_prefix` implementations remain
+unchanged. Complete known outputs are retained; admitted omitted suffixes remain
+subject to their message/zone consumer proof.
+
+Checkpoint15 passes24 container regressions, current Clippy/type/format/source
+checks, the source-only two-disc audit and native/WASM saved-project replay.
+The raw scan independently confirms all160 nonempty full-output truncations
+finish complete flag groups; none is a hidden mid-group overflow. It separately
+reports935 real sources,926 admitted and9 context-required, plus525 placeholders.
+This follow-up validates the stricter condition without repeating checkpoint09's
+public decode/draft sweep. The latter's923 decode/926 draft outcomes and explicit
+texture-parser limitations remain the compatible evidence.
+
+Checkpoint13's actual browser journeys open Map0 and145 with no game connection
+and context-handler calls0. They select the verified source bindings, Apply an
+X edit, Undo to the exact original compiled hash, Redo, Save/Load through the
+normal file adapter, and Build via the active Scene repack path. They preserve
+the source header placement when the authored change belongs to a script.
+Map0 uses descriptor18/pc2327 (X0→32, immediate Y0/Z420); the initial Map145
+fixture used descriptor11/pc124 (X382→414, floor-derived Y/Z322). Later playback
+identified414 as outside the usable walkmesh; this retained initial fixture is
+not the final patrol acceptance. Checkpoint20 regenerates it through the same
+normal UI with verified in-mesh X366. Map145 exercises an
+incomplete component7 message stream (logical1816, omitted6) as well as empty
+component8. Each normalized candidate has complete strictly decodable streams.
+
+Those UI journeys predate the last malformed-input guard. Current native and
+browser SDK replay in checkpoint15 imports the exact saved projects and produces
+the same candidate hashes, so the earlier UI/Build evidence is reused explicitly.
+The final SDK and its test-served WASM asset both hash to
+`ee135db37c4675bfaa0fefd9454b6b7e990fc794c40f8339a7f527bbbc268a30`.
+
+| Map | UI-built candidate SHA256 | UI-built package-set SHA256 |
+| --- | --- | --- |
+| 0 | `8818c8454e507b9fd64cd9651b5d8edce8caa32c312fa0dd48bd3f382384259c` | `c7a65d209995cd84ed54857631b7e1afb70f50d67672e8616f04ce474c3108b5` |
+| 145, initial414 (superseded fixture) | `4c7103fdf15bdd2b62f630eb8d3c18634720d5e60135b738b27814dadb547714` | `8aa52b41d308b2c29a42cfe8552132fd6f1efb706ca2ae99e8f6a6ba540800d7` |
+| 145, verified in-mesh366 | `0c4742046506af9226525468d0171d235d7f1ef40de0efd9d61c02712dcdf4b2` | `e08cf109e85529c31e9d0e4a9bb94f4cf6d765a3fbf441e2a199c6a8e84fb0f6` |
+
+Historical measured-context project import/edit/export still reproduces its
+accepted hashes in checkpoint11; the final guard is restricted to context-free
+loading, so that unaffected proof is retained. The saved project remainsSHA
+3cffb561…81f9a, its original authored candidate2a50712b…1ca1f9, its reverted source
+0f0a131a…6213add and measured edited candidate3f1120…. No matching/decomp or runtime
+inputs changed, and no full runtime suite is claimed for this standalone fix.
+
+Retained failed attempts: initial audit import/setup failures01/03/04/05;
+checkpoint10's missing Disc1 test environment; checkpoint12's full pinned-format
+gate (WASM/UI correctly not run). Checkpoints02/06/08/09/11/13/15 provide their
+stated corrected evidence; intermediate proof policies are not final support
+claims. Runner14 was prepared but never launched. Private commands, results,
+projects and packages remain under ignored `tmp/studio/offline-components`,
+`tmp/studio/context-ux` and the corresponding `tmp/studio/milestone-7` leaves.
+
+
+### Playback fixture diagnosis and in-mesh regeneration
+
+Checkpoint16 correctly stopped after an external test expected64 characters for
+`memory_hash`; the actual runtime contract is u64 formatted as16 hexadecimal
+characters (`xem-core/control.rs`). The failed assertion is retained; the correction
+keeps exact digest equality. Checkpoint17 completes all six Map0 routes but then
+exposes a Map145 fixture error: actor11 is moving, not stationary at its authored
+initial X382. At frames733/1333, vanilla and disabled agree at X352.00732421875 and
+273.025634765625 on both hosts. Checkpoint18's initial X414 package stays414 at
+both checkpoints and fails the retained motion assertion. It is not accepted by
+substituting the observed value or removing movement coverage.
+
+Bounded source analysis uses the actual original and current compiled component.
+Actor11 event0 entry121 places atPC124; event1 entry133 patrols between X262 and
+X382, with waits after arrival. The compiled event output is1920 bytes before and
+after; only component offset1281 differs (the intended X operand), all variable
+bits/event entries and the entire event1 instruction sequence are unchanged.
+Complete outputs0–4/6 are exact, the admitted1816-byte component7 prefix is exact,
+and component8 is empty in both. No repack/script mutation explains the stalled
+patrol.
+
+The original `field_event_place_actor_on_floor` searches layers below
+`layer_count-1`; this map's usable layer0 contains original(382,322), target(262,322)
+and proposed(366,322) in triangle12, with zero floor height. Point(414,322) is
+outside that layer; the last broad layer is not a placement-floor substitute.
+The whole segment262→366 stays in the same convex triangle. Checkpoint20 therefore
+regenerates the same single-operand edit with X366 through real UI Apply,
+Undo/Redo, Save/Load and Build, with context-handler calls0. The resulting saved
+project SHA is`e85ccc24cd9806597c6e578710fcd796e0ab3af856f5dbfd61a78cf3ff5b51f0`.
+Independent current-backend comparison again finds only event byte1281 changed,
+with the same unrelated component preservation. The package/candidate hashes are
+listed above. All failed attempts and the invalid414 package remain ignored local
+artifacts; no product/game behavior or live preview was changed for these tests.
+
+
+### Completed bounded host and production acceptance
+
+The twelve required mode/host routes are retained without repeating a passed
+matrix: checkpoint17 supplies all six Map0 routes (its later Map145 assertion
+failed), and checkpoint23 supplies all six corrected Map145 routes. Each uses
+the exact normal-UI package listed above, unchanged on both hosts. Absent and
+disabled have exact equal memory/status/pose results; enabled has the expected
+package identity, virtual index record and causal authored-state effect. The
+unrelated Map22/Map23 index records remain original.
+
+| Map/condition | Total frame603 | Total frame733 | Total frame1333 |
+| --- | --- | --- | --- |
+| Map0 absent/disabled X | not sampled | 0 | 0 |
+| Map0 enabled X | not sampled | 32 | 32 |
+| Map145 absent/disabled X | 273.025634765625 | 352.00732421875 | 273.025634765625 |
+| Map145 enabled X366 fixture | 366 | 272.02197265625 | 272.02197265625 |
+
+Native and browser agree exactly at each sampled checkpoint, including Y/Z,
+memory digests, status, frame and VBlank counters. Frame603 is field+300,
+frame733 is field+430, and frame1333 is field+1030. The early Map145 sample is
+followed by the remaining130 frames; it preserves the original733/1333 endpoints.
+Enabled movement is proved between603 and733 and differs from controls at all
+three points. The later stationary sample is retained. This does not claim a
+fixed displacement, continuous patrol after733, or input-triggered initialization.
+Only Map145 uses this observation split; the existing other-map430-frame and
+Disc2 title303-frame helper behavior is restored. Checkpoint24's current-source
+checks pass after that test-only restoration; the executed Map145 path is unchanged.
+
+Native and current-WASM replay also reproduce the final in-mesh project's exact
+candidate. Checkpoint23's normal production Vite build uses a fresh staged app
+with checkpoint15 SDK installed as its default package and test/override flags
+unset. The built and actually served WASM both hash to
+`ee135db37c4675bfaa0fefd9454b6b7e990fc794c40f8339a7f527bbbc268a30`;
+the production test driver is absent, the exact member-view digest regression
+passes, and the Three.js licence notice is intact. No old backend package was
+substituted or overwritten. Current type/design/source/format/privacy checks pass.
+
+Root reviewed the retained real game images: Map0's native sprite/test-room view
+and Map145's native/browser library are readable. An initial thumbnail assessment
+of the native Map145 image was corrected by reopening the actual file at original
+resolution; no new screenshot was taken. Native captures are320×216 and browser
+captures1440×686. Same-host native absent/enabled images differ in35/69120 pixels
+around the actor at the late checkpoint; this is not a cross-host pixel-parity
+claim and does not replace the source, state, trajectory and preservation evidence.
+
+Additional retained attempts: checkpoint21 passed native/WASM replay but failed
+its overly late movement assertion; checkpoint22 stopped at a mistyped headless
+input before running tests; checkpoint19 stopped at a nonexistent reuse receipt.
+The corrected fixture's real UI evidence is20 and its six-host route/production
+result is23. No previous failed aggregate is rewritten as success. Exact commands,
+scope IDs, stage exits, artifact identities and honest reuse are indexed in the
+ignored `tmp/studio/offline-components/commands-and-results.md`.
+
+The active preview remains the separately managed d4f480c3 checkout/74c1 backend,
+with PID139863. These isolated tests do not integrate source, overwrite its
+ignored outputs, restart the service or interact with the user's browser. The
+five protected PR46 files retain their baseline hashes and unstaged state.

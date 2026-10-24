@@ -4,10 +4,12 @@ use serde_json::{Value, json};
 use std::fs::{self, OpenOptions};
 use std::io::Write;
 use std::path::{Path, PathBuf};
-use xem_disc::field_context::{SourceContext, hash};
+use xem_disc::field_context::{SourceContext, SourceIdentity, hash};
 use xem_disc::packed;
+use xem_disc::{Index, KnownDisc, open_path, read_data};
 use xem_studio::Studio;
 use xem_studio::scene::bundle::{Input, Replacement, Source};
+use xem_studio::scene::formats::decode_zones;
 
 const ORIGINAL_BUNDLE_SHA256: &str =
     "0f0a131acdf052cae070a64912fc09eb00e0b5e6a81f9d8cb4719d6416213add";
@@ -37,6 +39,29 @@ fn bytes(value: &Value) -> Vec<u8> {
         .iter()
         .map(|x| u8::try_from(x.as_u64().expect("integer byte")).expect("byte range"))
         .collect()
+}
+
+fn packed_prefix_ends_after_complete_flag_group(stream: &[u8], end: usize) -> bool {
+    if end == 4 {
+        return true;
+    }
+    if end > stream.len() {
+        return false;
+    }
+    let mut at = 4usize;
+    while at < end {
+        let Some(&flags) = stream.get(at) else {
+            return false;
+        };
+        at += 1;
+        for token in 0..8 {
+            at += if flags & (1 << token) == 0 { 1 } else { 2 };
+            if at >= end {
+                return at == end && token == 7;
+            }
+        }
+    }
+    false
 }
 
 fn fresh_output() -> PathBuf {
@@ -73,6 +98,505 @@ fn write_summary(path: &Path, summary: &Value) {
         .write_all(&serde_json::to_vec_pretty(summary).unwrap())
         .expect("write private summary");
     output.sync_all().expect("flush private summary");
+}
+
+fn operation_outcome(response: &Value) -> Value {
+    if let Some(value) = response.get("ok") {
+        return json!({"status":"accepted", "result_kind":value.as_object().map(|_| "object").unwrap_or("value")});
+    }
+    let error = &response["error"];
+    json!({
+        "status":"rejected",
+        "kind":error.get("kind").and_then(Value::as_str).unwrap_or("unknown"),
+        "reason":error.get("message").and_then(Value::as_str).unwrap_or("unspecified")
+    })
+}
+
+fn outcome_counts(rows: &[Value], field: &str) -> Value {
+    let mut counts = std::collections::BTreeMap::<String, usize>::new();
+    for row in rows {
+        let outcome = &row[field];
+        let key = if outcome["status"] == "accepted" {
+            "accepted".to_owned()
+        } else {
+            format!(
+                "{}: {}",
+                outcome["kind"].as_str().unwrap_or("unknown"),
+                outcome["reason"].as_str().unwrap_or("unspecified")
+            )
+        };
+        *counts.entry(key).or_default() += 1;
+    }
+    json!(counts)
+}
+
+fn offline_audit_output() -> PathBuf {
+    let path = PathBuf::from(
+        std::env::var_os("XEM_STUDIO_OFFLINE_AUDIT_OUTPUT")
+            .expect("explicit ignored offline-audit output directory is required"),
+    );
+    let repo = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .ancestors()
+        .nth(4)
+        .expect("crate is inside repository")
+        .to_path_buf();
+    assert!(
+        path.starts_with(repo.join("tmp/studio/offline-components")),
+        "private output stays under ignored offline-components"
+    );
+    assert!(
+        !path.exists(),
+        "fresh audit output preserves prior evidence"
+    );
+    fs::create_dir_all(path.parent().expect("output has a parent"))
+        .expect("create ignored output parent");
+    fs::create_dir(&path).expect("create fresh ignored output directory");
+    path
+}
+
+fn audit_indexed_disc(number: u8, path: &Path) -> Value {
+    const MAP_FIRST_FILE: u32 = 0xB8;
+    let mut track = open_path(path).expect("open explicitly supplied original raw disc");
+    let index = Index::from_disc(track.as_mut()).expect("read raw on-disc file index");
+    assert_eq!(index.disc_number(), Some(u16::from(number)));
+    let first_slot = index
+        .slot(4, MAP_FIRST_FILE)
+        .expect("field map directory starts in the index");
+    let marker = index
+        .record(first_slot - 1)
+        .expect("map directory has its preceding count record");
+    let map_file_count = marker
+        .directory_len()
+        .expect("map count record is negative");
+    assert_eq!(map_file_count % 2, 0, "maps use bundle/companion pairs");
+    let map_count = map_file_count / 2;
+
+    let known_disc = match number {
+        1 => KnownDisc::Disc1,
+        2 => KnownDisc::Disc2,
+        _ => panic!("only the two original discs are supported"),
+    };
+    let boot_sha256 = xem_disc::identify::hex(&known_disc.executable_sha256());
+    let mut placeholders = 0usize;
+    let mut short_headers = 0usize;
+    let mut valid_bundles = 0usize;
+    let mut rejected_context_maps = Vec::new();
+    let mut strict_components = 0usize;
+    let mut normalized_components = 0usize;
+    let mut optional_tail_bytes = 0usize;
+    let mut exact_noops = 0usize;
+    let mut strict_reloads = 0usize;
+    let mut zero_descriptor_headers = 0usize;
+    let mut map0_c8 = None;
+    let mut public_decode_outcomes = Vec::new();
+    let mut public_draft_open_outcomes = Vec::new();
+
+    for map in 0..map_count {
+        let file = MAP_FIRST_FILE + map * 2;
+        let slot = index.slot(4, file).expect("map bundle slot");
+        let record = index.record(slot).expect("map bundle index record");
+        if record.is_unused() || record.size <= 0 {
+            placeholders += 1;
+            let outcome = json!({
+                "status":"not_attempted",
+                "kind":"empty_index_slot",
+                "reason":"raw index record has no positive map bundle"
+            });
+            public_decode_outcomes.push(json!({"map":map,"outcome":outcome.clone()}));
+            public_draft_open_outcomes.push(json!({
+                "map":map,
+                "outcome":outcome,
+                "close":{"status":"not_applicable"}
+            }));
+            continue;
+        }
+        let size = usize::try_from(record.size).expect("positive index size");
+        assert!(size <= 32 << 20, "map bundle remains within reader budget");
+        let bundle = read_data(track.as_mut(), record.lba, size).expect("read indexed map bytes");
+        assert_eq!(bundle.len(), size, "read exact index length");
+        if bundle.len() < 0x190 {
+            short_headers += 1;
+            let outcome = json!({
+                "status":"not_attempted",
+                "kind":"short_header_placeholder",
+                "reason":"indexed map bytes are shorter than the complete field header"
+            });
+            public_decode_outcomes.push(json!({"map":map,"outcome":outcome.clone()}));
+            public_draft_open_outcomes.push(json!({
+                "map":map,
+                "outcome":outcome,
+                "close":{"status":"not_applicable"}
+            }));
+            continue;
+        }
+        valid_bundles += 1;
+        let source_identity = SourceIdentity {
+            disc: number,
+            boot_sha256: boot_sha256.clone(),
+            map,
+            slot: u32::try_from(slot).expect("source slot fits u32"),
+            lba: record.lba,
+            indexed_size: u32::try_from(bundle.len()).expect("bundle size fits u32"),
+            source_sha256: hash(&bundle),
+        };
+        let scene_studio = Studio::new();
+        let public_input = json!({
+            "bundle":bundle.clone(),
+            "context":null,
+            "source":source_identity.clone(),
+            "module_sha256":null
+        });
+        let decoded_scene = command(
+            &scene_studio,
+            "field.scene.decode",
+            json!({"input":public_input.clone(), "entrances":[]}),
+        );
+        public_decode_outcomes.push(json!({
+            "map":map,
+            "outcome":operation_outcome(&decoded_scene)
+        }));
+        let opened_scene = command(
+            &scene_studio,
+            "field.scene.draft",
+            json!({"kind":"open", "input":public_input, "entrances":[]}),
+        );
+        let open_outcome = operation_outcome(&opened_scene);
+        let close_outcome = if let Some(scene) = opened_scene
+            .get("ok")
+            .and_then(|value| value.get("scene"))
+            .and_then(Value::as_u64)
+        {
+            operation_outcome(&command(
+                &scene_studio,
+                "field.scene.draft",
+                json!({"kind":"close", "scene":scene}),
+            ))
+        } else {
+            json!({"status":"not_applicable"})
+        };
+        public_draft_open_outcomes.push(json!({
+            "map":map,
+            "outcome":open_outcome,
+            "close":close_outcome
+        }));
+        if number == 1 && map == 0 {
+            assert_eq!(slot, 606);
+            assert_eq!(record.lba, 120_698);
+            assert_eq!(bundle.len(), 105_980);
+            assert_eq!(
+                hash(&bundle),
+                "c7cdbefd834e1d0405482d95204c822c8f4ef35249eee62c54a3af09cfd52921"
+            );
+        }
+        let source = match Source::load(Input {
+            bundle: bundle.clone(),
+            context: None,
+            source: Some(source_identity),
+            module_sha256: None,
+        }) {
+            Ok(source) => source,
+            Err(error) if error.kind == "source_context_required" => {
+                rejected_context_maps.push(map);
+                continue;
+            }
+            Err(error) => panic!(
+                "disc {number} map {map} rejected unexpectedly: {} ({})",
+                error.kind, error.message
+            ),
+        };
+        assert_eq!(source.components.len(), 9);
+        let unchanged = source
+            .repack(&source.header, &std::collections::BTreeMap::new())
+            .unwrap_or_else(|error| panic!("disc {number} map {map} no-op failed: {}", error.kind));
+        assert_eq!(
+            hash(&unchanged),
+            hash(&bundle),
+            "disc {number} map {map} exact no-op"
+        );
+        exact_noops += 1;
+
+        let zones = decode_zones(
+            &source.components[8].bytes,
+            source.components[8].logical_size,
+        )
+        .unwrap_or_else(|error| panic!("disc {number} map {map} zones: {}", error.kind));
+        let _zone_count = zones.zones.len();
+        assert!(source.components[5].bytes.len() >= source.components[5].logical_size);
+        assert!(
+            !source.components[5].needs_stream_completion,
+            "disc {number} map {map} event output stays complete"
+        );
+        if number == 1 && map == 0 {
+            let component = &source.components[8];
+            let offset = source.header.offsets[8];
+            assert_eq!(component.logical_size, 0);
+            assert!(component.bytes.is_empty());
+            assert!(component.needs_stream_completion);
+            assert_eq!(source.input().bundle.len(), offset + 4);
+            assert_eq!(
+                u32::from_le_bytes(bundle[offset..offset + 4].try_into().unwrap()),
+                0
+            );
+            map0_c8 = Some(json!({
+                "slot":slot,"lba":record.lba,"source_sha256":hash(&bundle),
+                "c8_offset":offset,"c8_logical_size":component.logical_size,
+                "c8_needs_stream_completion":component.needs_stream_completion,
+                "terminal_header_at_eof":offset + 4 == bundle.len()
+            }));
+        }
+
+        let mut edited_header = source.header.clone();
+        if let Some(first) = edited_header.descriptors.first_mut() {
+            first.position[0] ^= 1;
+        } else {
+            zero_descriptor_headers += 1;
+            edited_header
+                .descriptors
+                .push(xem_studio::scene::formats::Descriptor {
+                    flags: 0,
+                    rotation: [0; 3],
+                    position: [0; 3],
+                    model: 0,
+                });
+        }
+        let candidate = source
+            .repack(&edited_header, &std::collections::BTreeMap::new())
+            .unwrap_or_else(|error| {
+                panic!(
+                    "disc {number} map {map} re-encode failed: {} ({})",
+                    error.kind, error.message
+                )
+            });
+        assert_eq!(
+            hash(&source.input().bundle),
+            hash(&bundle),
+            "repack does not mutate source"
+        );
+        let decoded = Source::load(Input {
+            bundle: candidate,
+            context: None,
+            source: None,
+            module_sha256: None,
+        })
+        .unwrap_or_else(|error| {
+            panic!(
+                "disc {number} map {map} candidate did not strict-reload: {} ({})",
+                error.kind, error.message
+            )
+        });
+        assert_eq!(
+            decoded.header.descriptors.len(),
+            edited_header.descriptors.len()
+        );
+        for (component, (before, after)) in source
+            .components
+            .iter()
+            .zip(&decoded.components)
+            .enumerate()
+        {
+            assert!(
+                !after.needs_stream_completion,
+                "disc {number} map {map} c{component} reloaded strictly"
+            );
+            assert_eq!(
+                after.optional_tail_bytes, 0,
+                "disc {number} map {map} c{component} normalized"
+            );
+            if before.needs_stream_completion {
+                assert!(after.bytes.len() >= before.bytes.len());
+                assert_eq!(
+                    hash(&after.bytes[..before.bytes.len()]),
+                    hash(&before.bytes),
+                    "disc {number} map {map} c{component} retains all known output"
+                );
+                assert!(after.bytes.len() - before.bytes.len() <= 16);
+                assert!(
+                    after.bytes[before.bytes.len()..]
+                        .iter()
+                        .all(|byte| *byte == 0)
+                );
+                normalized_components += 1;
+            } else {
+                assert_eq!(
+                    hash(&after.bytes),
+                    hash(&before.bytes),
+                    "disc {number} map {map} c{component} full decoded output preserved"
+                );
+                strict_components += 1;
+            }
+        }
+        strict_reloads += 1;
+        optional_tail_bytes += source
+            .components
+            .iter()
+            .map(|c| c.optional_tail_bytes)
+            .sum::<usize>();
+    }
+
+    let expected_rejected = if number == 1 {
+        vec![54, 84, 128, 140, 162, 168, 183, 453, 473]
+    } else {
+        Vec::new()
+    };
+    assert_eq!(
+        rejected_context_maps, expected_rejected,
+        "disc {number} C7 context-required maps match the font-independent audit"
+    );
+    assert_eq!(valid_bundles, if number == 1 { 730 } else { 205 });
+    assert_eq!(short_headers, if number == 1 { 0 } else { 525 });
+    assert_eq!(
+        placeholders, 0,
+        "all non-placeholder map records have a positive index length"
+    );
+    assert_eq!(exact_noops, valid_bundles - rejected_context_maps.len());
+    assert_eq!(strict_reloads, exact_noops);
+    if number == 1 {
+        assert!(
+            map0_c8.is_some(),
+            "actual Map 0 empty terminal was exercised"
+        );
+    }
+    json!({
+        "disc":number,"map_records":map_count,"placeholder_index_records":placeholders,
+        "short_header_placeholders":short_headers,"valid_bundles":valid_bundles,
+        "exact_noop_bundles":exact_noops,"strict_reloaded_candidates":strict_reloads,
+        "context_required_c7_maps":rejected_context_maps,
+        "strict_components_preserved":strict_components,
+        "incomplete_components_normalized":normalized_components,
+        "omitted_optional_bytes":optional_tail_bytes,"zero_descriptor_headers":zero_descriptor_headers,
+        "map0_empty_terminal":map0_c8,
+        "field_scene_decode_outcome_counts":outcome_counts(&public_decode_outcomes, "outcome"),
+        "field_scene_draft_open_outcome_counts":outcome_counts(&public_draft_open_outcomes, "outcome"),
+        "field_scene_decode_per_map":public_decode_outcomes,
+        "field_scene_draft_open_per_map":public_draft_open_outcomes
+    })
+}
+
+fn target_map_scene_summary(bundle: Vec<u8>, identity: SourceIdentity) -> Value {
+    let source = Source::load(Input {
+        bundle: bundle.clone(),
+        context: None,
+        source: Some(identity),
+        module_sha256: None,
+    })
+    .expect("target map has an offline-qualified source");
+    let component_status = source
+        .components
+        .iter()
+        .map(|component| {
+            json!({
+                "logical_size":component.logical_size,
+                "output_size":component.bytes.len(),
+                "needs_stream_completion":component.needs_stream_completion,
+                "optional_tail_bytes":component.optional_tail_bytes
+            })
+        })
+        .collect::<Vec<_>>();
+    let studio = Studio::new();
+    let input = json!({
+        "bundle":bundle,
+        "context":null,
+        "source":source.input().source.clone(),
+        "module_sha256":null
+    });
+    let decoded = command(
+        &studio,
+        "field.scene.decode",
+        json!({"input":input.clone(),"entrances":[]}),
+    );
+    let decoded = ok(&decoded, "decode target map through public Scene API");
+    let opened = command(
+        &studio,
+        "field.scene.draft",
+        json!({"kind":"open","input":input,"entrances":[]}),
+    );
+    let opened = ok(&opened, "open target map through public Scene draft API");
+    let scene = opened["scene"].as_u64().expect("Scene handle") as u32;
+    let state = &opened["state"];
+    let mut transformable_placements = Vec::new();
+    let bindings = state["events"]["bindings"]
+        .as_object()
+        .expect("Scene event bindings map");
+    for node in bindings.keys() {
+        let response = command(
+            &studio,
+            "field.scene.draft",
+            json!({"kind":"placement","scene":scene,"node":node}),
+        );
+        if response["ok"]["can_transform"] == true {
+            let placement = &response["ok"];
+            transformable_placements.push(json!({
+                "node":placement["node"],
+                "pc":placement["pc"],
+                "handler":placement["handler"],
+                "owners":placement["owners"],
+                "position":placement["position"]
+            }));
+        }
+    }
+    let closed = command(
+        &studio,
+        "field.scene.draft",
+        json!({"kind":"close","scene":scene}),
+    );
+    ok(&closed, "close target Scene handle");
+    json!({
+        "source_sha256":hash(&source.input().bundle),
+        "source_components":component_status,
+        "decoded":{
+            "descriptor_count":decoded["header"]["descriptors"].as_array().map(Vec::len),
+            "actor_count":decoded["actors"].as_array().map(Vec::len),
+            "zone_count":decoded["zones"]["zones"].as_array().map(Vec::len),
+            "collision_layer_count":decoded["collision"]["layers"].as_array().map(Vec::len),
+            "event_instruction_count":decoded["events"]["instructions"].as_array().map(Vec::len)
+        },
+        "draft_actors":state["actors"],
+        "transformable_placements":transformable_placements
+    })
+}
+
+#[test]
+#[ignore = "requires explicit original Disc 1; writes only structural metadata and hashes"]
+fn original_disc1_map0_and_map145_scene_editability_preflight() {
+    let disc_path = PathBuf::from(
+        std::env::var_os("XEM_STUDIO_OFFLINE_AUDIT_DISC1")
+            .expect("explicit original Disc 1 raw image path is required"),
+    );
+    assert!(disc_path.is_file());
+    let output = fresh_output();
+    let mut track = open_path(&disc_path).expect("open explicitly supplied original Disc 1");
+    let index = Index::from_disc(track.as_mut()).expect("read original Disc 1 raw index");
+    assert_eq!(index.disc_number(), Some(1));
+    let boot_sha256 = xem_disc::identify::hex(&KnownDisc::Disc1.executable_sha256());
+    let mut maps = Vec::new();
+    for map in [0u32, 145] {
+        let slot = index.slot(4, 0xB8 + map * 2).expect("map bundle slot");
+        let record = index.record(slot).expect("map bundle record");
+        assert!(record.size >= 0x190, "selected map is a complete bundle");
+        let size = usize::try_from(record.size).expect("positive original file size");
+        let bundle = read_data(track.as_mut(), record.lba, size).expect("read indexed map bytes");
+        let identity = SourceIdentity {
+            disc: 1,
+            boot_sha256: boot_sha256.clone(),
+            map,
+            slot: u32::try_from(slot).expect("slot fits source identity"),
+            lba: record.lba,
+            indexed_size: u32::try_from(bundle.len()).expect("bundle size fits source identity"),
+            source_sha256: hash(&bundle),
+        };
+        maps.push(
+            json!({"map":map,"slot":slot,"lba":record.lba,"bundle_size":bundle.len(),
+            "scene":target_map_scene_summary(bundle, identity)}),
+        );
+    }
+    write_summary(
+        &output,
+        &json!({
+            "kind":"original_disc1_offline_scene_target_preflight",
+            "maps":maps,
+            "raw_component_bytes_written_or_printed":false
+        }),
+    );
 }
 
 #[test]
@@ -265,7 +789,7 @@ fn original_disc_scene_formats_context_and_static_transform_preflight() {
             .expect("scene diagnostics")
             .iter()
             .any(|message| message.as_str().is_some_and(|message| {
-                message.contains("six decoded tail bytes are not preserved")
+                message.contains("6 advertised tail bytes")
                     && message.contains("not measured runtime context")
             }))
     );
@@ -806,6 +1330,326 @@ fn original_disc_scene_formats_context_and_static_transform_preflight() {
 }
 
 #[test]
+#[ignore = "requires explicit original Disc 1 and Disc 2 images; writes only counts/hashes"]
+fn both_disc_offline_component_load_noop_and_strict_repack_conformance() {
+    let disc1 = PathBuf::from(
+        std::env::var_os("XEM_STUDIO_OFFLINE_AUDIT_DISC1")
+            .expect("explicit original Disc 1 raw image path is required"),
+    );
+    let disc2 = PathBuf::from(
+        std::env::var_os("XEM_STUDIO_OFFLINE_AUDIT_DISC2")
+            .expect("explicit original Disc 2 raw image path is required"),
+    );
+    assert!(
+        disc1.is_file() && disc2.is_file(),
+        "both explicit original images exist"
+    );
+    let output = offline_audit_output();
+    let summary = json!({
+        "kind":"both_disc_offline_component_conformance",
+        "disc1":audit_indexed_disc(1, &disc1),
+        "disc2":audit_indexed_disc(2, &disc2),
+        "raw_component_bytes_written":false
+    });
+    write_summary(&output, &summary);
+    eprintln!("both-disc offline component conformance summary written under ignored output");
+}
+
+#[test]
+#[ignore = "requires both explicit original Disc images; writes only counts and hashes"]
+fn both_disc_nonempty_full_output_completions_end_on_complete_flag_groups() {
+    const MAP_FIRST_FILE: u32 = 0xB8;
+    let paths = [
+        (
+            1u8,
+            PathBuf::from(
+                std::env::var_os("XEM_STUDIO_OFFLINE_AUDIT_DISC1")
+                    .expect("explicit original Disc 1 raw image path is required"),
+            ),
+        ),
+        (
+            2u8,
+            PathBuf::from(
+                std::env::var_os("XEM_STUDIO_OFFLINE_AUDIT_DISC2")
+                    .expect("explicit original Disc 2 raw image path is required"),
+            ),
+        ),
+    ];
+    let output = offline_audit_output();
+    let mut per_disc = Vec::new();
+    let mut completions = Vec::new();
+    let mut admitted_total = 0usize;
+    let mut raw_full_outputs_total = 0usize;
+    let mut malformed_group_total = 0usize;
+    let mut context_required_total = 0usize;
+    for (number, path) in paths {
+        assert!(path.is_file(), "explicit Disc {number} input exists");
+        let mut track = open_path(&path).expect("open original raw disc");
+        let index = Index::from_disc(track.as_mut()).expect("read raw on-disc file index");
+        assert_eq!(index.disc_number(), Some(u16::from(number)));
+        let marker_slot = index
+            .slot(4, MAP_FIRST_FILE)
+            .expect("map directory starts in the index");
+        let map_count = index
+            .record(marker_slot - 1)
+            .and_then(|record| record.directory_len())
+            .expect("map count record is negative")
+            / 2;
+        let known_disc = match number {
+            1 => KnownDisc::Disc1,
+            2 => KnownDisc::Disc2,
+            _ => unreachable!(),
+        };
+        let boot_sha256 = xem_disc::identify::hex(&known_disc.executable_sha256());
+        let mut disc_completions = Vec::new();
+        let mut context_required = 0usize;
+        let mut disc_raw_full_outputs = 0usize;
+        let mut disc_malformed_groups = 0usize;
+        let mut placeholder_maps = 0usize;
+        let mut short_header_maps = 0usize;
+        let mut valid_bundle_count = 0usize;
+        let mut source_admitted_map_count = 0usize;
+        for map in 0..map_count {
+            let slot = index.slot(4, MAP_FIRST_FILE + map * 2).expect("map slot");
+            let record = index.record(slot).expect("map bundle record");
+            if record.is_unused() || record.size <= 0 {
+                placeholder_maps += 1;
+                continue;
+            }
+            if record.size < 0x190 {
+                short_header_maps += 1;
+                continue;
+            }
+            let size = usize::try_from(record.size).expect("positive bundle size");
+            assert!(size <= 32 << 20, "map stays inside the source-reader bound");
+            let bytes =
+                read_data(track.as_mut(), record.lba, size).expect("read indexed map bundle");
+            assert_eq!(bytes.len(), size, "read the complete indexed bundle");
+            valid_bundle_count += 1;
+            let header = match xem_studio::scene::formats::decode_header(&bytes) {
+                Ok(header) => header,
+                Err(_) => continue,
+            };
+            // Scan every component before Source::load, which can stop at an
+            // earlier context-required component. This keeps the denominator
+            // independent of public-scene admission outcomes.
+            for component_index in 0..9 {
+                let logical = header.logical_sizes[component_index];
+                let start = header.offsets[component_index];
+                let Some(stream) = bytes.get(start..) else {
+                    continue;
+                };
+                let limit = match logical.checked_add(16) {
+                    Some(limit) => limit,
+                    None => continue,
+                };
+                if let Err(packed::PackedError::Truncated { position, output }) =
+                    packed::decode_block(stream, limit)
+                {
+                    let declared = stream
+                        .get(..4)
+                        .and_then(|raw| raw.try_into().ok())
+                        .map(u32::from_le_bytes)
+                        .map(|value| value as usize);
+                    if let Some(declared) =
+                        declared.filter(|declared| *declared > 0 && output.len() == *declared)
+                    {
+                        if packed_prefix_ends_after_complete_flag_group(stream, position) {
+                            disc_raw_full_outputs += 1;
+                            raw_full_outputs_total += 1;
+                            completions.push(json!({
+                                "disc":number,
+                                "map":map,
+                                "component":component_index,
+                                "logical_size":logical,
+                                "declared_output_size":declared,
+                                "output_sha256":hash(&output)
+                            }));
+                        } else {
+                            disc_malformed_groups += 1;
+                            malformed_group_total += 1;
+                        }
+                    }
+                }
+            }
+            let identity = SourceIdentity {
+                disc: number,
+                boot_sha256: boot_sha256.clone(),
+                map,
+                slot: u32::try_from(slot).expect("slot fits source identity"),
+                lba: record.lba,
+                indexed_size: u32::try_from(size).expect("bundle size fits source identity"),
+                source_sha256: hash(&bytes),
+            };
+            let source = match Source::load(Input {
+                bundle: bytes,
+                context: None,
+                source: Some(identity),
+                module_sha256: None,
+            }) {
+                Ok(source) => source,
+                Err(error) if error.kind == "source_context_required" => {
+                    context_required += 1;
+                    context_required_total += 1;
+                    continue;
+                }
+                Err(error) => panic!(
+                    "Disc {number} map {map} Source::load failed: {} ({})",
+                    error.kind, error.message
+                ),
+            };
+            source_admitted_map_count += 1;
+            for (component_index, component) in source.components.iter().enumerate() {
+                if !component.needs_stream_completion
+                    || component.optional_tail_bytes != 0
+                    || component.bytes.is_empty()
+                {
+                    continue;
+                }
+                assert_eq!(
+                    component.bytes.len(),
+                    xem_disc::field_context::word(&source.input().bundle, component.source_offset)
+                        .expect("component packed header retains its advertised output size")
+                        as usize,
+                    "Disc {number} map {map} C{component_index} retains every advertised output byte"
+                );
+                admitted_total += 1;
+                disc_completions.push(json!({
+                    "map":map,
+                    "component":component_index,
+                    "output_size":component.bytes.len(),
+                    "output_sha256":hash(&component.bytes)
+                }));
+            }
+        }
+        per_disc.push(json!({
+            "disc":number,
+            "directory_map_count":map_count,
+            "placeholder_map_records":placeholder_maps,
+            "short_header_map_records":short_header_maps,
+            "valid_bundle_count":valid_bundle_count,
+            "source_admitted_map_count":source_admitted_map_count,
+            "source_context_required_maps":context_required,
+            "source_admitted_full_output_completion_count":disc_completions.len(),
+            "raw_full_output_complete_flag_group_count":disc_raw_full_outputs,
+            "raw_full_output_incomplete_flag_group_count":disc_malformed_groups
+        }));
+    }
+    write_summary(
+        &output,
+        &json!({
+            "kind":"both_disc_nonempty_full_output_flag_group_audit",
+            "source_admitted_full_output_completion_count":admitted_total,
+            "raw_full_output_complete_flag_group_count":raw_full_outputs_total,
+            "raw_full_output_incomplete_flag_group_count":malformed_group_total,
+            "source_context_required_map_count":context_required_total,
+            "per_disc":per_disc,
+            "components":completions,
+            "raw_component_bytes_written":false
+        }),
+    );
+    assert_eq!(
+        raw_full_outputs_total, 160,
+        "independent all-map scan retains the prior 160 full-output truncation candidates"
+    );
+    assert_eq!(
+        malformed_group_total, 0,
+        "no audited full-output truncation ends inside a flag group"
+    );
+    assert!(
+        admitted_total <= raw_full_outputs_total,
+        "Source admission count cannot exceed the raw full-output candidate count"
+    );
+}
+
+#[test]
+#[ignore = "requires explicit saved Map 0/145 projects produced by the current M7 UI"]
+fn saved_offline_map0_and_map145_projects_replay_with_exact_candidate_hashes() {
+    let artifacts = PathBuf::from(
+        std::env::var_os("XEM_STUDIO_M7_OFFLINE_REPLAY_DIR")
+            .expect("explicit checkpoint13 offline Scene project directory is required"),
+    );
+    assert!(artifacts.is_dir(), "saved Scene artifact directory exists");
+    let output = fresh_output();
+    let studio = Studio::new();
+    let mut maps = Vec::new();
+    for map in [0u16, 145u16] {
+        let project_bytes = fs::read(artifacts.join(format!("offline-map{map}-scene.json")))
+            .expect("read UI-saved Scene project");
+        let project_sha256 = hash(&project_bytes);
+        let summary_bytes = fs::read(artifacts.join(format!("offline-map{map}-summary.json")))
+            .expect("read UI package receipt");
+        let summary: Value =
+            serde_json::from_slice(&summary_bytes).expect("package receipt is JSON");
+        assert_eq!(summary["saved_project_sha256"], project_sha256);
+        let project: Value =
+            serde_json::from_slice(&project_bytes).expect("saved Scene project is JSON");
+        assert_eq!(project["map"], map);
+        let document = &project["document"];
+        assert_eq!(document["schema_version"], 4);
+        assert!(document["input"]["context"].is_null());
+        assert_eq!(document["actions"].as_array().map(Vec::len), Some(1));
+        assert_eq!(document["cursor"], 1);
+        let source_sha256 = document["input"]["source"]["source_sha256"]
+            .as_str()
+            .expect("saved project retains source identity");
+        assert_eq!(source_sha256, summary["original_source_sha256"]);
+        let expected_bundle_sha256 = summary["edited_compiled_bundle_sha256"]
+            .as_str()
+            .expect("UI receipt records the edited bundle hash");
+
+        let imported = ok(
+            &command(
+                &studio,
+                "field.scene.draft",
+                json!({"kind":"import","document":document}),
+            ),
+            "import the UI-saved offline Scene project",
+        );
+        let scene = imported["scene"].as_u64().expect("imported scene handle") as u32;
+        let compiled = ok(
+            &command(
+                &studio,
+                "field.scene.draft",
+                json!({"kind":"compile","scene":scene}),
+            ),
+            "compile the imported offline Scene project",
+        );
+        let bundle = bytes(&compiled["bundle"]);
+        let observed_bundle_sha256 = hash(&bundle);
+        assert_eq!(
+            observed_bundle_sha256, expected_bundle_sha256,
+            "current native Scene backend reproduces UI-produced Map {map} candidate"
+        );
+        assert_eq!(compiled["source_sha256"], source_sha256);
+        ok(
+            &command(
+                &studio,
+                "field.scene.draft",
+                json!({"kind":"close","scene":scene}),
+            ),
+            "close imported offline Scene project",
+        );
+        maps.push(json!({
+            "map":map,
+            "saved_project_sha256":project_sha256,
+            "source_sha256":source_sha256,
+            "expected_ui_candidate_sha256":expected_bundle_sha256,
+            "native_replay_candidate_sha256":observed_bundle_sha256,
+            "candidate_hashes_match":observed_bundle_sha256 == expected_bundle_sha256
+        }));
+    }
+    write_summary(
+        &output,
+        &json!({
+            "kind":"saved_offline_scene_current_backend_replay",
+            "maps":maps,
+            "raw_bundle_bytes_written":false
+        }),
+    );
+}
+
+#[test]
 #[ignore = "requires the exact previously qualified Map 23 Scene project"]
 fn original_map23_prefix_identity_sparse_repack_regression() {
     let project_path = PathBuf::from(
@@ -876,7 +1720,7 @@ fn original_map23_prefix_identity_sparse_repack_regression() {
     let identity_error =
         Source::load(tampered_identity).expect_err("modified identity is rejected");
     assert_eq!(identity_error.kind, "source_mismatch");
-    let mut rejected_selectors = Vec::new();
+    let mut structurally_accepted_metadata = Vec::new();
     for (field, value) in [("map", 22), ("slot", 651), ("lba", 124_527)] {
         let mut changed = input.clone();
         let identity = changed.source.as_mut().expect("qualified source identity");
@@ -886,12 +1730,38 @@ fn original_map23_prefix_identity_sparse_repack_regression() {
             "lba" => identity.lba = value,
             _ => unreachable!("fixed identity selector set"),
         }
-        assert!(
-            Source::load(changed).is_err(),
-            "changing source {field} must disable the exact-source exception"
-        );
-        rejected_selectors.push(field);
+        let accepted = Source::load(changed).unwrap_or_else(|error| {
+            panic!("range-valid {field} metadata is structural: {}", error.kind)
+        });
+        assert_eq!(hash(&accepted.input().bundle), ORIGINAL_BUNDLE_SHA256);
+        assert_eq!(accepted.components[8].logical_size, 72);
+        assert_eq!(accepted.components[8].optional_tail_bytes, 6);
+        structurally_accepted_metadata.push(field);
     }
+    let mut bad_size = input.clone();
+    bad_size
+        .source
+        .as_mut()
+        .expect("qualified source identity")
+        .indexed_size += 1;
+    assert_eq!(
+        Source::load(bad_size)
+            .expect_err("changed indexed size is rejected")
+            .kind,
+        "source_mismatch"
+    );
+    let mut bad_boot = input.clone();
+    bad_boot
+        .source
+        .as_mut()
+        .expect("qualified source identity")
+        .boot_sha256 = "00".repeat(32);
+    assert_eq!(
+        Source::load(bad_boot)
+            .expect_err("changed boot identity is rejected")
+            .kind,
+        "source_mismatch"
+    );
 
     let mut palette_bytes = source.components[0].bytes.clone();
     assert!(!palette_bytes.is_empty());
@@ -942,7 +1812,8 @@ fn original_map23_prefix_identity_sparse_repack_regression() {
             "required_prefix_size":decoded_prefix.data.len(),
             "one_byte_short_prefix_rejected":true,
             "tampered_source_identity_kind":identity_error.kind,
-            "modified_identity_selectors_rejected":rejected_selectors,
+            "structurally_accepted_metadata_fields":structurally_accepted_metadata,
+            "invalid_indexed_size_rejected":true,"invalid_boot_identity_rejected":true,
             "sparse_component_index":0,
             "sparse_candidate_sha256":hash(&normalized.input().bundle),
             "optional_c8_source_tail_bytes":6,

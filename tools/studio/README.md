@@ -1125,16 +1125,17 @@ supported-scene acceptance record, including format limitations, is
 [studio-milestone-7.md](../../docs/studio-milestone-7.md).
 
 
-## Qualified Map23 offline Scene policy
+## Qualified Map23 offline Scene policy (initial isolated fix)
 
-One exact original Disc1 Map23 source (slot652, LBA124528, indexed110052 bytes,
+The original isolated fix admitted one exact Disc1 Map23 source (slot652, LBA124528, indexed110052 bytes,
 bundle SHA2560f0a131acdf052cae070a64912fc09eb00e0b5e6a81f9d8cb4719d6416213add)
-can open and compile Scene offline without a runtime capture. Component8 at
+to open and compile Scene offline without a runtime capture. The general
+structural policy below now replaces that source allowlist. Component8 at
 source offset109992 has logical72 and packed output78. Only its72-byte logical
 payload is verified in this mode; six tail bytes are not preserved. This does
 not establish that they are junk, unused, or developer-intended padding. Other
-sources keep their existing validation and actionable context-required errors;
-an affected-map list has not been established.
+sources kept their existing validation and actionable context-required errors
+at that checkpoint. The general audit below now supplies explicit coverage.
 
 No edit, or edit then undo, returns exact indexed source bytes. Any actual edit
 normalizes component8 into a new self-contained authored stream and updates its
@@ -1148,3 +1149,69 @@ projects remain supported with strict full-output validation; event-only M6
 repacking is unchanged. Actual disconnected Scene edit/save/reload/Build and a
 new same-package native/browser field-entry comparison pass in the isolated
 verification. The active preview is not changed by those checks.
+
+
+## Structural offline Scene stream completion
+
+Scene first attempts the unchanged strict packed decoder. Only a missing-source
+read can enter offline completion; malformed references, output overflow and
+missing logical data still fail. Measured-context inputs/imports always retain
+strict complete-output validation. No RAM or disc-sector bytes are invented.
+
+When all advertised output is already known and only terminal lookahead is
+missing, Scene retains every known output byte. Nonempty output must end at
+an actual eight-token group boundary; reaching the advertised size mid-group
+cannot hide an inevitable output overflow behind a missing token. This includes
+a complete zero-length header at indexed EOF. It does not require a runtime just to obtain
+an otherwise unnecessary exit flag. Existing component parsers still enforce
+their own minimum headers, counts, offsets and bounds.
+
+An unavailable decoded suffix needs a component-specific proof. Component8 must
+contain whole 24-byte zone records within its logical prefix. Component7 must
+contain a complete message-table header/offset/dimension region and every valid
+entry must terminate inside the known logical bytes. Scene has no qualified
+loaded-font context: a bounded backward proof requires *both* one- and two-byte
+interpretations of every non-control glyph to terminate safely, and checks the
+original control lengths/continuations, including 0F04's selection fallback and
+0F0B's operand reread. It never assumes that a zero second glyph byte terminates
+text. Ambiguous messages still require qualified context. This is boundary
+validation, without translating or editing messages.
+
+Genuinely unavailable sprite, encounter, event or other opaque output remains
+context-required. In particular, event code may traverse bytes past its logical
+size. A logical prefix alone is not an execution-boundary proof. This policy
+makes no claim that any omitted suffix is junk, unused, or developer-intended
+padding; incomplete-source summaries expose `offline_stream_completion:true`
+and, where output is omitted, `optional_tail_bytes` plus a persistent diagnostic.
+
+No edit or edit followed by Undo returns the exact original indexed bytes.
+Every actual edited bundle serializes **every** admitted incomplete component as
+a complete self-contained authored stream and redirects its descriptor, including
+header-only edits or unchanged component payloads. The original incomplete stream
+cannot consume newly appended data. All final streams strictly decode; known
+unaffected outputs are preserved, and normal authored literal packing explicitly
+completes its final group within the original logical+16 allocation bound.
+Event-only M6 repacking and the runtime decoder are unchanged.
+
+
+Both-disc conformance inspects935 real bundles and525 placeholders:926 containers
+preserve exact no-edit bytes and strictly repack edits;9 Disc1 message tables
+remain context-required without a qualified font/source context (maps54,84,128,
+140,162,168,183,453,473). Public Scene decode accepts923; Disc1 maps164/165 and
+Disc2 map164 additionally report `invalid_scene_texture: texture offset table
+exceeds component`. Draft opening accepts926. These counts describe separate
+operations and do not establish whole-game gameplay support. Original Map0 and
+Map145 offline edit/Undo/Redo/Save/Load/Build pass; final native/WASM project replay
+reproduces their exact UI-built candidate hashes. See the current evidence in
+[the milestone document](../../docs/studio-milestone-7.md#general-offline-scene-stream-completion-2026-10-24-active-plan).
+
+The final original-map packages also execute on native and browser hosts with
+exact state/pose parity and absent=disabled controls. Map0 changes its authored
+X0→32. The Map145 fixture uses verified in-walkmesh X382→366; an earlier414
+fixture was outside its usable floor and is retained as a failed attempt. The
+corrected actor moves between total frames603 and733; its later stationary pose
+is reported rather than presenting a permanent offset or uninterrupted patrol.
+Normal production build verification consumes the current backend WASM and
+confirms the explicit test driver is absent. Publication and live-preview
+integration are separate steps; this fix's acceptance does not refresh a running
+user preview.
