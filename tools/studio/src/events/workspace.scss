@@ -22,3 +22,13 @@
 .event-draft-fields { display: flex; flex-wrap: wrap; gap: 8px; }
 .event-draft-operand { flex: 1 1 180px; min-width: 140px; display: flex; flex-direction: column; gap: 4px; }
 .event-draft-diagnostic { flex: 0 0 auto; max-height: 100px; overflow: auto; white-space: pre-wrap; }
+
+// Scene uses the remaining dock height; script find/caption rows stay in script views.
+.event-workspace--scene {overflow:hidden;}
+.event-workspace--scene > .event-view-surface {flex:1 1 0;min-height:220px;}
+.event-workspace--scene .field-scene {min-height:0;}
+.event-disc-browser--scene {flex:1 1 0;min-height:0;gap:4px;overflow:hidden;}
+.event-disc-browser--scene > .docker-list-layout {flex:0 1 70px;min-height:28px;max-height:70px;}
+.event-disc-sources > summary {cursor:pointer;}
+.event-disc-sources[open] {display:flex;flex-direction:column;gap:6px;}
+.event-draft-diagnostic > summary {cursor:pointer;}

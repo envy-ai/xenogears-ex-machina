@@ -1323,7 +1323,9 @@ tools/studio/scripts/tls-directory.js
 tools/studio/src/App.tsx
 tools/studio/src/backend/discs.ts
 tools/studio/src/backend/drafts.ts
+tools/studio/src/backend/field-authoring.ts
 tools/studio/src/backend/remote-discs.ts
+tools/studio/src/backend/scene-assets.ts
 tools/studio/src/backend/scenes.ts
 tools/studio/src/backend/service.ts
 tools/studio/src/domain/ids.ts
@@ -1339,6 +1341,7 @@ tools/studio/src/editor/NameHistory.tsx
 tools/studio/src/editor/NativeWindowControls.tsx
 tools/studio/src/editor/NumberField.tsx
 tools/studio/src/editor/RecordSelect.tsx
+tools/studio/src/editor/SceneCanvas.tsx
 tools/studio/src/editor/deltaHistory.ts
 tools/studio/src/editor/dockLayout.ts
 tools/studio/src/editor/editorCommands.ts
@@ -1376,6 +1379,11 @@ tools/studio/src/platform/host.ts
 tools/studio/src/platform/node-files.ts
 tools/studio/src/runtime/nativeWindowGeometry.ts
 tools/studio/src/runtime/nativeWindowState.ts
+tools/studio/src/scene/FieldScene.tsx
+tools/studio/src/scene/model.ts
+tools/studio/src/scene/scene.scss
+tools/studio/src/scene/textures.ts
+tools/studio/src/scene/useSceneEditor.ts
 tools/studio/src/smoke.ts
 tools/studio/src/studio.scss
 tools/studio/src/styles/_editor-button-theme.scss
@@ -1388,6 +1396,7 @@ tools/studio/src/styles/editor-surfaces.scss
 tools/studio/src/styles/editor-typography.scss
 tools/studio/src/styles/editor.scss
 tools/studio/src/styles/graph-canvas.scss
+tools/studio/src/styles/scene-canvas.scss
 tools/studio/tests/e2e/events-real-disc.spec.ts
 tools/studio/tests/e2e/events.fixture.ts
 tools/studio/tests/e2e/events.spec.ts
@@ -1411,6 +1420,7 @@ tools/studio/tests/e2e/nw-smoke.mjs
 tools/studio/tests/e2e/production-hook.spec.ts
 tools/studio/tests/e2e/real-parity.ts
 tools/studio/tests/e2e/remote-discs.spec.ts
+tools/studio/tests/e2e/scene-editor.spec.ts
 tools/studio/tests/e2e/serve-built.mjs
 tools/studio/tests/e2e/studio-test-driver.ts
 tools/studio/tests/e2e/studio.spec.ts
@@ -1422,6 +1432,7 @@ tools/studio/tests/scene_oracle.py
 tools/studio/tests/unit/disc-server.test.ts
 tools/studio/tests/unit/discs.test.ts
 tools/studio/tests/unit/event-search.test.ts
+tools/studio/tests/unit/field-authoring.test.ts
 tools/studio/tests/unit/files.test.ts
 tools/studio/tests/unit/game-pc.test.ts
 tools/studio/tests/unit/game-real-parity.test.ts
@@ -1430,6 +1441,7 @@ tools/studio/tests/unit/game-ui-real.test.ts
 tools/studio/tests/unit/game.test.ts
 tools/studio/tests/unit/name-history.test.ts
 tools/studio/tests/unit/remote-discs.test.ts
+tools/studio/tests/unit/scene-textures.test.ts
 tools/studio/tests/unit/scenes.test.ts
 tools/studio/tests/unit/service.test.ts
 tools/studio/tests/unit/tls-directory.test.ts

@@ -1,6 +1,6 @@
 import { nativeHost } from '../platform/host';
 
-type View = 'list' | 'graph' | 'lanes';
+type View = 'list' | 'graph' | 'lanes' | 'scene';
 interface Snapshot {
   view: View;
   selection: { actor: number; event: number; pc: number | null };

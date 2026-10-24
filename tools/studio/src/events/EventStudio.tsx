@@ -15,11 +15,14 @@ import { MapDiagnostics } from './MapDiagnostics';
 import { actorName, eventName, instructionPhrase, findInstruction, reachableInstructionPcs, formatPc, type FieldGraph, type EventStructure, type MapLanes, type NameTable, type Selection } from './model';
 import { useFieldDraft } from './useFieldDraft';
 import { DraftEditor } from './DraftEditor';
+import { useSceneEditor } from '../scene/useSceneEditor';
+import { FieldScene, SceneHierarchy, SceneProperties } from '../scene/FieldScene';
+import type { SceneInput } from '../backend/scenes';
 import type { DraftSnapshot } from '../backend/drafts';
 import './events.scss';
 import './workspace.scss';
 
-type View = 'list' | 'graph' | 'lanes';
+type View = 'list' | 'graph' | 'lanes' | 'scene';
 interface OpenDisc { session: DiscSession; maps: DiscMap[] }
 interface RenderTime { view: View; ms: number; actor: number; event: number; map: number; instructions: number }
 const emptyNames = (): NameTable => ({ schema_version: 1, variables: {}, maps: {}, messages: {} });
@@ -28,8 +31,8 @@ function useEvents() { const state = useContext(Context); if (!state) throw new 
 const nextPaint = () => new Promise<void>(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve())));
 
 async function paintedView(view: View): Promise<void> {
-  const label = { list: 'Command list', graph: 'Flow graph', lanes: 'Actor lanes' }[view];
-  const selector = { list: '.event-command-view', graph: '.graph-canvas__viewport', lanes: '.event-lanes-view' }[view];
+  const label = { list: 'Command list', graph: 'Flow graph', lanes: 'Actor lanes', scene:'Scene' }[view];
+  const selector = { list: '.event-command-view', graph: '.graph-canvas__viewport', lanes: '.event-lanes-view',scene:'.field-scene canvas' }[view];
   const deadline = performance.now() + 120_000;
   for (;;) {
     await new Promise<void>(resolve => requestAnimationFrame(() => resolve()));
@@ -69,6 +72,7 @@ function useStudio(backend: Backend | null, folder: FilesAdapter | null, report:
   const renderTimes = useRef<RenderTime[]>([]);
   const revision = useRef(0);
   const structures = useRef(new Map<string, EventStructure>());
+  const sceneSelectionChanged=useRef<(selection:Selection)=>void>(()=>{});
   const navigation = useRef<{ items: Selection[]; at: number }>({ items: [], at: -1 });
   const filterRef = useRef<HTMLInputElement>(null);
   const findRef = useRef<HTMLInputElement>(null);
@@ -79,9 +83,9 @@ function useStudio(backend: Backend | null, folder: FilesAdapter | null, report:
       if (previous !== undefined && previous !== row.actor_count) throw new Error(`Conflicting actor counts for map ${row.map}`);
       actor_counts[row.map] = row.actor_count;
     }
-    if (map !== null && graph) actor_counts[map] = graph.actors.length;
+    if (map !== null && graph) actor_counts[map] = (baseGraph??graph).actors.length;
     return { actor_counts };
-  }, [discs, graph, map]);
+  }, [discs, graph, baseGraph, map]);
   const call = useCallback(<T,>(op: string, args: unknown): T => {
     if (!backend) throw new Error('The backend is not ready');
     return readCommandResult<T>(backend.command(JSON.stringify({ op, args })));
@@ -131,7 +135,7 @@ function useStudio(backend: Backend | null, folder: FilesAdapter | null, report:
       else current.items = current.items.slice(0, current.at + 1);
       current.items.push(next); current.at = current.items.length - 1;
     }
-    setSelection(next); return true;
+    setSelection(next);if(next.pc!==selection.pc||next.actor!==selection.actor||next.event!==selection.event)sceneSelectionChanged.current(next); return true;
   }, [selection, draft.guard]);
   const install = useCallback(async (bytes: number[], declared_size: number, number: number, discId?: number) => {
     if (!draft.guard(true)) throw new Error('The source map cannot change while authored fields or project operations are pending');
@@ -238,12 +242,30 @@ function useStudio(backend: Backend | null, folder: FilesAdapter | null, report:
       try { setLanes(call<MapLanes>('field.lanes', { graph })); } catch (error) { report(error); }
     }
   }, [graph, view, lanes, call, report]);
+  const applySnapshot = (next: DraftSnapshot | null) => {
+    if (!next) return;
+    const oldId = selection.pc === null ? null : Object.entries(draft.snapshot?.bindings ?? {}).find(([,pc]) => pc === selection.pc)?.[0];
+    structures.current.clear(); setGraph(next.graph); setStructure(null); setLanes(null);
+    const oldActor=draft.sceneSnapshot?.actors[selection.actor]?.id;
+    const actors=draft.getSceneSnapshot()?.actors;
+    const actor=actors&&oldActor?Math.max(0,actors.findIndex(a=>a.id===oldActor)):selection.actor;
+    const entry = next.graph.entries.find(entry => entry.actor === actor && entry.event === selection.event);
+    const placed=oldId?next.bindings[oldId]:undefined;
+    const pc=placed!==undefined&&entry&&reachableInstructionPcs(next.graph,entry.pc).has(placed)?placed:entry?.pc??null;
+    setSelection({ actor, event:selection.event, pc });
+  };
   const setView = useCallback(async (next: View) => {
+    if(next!==view&&!draft.guard())return;
+    if(next==='scene'&&!draft.getSceneSnapshot()){
+      const source=discsRef.current.find(item=>item.session.id===activeDiscRef.current);
+      if(map===null||!source)throw new Error('Open a source disc/map before Scene');
+      const snapshot=await draft.openScene(map,source.session);if(!snapshot)return;applySnapshot(snapshot);
+    }
     if (renderTimes.current.some(time => time.view === next && time.map === map)) { setViewState(next); await nextPaint(); return; }
     const started = performance.now(); setViewState(next);
     if (graph) await paintedView(next); else await nextPaint();
     if (graph && map !== null) renderTimes.current.push({ view: next, ms: performance.now() - started, actor: selection.actor, event: selection.event, map, instructions: graph.instructions.length });
-  }, [graph, map, selection]);
+  }, [graph, map, selection,view,draft.openScene,draft.guard]);
   const navigate = useCallback((pc: number) => {
     if (!graph) return;
     if (!graph.instructions.some(instruction => instruction.pc === pc)) {
@@ -266,8 +288,8 @@ function useStudio(backend: Backend | null, folder: FilesAdapter | null, report:
       if (event.defaultPrevented) return;
       const editing = event.target instanceof HTMLElement && Boolean(event.target.closest('input,textarea,select,[contenteditable=true]'));
       if (document.querySelector('[aria-modal=true]')) return;
-      if ((event.ctrlKey || event.metaKey) && ['1','2','3'].includes(event.key)) { event.preventDefault(); void setView((['list','graph','lanes'] as View[])[Number(event.key) - 1]); }
-      if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'f') { event.preventDefault(); findRef.current?.focus(); }
+      if ((event.ctrlKey || event.metaKey) && ['1','2','3','4'].includes(event.key)) { event.preventDefault(); void setView((['list','graph','lanes','scene'] as View[])[Number(event.key) - 1]).catch(report); }
+      if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'f') { event.preventDefault(); if(view==='scene')document.querySelector<HTMLInputElement>('[data-scene-filter]')?.focus();else findRef.current?.focus(); }
       if (event.key === 'F2' && graph) { event.preventDefault(); setRename(true); }
       const interactive = event.target instanceof HTMLElement && Boolean(event.target.closest('button,a,[role=button],[role=tab],[role=menuitem]'));
       if (!editing && !interactive && event.target instanceof HTMLElement && event.target.closest('.event-view-surface') && event.key === 'Enter' && selection.pc !== null) { event.preventDefault(); follow(selection.pc); }
@@ -278,16 +300,9 @@ function useStudio(backend: Backend | null, folder: FilesAdapter | null, report:
     };
     window.addEventListener('keydown', key); return () => window.removeEventListener('keydown', key);
   }, [graph, selection, setView, follow, draft.guard, select]);
-  const applySnapshot = (next: DraftSnapshot | null) => {
-    if (!next) return;
-    const oldId = selection.pc === null ? null : Object.entries(draft.snapshot?.bindings ?? {}).find(([,pc]) => pc === selection.pc)?.[0];
-    structures.current.clear(); setGraph(next.graph); setStructure(null); setLanes(null);
-    const entry = next.graph.entries.find(entry => entry.actor === selection.actor && entry.event === selection.event);
-    setSelection({ ...selection, pc: oldId && next.bindings[oldId] !== undefined ? next.bindings[oldId] : entry?.pc ?? null });
-  };
   useEffect(() => {
     const key = (event: KeyboardEvent) => {
-      if (!event.defaultPrevented && event.key === 'Insert' && event.target instanceof HTMLElement && event.target.closest('[data-studio-panel="events"]') && !event.target.closest('input,textarea,select,[contenteditable=true]')) { event.preventDefault(); draft.begin('insert'); return; }
+      if (view!=='scene' && !event.defaultPrevented && event.key === 'Insert' && event.target instanceof HTMLElement && event.target.closest('[data-studio-panel="events"]') && !event.target.closest('input,textarea,select,[contenteditable=true]')) { event.preventDefault(); draft.begin('insert'); return; }
       if (event.defaultPrevented || !(event.ctrlKey || event.metaKey) || event.altKey || document.querySelector('[aria-modal=true]')) return;
       const target = event.target instanceof HTMLElement ? event.target : null;
       if (!target?.closest('[data-studio-panel="events"]')) return;
@@ -297,7 +312,15 @@ function useStudio(backend: Backend | null, folder: FilesAdapter | null, report:
     };
     window.addEventListener('keydown', key); return () => window.removeEventListener('keydown', key);
   });
-  const state = { draft, baseGraph, applySnapshot, folder, context, backend, componentBytes, discs, activeDisc, setActiveDisc: selectDisc, map, graph, selection, select, structure, lanes, view, setView, busy, filter, setFilter, find, setFind, rename, setRename, history, sidecarReady, sidecarError, filterRef, findRef, openFiles, openNativePath, openServerDisc, loadMap, closeDisc, follow, navigate, install, report, renderTimes };
+  const sceneEditor=useSceneEditor(draft,applySnapshot,(actor,event,pc,reveal=false)=>{const accepted=select({actor,event,pc},true);if(accepted&&reveal)void setView('list').catch(report);return accepted;},selection);
+  sceneSelectionChanged.current=sceneEditor.syncScript;
+  const displayNames=useMemo(()=>{
+    const original=history.value;if(!draft.sceneSnapshot||map===null)return original;
+    const result=structuredClone(original),source=original.maps[String(map)]?.actors??{},actors:typeof source={};
+    draft.sceneSnapshot.actors.forEach((actor,index)=>{if(actor.origin.kind==='original'&&source[String(actor.origin.actor)])actors[String(index)]=source[String(actor.origin.actor)];});
+    result.maps[String(map)]={actors};return result;
+  },[history.value,draft.sceneSnapshot,map]);
+  const state = { draft, sceneEditor, displayNames, baseGraph, applySnapshot, folder, context, backend, componentBytes, discs, activeDisc, setActiveDisc: selectDisc, map, graph, selection, select, structure, lanes, view, setView, busy, filter, setFilter, find, setFind, rename, setRename, history, sidecarReady, sidecarError, filterRef, findRef, openFiles, openNativePath, openServerDisc, loadMap, closeDisc, follow, navigate, install, report, renderTimes };
   const latest = useRef(state); latest.current = state;
   useEffect(() => {
     if (import.meta.env.VITE_XEM_STUDIO_TEST !== '1' || !backend) return;
@@ -307,7 +330,12 @@ function useStudio(backend: Backend | null, folder: FilesAdapter | null, report:
       openNativePath: (path: string) => latest.current.openNativePath(path),
       selectMap: (discId: number, number: number) => latest.current.loadMap(discId, number),
       setView: (next: View) => latest.current.setView(next),
-      snapshot: () => { const s = latest.current; return { view: s.view, selection: s.selection, map: s.map, instructions: s.graph?.instructions.length ?? 0, draft: s.draft.snapshot ? { revision: s.draft.snapshot.revision, bindings: s.draft.snapshot.bindings, graph: s.draft.snapshot.graph, bytes: s.draft.inspect()?.bytes ?? [] } : null, discs: s.discs.map(disc => ({ id: disc.session.id, disc: disc.session.status.identity?.disc, mapCount: disc.maps.length, placeholders: disc.maps.filter(map => map.placeholder).length })), renderTimes: [...s.renderTimes.current] }; },
+      loadScene:async(input:SceneInput,entrances:number[]=[],number=0)=>{
+        const s=latest.current,next=s.draft.openSceneInput(input,entrances),original=s.draft.original()!,source=s.draft.getSceneSnapshot()!;
+        structures.current.clear();navigation.current={items:[],at:-1};setBaseGraph(original);setComponentBytes(source.events.bytes);setMap(number);setGraph(next.graph);setStructure(null);setLanes(null);setViewState('scene');
+        const first=next.graph.entries[0];setSelection(first?{actor:first.actor,event:first.event,pc:first.pc}:{actor:0,event:0,pc:null});await paintedView('scene');
+      },
+      snapshot: () => { const s = latest.current; return { view: s.view, selection: s.selection, map: s.map, scene:s.draft.getSceneSnapshot(), sceneSelection:s.sceneEditor.selected, instructions: s.graph?.instructions.length ?? 0, draft: s.draft.snapshot ? { revision: s.draft.snapshot.revision, bindings: s.draft.snapshot.bindings, graph: s.draft.snapshot.graph, bytes: s.draft.inspect()?.bytes ?? [] } : null, discs: s.discs.map(disc => ({ id: disc.session.id, disc: disc.session.status.identity?.disc, mapCount: disc.maps.length, placeholders: disc.maps.filter(map => map.placeholder).length })), renderTimes: [...s.renderTimes.current] }; },
     };
     (window as unknown as { __xemStudioTest: typeof hook }).__xemStudioTest = hook;
     if (nativeHost?.App.argv.some(argument => argument.startsWith('--studio-events-test='))) void import('./test-driver').then(driver => driver.runEventsTest(hook)).catch(report);
@@ -336,7 +364,10 @@ export function useEventNavigation() {
       if (!base || !entry || selection.pc === null || !base.instructions.some(item => item.pc === selection.pc) || !reachableInstructionPcs(base, entry.pc).has(selection.pc)) throw new Error('Live selection is not an exact source instruction owned by this actor/event');
       const authoredPc = current.draft.snapshot?.bindings[`pc:${selection.pc}`];
       if (authoredPc === undefined || !current.graph?.instructions.some(item => item.pc === authoredPc)) throw new Error('The live source instruction is no longer reachable in the authored draft');
-      if (!current.select({ ...selection, pc: authoredPc }, true)) throw new Error('Apply or Cancel inline instruction fields before live navigation');
+      const scene=current.draft.getSceneSnapshot();const actor=scene?scene.actors.findIndex(actor=>actor.origin.kind==='original'&&actor.origin.actor===selection.actor):selection.actor;
+      if(actor<0)throw new Error('The original live actor was deleted from the authored scene');
+      const authoredEntry=current.graph.entries.find(entry=>entry.actor===actor&&entry.event===selection.event);if(!authoredEntry||!reachableInstructionPcs(current.graph,authoredEntry.pc).has(authoredPc))throw new Error('The source instruction is not reachable for this authored actor/event');
+      if (!current.select({ ...selection, actor, pc: authoredPc }, true)) throw new Error('Apply or Cancel inline instruction fields before live navigation');
     },
   };
 }
@@ -365,13 +396,14 @@ export function DiscBrowser() {
   };
   const disc = s.discs.find(disc => disc.session.id === s.activeDisc);
   const maps = disc?.maps.filter(map => `${map.map} ${map.placeholder ? 'placeholder' : ''}`.includes(s.filter.toLowerCase())) ?? [];
-  return <section className="event-disc-browser" aria-label="Disc and map browser" onKeyDown={event => {
+  return <section className={`event-disc-browser${s.view==='scene'?' event-disc-browser--scene':''}`} aria-label="Disc and map browser" onKeyDown={event => {
     if (!(event.target instanceof HTMLElement) || !event.target.matches('[data-map]')) return;
     const buttons = [...event.currentTarget.querySelectorAll<HTMLButtonElement>('[data-map]')]; const at = buttons.indexOf(event.target as HTMLButtonElement);
     const next = event.key === 'ArrowDown' ? at + 1 : event.key === 'ArrowUp' ? at - 1 : event.key === 'Home' ? 0 : event.key === 'End' ? buttons.length - 1 : -1;
     if (next >= 0 && next < buttons.length) { event.preventDefault(); buttons[next].focus(); }
   }}>
     <h2 className="editor-heading editor-heading--section">Discs</h2>
+    <details className="event-disc-sources" open={s.view!=='scene'}><summary className="editor-text">Open disc sources</summary>
     {nativeHost ? <form onSubmit={event => { event.preventDefault(); s.openNativePath(path).catch(s.report); }} className="editor-field-list"><label className="editor-field editor-field-label"><span>Disc image path</span><input className="editor-control editor-control--text" value={path} onChange={event => setPath(event.target.value)} /></label><button className="editor-button" disabled={!s.backend || Boolean(s.busy)} type="submit">Open disc path</button></form>
       : <label className="editor-field editor-field-label"><span>Open disc files</span><input className="editor-control editor-control--file" type="file" multiple accept=".chd,.bin,.cue" disabled={!s.backend || Boolean(s.busy)} onChange={event => { const files = [...event.target.files ?? []]; event.target.value = ''; s.openFiles(files).catch(s.report); }} /></label>}
     {!nativeHost && <div className="editor-field-list" aria-label="Server discs">
@@ -382,11 +414,13 @@ export function DiscBrowser() {
       </select></label><button className="editor-button" disabled={!serverId || serverLoading || Boolean(s.busy)} onClick={() => openServer().catch(s.report)}>Open server disc</button></>}
       <p className="editor-text editor-text--secondary" role="status">{serverLoading ? 'Reading server discs…' : catalogue ? catalogue.enabled ? 'Server files · read only' : 'Server disc access is not configured.' : 'Open an image from the configured server folder.'}</p>
     </div>}
-    <p className="editor-text" role="status">{s.busy || (s.discs.length ? `${s.discs.length} recognized disc sessions` : 'Open your own CHD or BIN/CUE image.')}</p>
+    </details>
+    <p hidden={s.view==='scene'&&!s.busy} className="editor-text" role="status">{s.busy || (s.discs.length ? `${s.discs.length} recognized disc sessions` : 'Open your own CHD or BIN/CUE image.')}</p>
     {s.discs.map(item => <div className="event-disc-row" key={item.session.id}><button className="editor-button" aria-pressed={s.activeDisc === item.session.id} onClick={() => s.setActiveDisc(item.session.id)}>Disc {item.session.status.identity?.disc ?? 'test'} · {item.maps.length} maps</button><button className="editor-button editor-button--compact" aria-label={`Close disc ${item.session.id}`} title="Close disc" onClick={() => s.closeDisc(item.session.id).catch(s.report)}>Close</button></div>)}
     <label className="editor-field editor-field-label"><span>Filter maps</span><input ref={s.filterRef} className="editor-control editor-control--text" value={s.filter} onChange={event => s.setFilter(event.target.value)} /></label>
     <DockerList><DockerListBody>{maps.map(item => <DockerListRow key={item.map} intrinsicHeight columns="1fr"><button data-map={item.map} className="editor-button event-map-row" aria-pressed={s.map === item.map && s.activeDisc === disc?.session.id} onClick={() => disc && s.loadMap(disc.session.id, item.map).catch(s.report)}><span>Map {item.map}</span><span className="editor-text editor-text--secondary">{item.placeholder ? 'Placeholder' : `${item.actor_count} actors · ${item.script_size} bytes`}</span></button></DockerListRow>)}{!maps.length && <DockerListEmpty>{disc ? 'No matching maps.' : 'No disc open.'}</DockerListEmpty>}</DockerListBody></DockerList>
-    {s.graph && s.map !== null && <ActorTree graph={s.graph} names={s.history.value} map={s.map} selection={s.selection} onSelect={s.select} />}
+    {s.view!=='scene' && s.graph && s.map !== null && <ActorTree graph={s.graph} names={s.displayNames} map={s.map} selection={s.selection} onSelect={s.select} />}
+    {s.view==='scene'&&s.draft.sceneSnapshot&&<SceneHierarchy editor={s.sceneEditor}/>}
   </section>;
 }
 
@@ -395,7 +429,7 @@ export function EventViews() {
   const [discardArmed, setDiscardArmed] = useState(false);
   const activeDisc = s.discs.find(item => item.session.id === s.activeDisc);
   const discNumber = activeDisc?.session.status.identity?.disc ?? null;
-  const names = s.history.value;
+  const names = s.displayNames;
   const [markerSelection, setMarkerSelection] = useState<string | null>(null);
   useEffect(() => setMarkerSelection(null), [s.graph, s.selection.pc]);
   const reachable = useMemo(() => s.graph ? reachableInstructionPcs(s.graph, s.structure?.entry_pc ?? null) : new Set<number>(), [s.graph, s.structure]);
@@ -422,31 +456,32 @@ export function EventViews() {
     return nodes;
   }, [s.graph, s.map, reachable, names, s.view, s.selection.actor]);
   const graphEdges = useMemo(() => s.graph?.edges.filter(edge => reachable.has(edge.from_pc)).map((edge, index) => ({ id: `${index}`, from: String(edge.from_pc), to: reachable.has(edge.to_pc) ? String(edge.to_pc) : `target:${edge.to_pc}:${edge.status}`, kind: edge.kind, status: edge.status, fromPort: edge.kind === 'branch' || edge.kind === 'table_entry' ? 'right' as const : 'bottom' as const })) ?? [], [s.graph, reachable]);
-  return <section className="event-workspace" aria-label="Field events" data-studio-panel="events" tabIndex={-1}>
-    <header className="event-view-toolbar"><div role="tablist" aria-label="Event views">{(['list','graph','lanes'] as View[]).map((view, index) => <button className="editor-button" role="tab" aria-selected={s.view === view} key={view} onClick={() => void s.setView(view)} title={`Ctrl+${index + 1}`}>{['Command list','Flow graph','Actor lanes'][index]}</button>)}</div><button className="editor-button" disabled={!s.graph} onClick={() => s.setRename(true)} title="Rename (F2)">Rename…</button></header>
+  return <section className={`event-workspace${s.view==='scene'?' event-workspace--scene':''}`} aria-label="Field events" data-studio-panel="events" tabIndex={-1}>
+    <header className="event-view-toolbar"><div role="tablist" aria-label="Event views">{(['list','graph','lanes','scene'] as View[]).map((view, index) => <button className="editor-button" role="tab" aria-selected={s.view === view} key={view} onClick={() => void s.setView(view).catch(s.report)} title={`Ctrl+${index + 1}`}>{['Command list','Flow graph','Actor lanes','Scene'][index]}</button>)}</div><button className="editor-button" disabled={!s.graph} onClick={() => s.setRename(true)} title="Rename (F2)">Rename…</button></header>
     {s.graph && s.draft.snapshot && <div className="event-draft-toolbar" aria-label="Authored draft controls">
-      <button className="editor-button editor-button--compact" disabled={(s.draft.pending || Boolean(s.busy)) || s.selection.pc === null} onClick={() => s.draft.begin('insert')}>Insert node</button>
-      <button className="editor-button editor-button--compact" disabled={(s.draft.pending || Boolean(s.busy))} onClick={() => s.draft.begin('event')}>New event</button>
+      {s.view!=='scene'&&<button className="editor-button editor-button--compact" disabled={(s.draft.pending || Boolean(s.busy)) || s.selection.pc === null} onClick={() => s.draft.begin('insert')}>Insert node</button>}
+      {s.view!=='scene'&&<button className="editor-button editor-button--compact" disabled={(s.draft.pending || Boolean(s.busy))} onClick={() => s.draft.begin('event')}>New event</button>}
       <button className="editor-button editor-button--compact" disabled={s.draft.inlineDirty || (s.draft.pending || Boolean(s.busy)) || !s.draft.snapshot.can_undo} onClick={() => s.applySnapshot(s.draft.history('undo'))} title="Ctrl+Z">Undo</button>
       <button className="editor-button editor-button--compact" disabled={s.draft.inlineDirty || (s.draft.pending || Boolean(s.busy)) || !s.draft.snapshot.can_redo} onClick={() => s.applySnapshot(s.draft.history('redo'))} title="Ctrl+Shift+Z">Redo</button>
       <button className="editor-button editor-button--compact" disabled={s.draft.inlineDirty || (s.draft.pending || Boolean(s.busy))} onClick={s.draft.validate}>Validate</button>
-      <button className="editor-button editor-button--compact" disabled={s.draft.inlineDirty || (s.draft.pending || Boolean(s.busy)) || !s.folder} onClick={() => s.draft.save(s.map!, discNumber, names).catch(s.report)} title="Ctrl+S">Save project</button>
+      <button className="editor-button editor-button--compact" disabled={s.draft.inlineDirty || (s.draft.pending || Boolean(s.busy)) || !s.folder} onClick={() => s.draft.save(s.map!, discNumber, s.history.value).catch(s.report)} title="Ctrl+S">Save project</button>
       <button className="editor-button editor-button--compact" disabled={s.draft.inlineDirty || (s.draft.pending || Boolean(s.busy)) || !s.folder} onClick={() => s.draft.load(s.map!, discNumber, s.context, activeDisc?.session ?? null).then(result => { if (result) { s.history.reset(result.names); s.applySnapshot(result.snapshot); } }).catch(s.report)}>Load project</button>
       <button className="editor-button editor-button--compact" disabled={(s.draft.pending || Boolean(s.busy))} onClick={() => { if (discardArmed) { s.applySnapshot(s.draft.discard()); setDiscardArmed(false); } else setDiscardArmed(true); }}>{discardArmed ? 'Confirm discard draft' : 'Discard draft…'}</button>
       <button className="editor-button editor-button--compact" disabled={s.draft.inlineDirty || (s.draft.pending || Boolean(s.busy)) || !s.folder || !activeDisc} onClick={() => s.draft.build(s.map!, activeDisc!.session).catch(s.report)}>Build package</button>
       <button className="editor-button editor-button--compact" disabled={s.draft.inlineDirty || (s.draft.pending || Boolean(s.busy)) || !s.draft.canPlay || s.draft.lastBuild?.revision !== s.draft.snapshot.revision || s.draft.lastBuild?.draft !== s.draft.snapshot.draft} onClick={() => s.draft.play().catch(s.report)}>Play</button>
       <span className="editor-text editor-text--caption">Authored draft · {s.draft.inlineDirty ? 'Unapplied fields · build blocked' : s.draft.contextDirty ? 'Unsaved' : !s.draft.hasSavedProject && !s.draft.snapshot.modified ? 'Unmodified source' : s.draft.snapshot.revision === s.draft.savedRevision ? 'Saved' : 'Unsaved'} · Live runtime separate</span>
     </div>}
-    <label className="editor-field editor-field-label event-find"><span>Find within map</span><input ref={s.findRef} className="editor-control editor-control--text" value={s.find} onChange={event => s.setFind(event.target.value)} placeholder="Mnemonic, name or PC" onKeyDown={event => { if (event.key === 'Enter' && s.graph) { const found = findInstruction(s.graph.instructions, s.find, names, s.map ?? 0); if (found) { const entry = s.graph.entries.find(entry => reachableInstructionPcs(s.graph!, entry.pc).has(found.pc)); s.select({ actor: entry?.actor ?? s.selection.actor, event: entry?.event ?? s.selection.event, pc: found.pc }, true); } } }} /></label>
-    {s.graph && s.map !== null ? <><p className="editor-text event-caption">Map {s.map} · {actorName(names, s.map, s.selection.actor)} · {eventName(names, s.map, s.selection.actor, s.selection.event)} · {s.graph.instructions.length} map instructions · Authored view; original image stays read-only</p>
-      <div className="event-view-surface" role="tabpanel" aria-label={s.view === 'list' ? 'Command list' : s.view === 'graph' ? 'Flow graph' : 'Actor lanes'}>
+    {s.view!=='scene'&&<label className="editor-field editor-field-label event-find"><span>Find within map</span><input ref={s.findRef} className="editor-control editor-control--text" value={s.find} onChange={event => s.setFind(event.target.value)} placeholder="Mnemonic, name or PC" onKeyDown={event => { if (event.key === 'Enter' && s.graph) { const found = findInstruction(s.graph.instructions, s.find, names, s.map ?? 0); if (found) { const entry = s.graph.entries.find(entry => reachableInstructionPcs(s.graph!, entry.pc).has(found.pc)); s.select({ actor: entry?.actor ?? s.selection.actor, event: entry?.event ?? s.selection.event, pc: found.pc }, true); } } }} /></label>}
+    {s.graph && s.map !== null ? <><p hidden={s.view==='scene'} className="editor-text event-caption">Map {s.map} · {actorName(names, s.map, s.selection.actor)} · {eventName(names, s.map, s.selection.actor, s.selection.event)} · {s.graph.instructions.length} map instructions · Authored view; original image stays read-only</p>
+      <div className="event-view-surface" role="tabpanel" aria-label={s.view === 'list' ? 'Command list' : s.view === 'graph' ? 'Flow graph' : s.view==='lanes'?'Actor lanes':'Scene'}>
         {s.view === 'list' && s.graph.actors.length === 0 && <div className="event-command-view"><DockerList><DockerListEmpty>This component has no actor/event entries.</DockerListEmpty></DockerList></div>}
         {s.view === 'list' && s.structure && <CommandList graph={s.graph} structure={s.structure} names={names} map={s.map} selectedPc={s.selection.pc} onSelect={pc => s.select({ ...s.selection, pc })} onFollow={s.navigate} />}
         {s.view === 'graph' && <GraphCanvas nodes={graphNodes} edges={graphEdges} selectedId={markerSelection ?? (s.selection.pc === null ? null : String(s.selection.pc))} onSelect={id => { if (id.startsWith('target:')) setMarkerSelection(id); else { setMarkerSelection(null); s.select({ ...s.selection, pc: Number(id) }); } }} onActivate={id => { if (!id.startsWith('target:')) s.follow(Number(id)); }} ariaLabel="Event flow graph" />}
+        {s.view==='scene'&&<FieldScene editor={s.sceneEditor} draft={s.draft} onError={s.report}/>}
         {s.view === 'lanes' && s.lanes && <ActorLanes lanes={s.lanes} names={names} map={s.map} selection={s.selection} onSelect={next => s.select(next, true)} />}
       </div>{s.view !== 'list' && <MapDiagnostics graph={s.graph} onNavigate={s.navigate} />}</> : <p className="editor-text editor-text--secondary">{s.map !== null ? `Map ${s.map} is a placeholder.` : 'Open a disc and select a map to inspect its events.'}</p>}
-    {s.draft.snapshot && s.graph && s.backend && s.map !== null && <DraftEditor disabled={s.draft.pending || Boolean(s.busy)} key={s.draft.editorKey} backend={s.backend} snapshot={s.draft.snapshot} pc={s.selection.pc} actor={s.selection.actor} event={s.selection.event} map={s.map} names={names} mode={s.draft.mode} onDirty={s.draft.dirty} onCancel={s.draft.cancel} onError={s.report} onApply={action => { const id = s.selection.pc === null ? null : s.draft.nodeAt(s.selection.pc); const next = s.draft.edit(action); s.applySnapshot(next); if (id && next.bindings[id] !== undefined) s.select({ ...s.selection, pc: next.bindings[id] }); }} />}
-    {s.draft.error && <pre className="editor-text editor-text--danger event-draft-diagnostic" role="alert">{s.draft.error.stack ?? s.draft.error.message}</pre>}
+    {s.view!=='scene' && s.draft.snapshot && s.graph && s.backend && s.map !== null && <DraftEditor disabled={s.draft.pending || Boolean(s.busy)} key={s.draft.editorKey} backend={s.backend} snapshot={s.draft.snapshot} pc={s.selection.pc} actor={s.selection.actor} event={s.selection.event} map={s.map} names={names} mode={s.draft.mode} onDirty={s.draft.dirty} onCancel={s.draft.cancel} onError={s.report} onApply={action => { const id = s.selection.pc === null ? null : s.draft.nodeAt(s.selection.pc); const next = s.draft.edit(action); s.applySnapshot(next); if (id && next.bindings[id] !== undefined) s.select({ ...s.selection, pc: next.bindings[id] }); }} />}
+    {s.draft.error&&<details className="event-draft-diagnostic editor-card" role="alert"><summary className="editor-text editor-text--warning">{s.draft.error.message}</summary><pre className="editor-text editor-text--code">{s.draft.error.stack??s.draft.error.message}</pre></details>}
     {s.draft.lastBuild && <p className="editor-text editor-text--caption">Last successful build: {s.draft.lastBuild.file} · {s.draft.lastBuild.identity} · revision {s.draft.lastBuild.revision}{s.draft.inlineDirty ? ' · retained while fields are unapplied' : ''}</p>}
     {s.rename && <NameEditor onClose={() => s.setRename(false)} />}
   </section>;
@@ -459,7 +494,9 @@ function NameEditor({ onClose }: { onClose(): void }) {
   const input = useRef<HTMLInputElement>(null);
   useEffect(() => { input.current?.focus(); }, []);
   const value = s.history.draft;
-  const actor = value.maps[String(s.map)]?.actors[String(s.selection.actor)];
+  const sceneActor=s.draft.sceneSnapshot?.actors[s.selection.actor];
+  const sourceActor=sceneActor?(sceneActor.origin.kind==='original'?sceneActor.origin.actor:null):s.selection.actor;
+  const actor = value.maps[String(s.map)]?.actors[String(sourceActor)];
   const name = scope === 'actor' ? actor?.name ?? '' : scope === 'event' ? actor?.events[String(s.selection.event)] ?? '' : scope === 'variable' ? value.variables[id] ?? '' : value.messages[id] ?? '';
   const setName = (name: string) => {
     const next = structuredClone(value);
@@ -467,7 +504,8 @@ function NameEditor({ onClose }: { onClose(): void }) {
     else if (scope === 'message') next.messages[id] = name;
     else {
       const map = next.maps[String(s.map)] ??= { actors: {} };
-      const actor = map.actors[String(s.selection.actor)] ??= { events: {} };
+      if(sourceActor===null){s.report(new Error('This actor has no original names.json index; its stable authored ID is retained'));return;}
+      const actor = map.actors[String(sourceActor)] ??= { events: {} };
       if (scope === 'actor') actor.name = name; else actor.events[String(s.selection.event)] = name;
     }
     s.history.setValue(next);
@@ -479,7 +517,7 @@ function NameEditor({ onClose }: { onClose(): void }) {
     {!s.sidecarReady && <p className="editor-text editor-text--danger">{s.sidecarError instanceof Error ? s.sidecarError.message : 'Open a project folder with a valid names sidecar before renaming.'}</p>}
     <label className="editor-field editor-field-label"><span>Name scope</span><select className="editor-control editor-control--select" disabled={s.history.pending} value={scope} onChange={event => { if (s.history.getSnapshot().pending) return; s.history.cancelDraft(); setScope(event.target.value as typeof scope); }}><option value="event">Selected event</option><option value="actor">Selected actor</option><option value="variable">Variable slot</option><option value="message">Message ID</option></select></label>
     {(scope === 'variable' || scope === 'message') && <label className="editor-field editor-field-label"><span>{scope === 'variable' ? 'Variable slot' : 'Message ID'}</span><input className="editor-control editor-control--text" disabled={s.history.pending} value={id} onChange={event => { if (s.history.getSnapshot().pending) return; s.history.cancelDraft(); setId(event.target.value); }} /></label>}
-    <label className="editor-field editor-field-label"><span>Name</span><input ref={input} className="editor-control editor-control--text" disabled={!s.sidecarReady || s.history.pending} value={name} onChange={event => setName(event.target.value)} /></label>
+    <label className="editor-field editor-field-label"><span>Name</span><input ref={input} className="editor-control editor-control--text" disabled={!s.sidecarReady || s.history.pending || ((scope==='actor'||scope==='event')&&sourceActor===null)} value={name} onChange={event => setName(event.target.value)} /></label>
     <div className="studio-toolbar"><button className="editor-button editor-button--primary" disabled={!s.sidecarReady || s.history.pending || !s.history.dirty} onClick={() => s.history.commit().catch(s.report)}>Save name</button><button className="editor-button" disabled={!s.history.canUndo} onClick={() => s.history.undo().catch(s.report)}>Undo name</button><button className="editor-button" disabled={!s.history.canRedo} onClick={() => s.history.redo().catch(s.report)}>Redo name</button><button className="editor-button" disabled={s.history.pending} onClick={() => { if (s.history.dirty) s.history.cancelDraft(); onClose(); }}>Close names</button></div>
   </section></EditorDialogShell>;
 }
@@ -487,4 +525,16 @@ function NameEditor({ onClose }: { onClose(): void }) {
 export function useEventPackagePlay() {
   const { draft } = useEvents();
   return { register: draft.registerPlay, registerSource: draft.registerSource };
+}
+
+/** Keep the schema inspector mounted while the approved Scene tab is shown. */
+export function EventInspector({children}:{children:ReactNode}){
+  const s=useEvents();const [tab,setTab]=useState<'scene'|'schema'>('schema');
+  useEffect(()=>{if(s.view==='scene'&&s.draft.sceneSnapshot)setTab('scene');},[s.view,s.draft.sceneSnapshot?.source_sha256]);
+  return <div className="scene-inspector-host">{s.draft.sceneSnapshot&&<div className="scene-inspector-tabs" role="tablist" aria-label="Inspector views"><button className="editor-button" role="tab" aria-selected={tab==='scene'} onClick={()=>setTab('scene')}>Scene inspector</button><button className="editor-button" role="tab" aria-selected={tab==='schema'} onClick={()=>setTab('schema')}>Schema inspector</button></div>}<div className="scene-inspector-content" hidden={tab!=='scene'||!s.draft.sceneSnapshot}>{s.draft.sceneSnapshot&&<SceneProperties editor={s.sceneEditor} draft={s.draft} active={s.view==='scene'}/>}</div><div className="scene-inspector-content" hidden={tab!=='schema'&&Boolean(s.draft.sceneSnapshot)}>{children}</div></div>;
+}
+
+/** Project metadata stays reachable without displacing Scene layers. */
+export function ProjectFiles({children}:{children:ReactNode}){
+  const s=useEvents();return s.view==='scene'?<details className="studio-project-files"><summary className="editor-text">Project files</summary>{children}</details>:<>{children}</>;
 }

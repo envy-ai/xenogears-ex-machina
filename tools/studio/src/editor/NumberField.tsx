@@ -1,5 +1,5 @@
 // Copied from rpg_creator src/editor/NumberField.tsx at 1f690d0263af8881a2d33ee374a2e5006355748b; see PROVENANCE.md.
-import type { ChangeEvent } from 'react';
+import type { AriaAttributes, ChangeEvent } from 'react';
 
 /**
  * How a non-finite parsed value (for example the intermediate text `1e`
@@ -18,7 +18,7 @@ export type NumberFieldFallback = 'passthrough' | 'minimum' | 'ignore';
  */
 export type NumberFieldInteger = boolean | 'trunc' | 'round';
 
-export interface NumberFieldProps {
+export interface NumberFieldProps extends Pick<AriaAttributes, 'aria-invalid' | 'aria-describedby'> {
   label: string;
   value: number;
   onChange: (value: number) => void;
@@ -52,6 +52,8 @@ export function NumberField({
   value,
   onChange,
   ariaLabel,
+  'aria-invalid': ariaInvalid,
+  'aria-describedby': ariaDescribedBy,
   min,
   max,
   step,
@@ -105,12 +107,15 @@ export function NumberField({
           'editor-control',
           'editor-control--text',
           compact ? 'editor-control--compact' : '',
+          ariaInvalid === true || ariaInvalid === 'true' ? 'editor-control--invalid' : '',
           inputClassName ?? ''
         ]
           .filter(Boolean)
           .join(' ')}
         type="number"
         aria-label={ariaLabel}
+        aria-invalid={ariaInvalid}
+        aria-describedby={ariaDescribedBy}
         min={min}
         max={max}
         step={step}

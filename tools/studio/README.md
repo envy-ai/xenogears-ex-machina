@@ -2,7 +2,8 @@
 
 The studio has a dockable shell and a shared Rust/wasm command service. Its
 command list, flow graph and actor lanes inspect original field scripts and
-edit a separate authored draft. Packages apply edits through the virtual disc;
+edit a separate authored draft. The Scene view adds source-qualified geometry,
+collision, zone and actor/descriptor transforms on the same authored history. Packages apply edits through the virtual disc;
 original images stay read-only. The live inspector attaches through the existing
 native/browser runtime adapters.
 
@@ -106,8 +107,10 @@ Project lists files and opens subfolders through the selected platform adapter.
 Backend shows the wasm service's version and operations; its JSON command box
 sends the original text, including malformed input. Log retains every command,
 reply, folder operation and error for this session, with a Copy log action.
-Persistent errors include the original message/stack and cleanup failures, and
-remain until explicitly dismissed. The dock layout alone is persisted locally.
+Expected authored-field guard messages persist locally with expandable details;
+the Validation log retains their original stacks. Unexpected errors use a compact
+global summary with expandable original stacks and cleanup failures in the Error
+log, until explicitly dismissed. The dock layout alone is persisted locally.
 No project data or folder handles are persisted or uploaded.
 
 Drag panel tabs to dock or float them; their More actions menu offers keyboard
@@ -1002,3 +1005,38 @@ provenance only. Generic creation supports runtime indices0..254 because actual
 byte actor links and resolved0xff selectors have an absent sentinel. This does
 not assert a universal original actor-count maximum; wider sources remain
 losslessly readable. Original actor0 is fixed for engine events2/3.
+
+
+## M7 Scene UI — checked increment, acceptance ongoing
+
+Choose Scene (Ctrl+4) for the selected original map. Its source-qualified bundle
+may require measured context from an attached vanilla runtime, as described for
+M6. The hierarchy filters original entity identities and layers. Q/W/E select,
+move or rotate; F frames the selected source. Dragging previews inline values;
+Apply commits one Rust transaction and Cancel preserves the accepted scene.
+Raw integer units and unsupported operations are explicit. A display handle is
+centred on selected geometry; translation retains the stored source origin, and
+rotation changes the source rotation about that origin. No scale is invented.
+
+Use the Scene inspector's scrolling fields for all four zone corners. Validation
+and Apply/Cancel occupy a separate fixed region, so actions cannot intercept
+coordinate clicks. Invalid inputs have native aria-invalid and aria-describedby
+links to the visible reason. Invalid/unapplied fields keep the last accepted
+scene while blocking new build/play. Technical stacks remain expandable locally
+or in Log. Runtime observations are read-only; the live pose overlay is not yet
+finished in this increment.
+
+Scene promotion shares the script history, including imported undo/redo state.
+Save uses the existing field-map-N.json name with outer schema2 and strict Scene
+document4; event-only schema1 remains supported. Names for original actors retain
+source identity after active row changes. Three.js0.186.1 is an exact rendering
+dependency; no additional RPG Creator source was copied. Source edits, original
+asset interpretation and package preparation remain in shared Rust.
+
+Focused synthetic interaction71 and visible/accessibility layout74 pass; actual
+clean/invalid1440x900 PNGs are under ignored milestone-7/checkpoint-74/screenshots.
+Source/SCSS/type/design audits passed with that source. Earlier failed attempts
+are retained in the ignored verification ledger. These results do not establish
+real original-map editing/playback, project lifecycle or NW acceptance; M7 is
+still in progress. Audit62/63 reports a HIGH direct Zod advisory, without a
+demonstrated current widget collection-schema path. No zero-audit claim is made.

@@ -46,7 +46,7 @@ Source revision: rpg_creator `1f690d0263af8881a2d33ee374a2e5006355748b`.
 | `src/editor/EditorPreferenceStore.tsx` | `src/editor/EditorPreferenceStore.tsx` | Replaced project/domain preference aggregation with synchronous studio layout-only Storage scope; failures propagate. |
 | `src/editor/EditorRenderErrorBoundary.tsx` | `src/editor/EditorRenderErrorBoundary.tsx` | Unchanged apart from source/revision header. |
 | `src/editor/NativeWindowControls.tsx` | `src/editor/NativeWindowControls.tsx` | Geometry import extracted; native bridge exceptions now propagate. |
-| `src/editor/NumberField.tsx` | `src/editor/NumberField.tsx` | Source/revision header; nonfinite draft state renders an empty native numeric input without changing or clamping its value. |
+| `src/editor/NumberField.tsx` | `src/editor/NumberField.tsx` | Source/revision header; nonfinite draft state renders an empty native numeric input without changing or clamping its value; optional native aria-invalid/aria-describedby associate caller-owned validation with the input. |
 | `src/editor/RecordSelect.tsx` | `src/editor/RecordSelect.tsx` | Unchanged apart from source/revision header. |
 | `src/editor/dockLayout.ts` | `src/editor/dockLayout.ts` | Unchanged apart from source/revision header. |
 | `src/editor/editorCommands.ts` | `src/editor/editorCommands.ts` | Unchanged apart from source/revision header. |

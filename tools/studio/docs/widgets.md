@@ -30,6 +30,7 @@ skins, menus, dialogs, reorder mechanisms or docking systems.
 | Flat/outline reorder | `src/editor/itemReorder.tsx` |
 | Docker lists and list titles | `src/editor/DockerList.tsx` |
 | Native window controls | `src/editor/NativeWindowControls.tsx` |
+| Three.js scene canvas | `src/editor/SceneCanvas.tsx`, `src/styles/scene-canvas.scss` |
 | Render failure boundary | `src/editor/EditorRenderErrorBoundary.tsx` |
 
 ## Buttons
@@ -542,3 +543,44 @@ The event workspace keeps a minimum 200px view surface and scrolls as a whole
 when toolbars, persistent diagnostics and the inline editor exceed the available
 dock height. Its child controls do not shrink over the command viewport; list
 rows retain normal pointer and keyboard access while errors remain visible.
+
+
+## Three.js SceneCanvas
+
+`src/editor/SceneCanvas.tsx` owns the reusable Three.js canvas, orbit/pan/zoom,
+resize, ray picking, source-model framing and transform-handle lifecycle. The
+caller supplies a scene model with stable object IDs and explicit disposal,
+selection, enabled axes, tool and callbacks. It owns all authored fields,
+validation, source units, history and persistence. Canvas transforms use a display proxy at the geometry centre; the accepted
+source object stays unchanged. Mouse-up delivers a translation delta against the
+stored source origin or source rotation, after validating the caller's captured
+project/source/selection owner. Rotation uses the original stored model origin.
+Off-canvas projections are not treated as visible picking targets. Only the caller's explicit validated Apply writes an authored transaction.
+
+The widget is newly authored; no RPG Creator viewport source is copied. Three.js
+and its OrbitControls/TransformControls are exact package dependencies. Labels,
+fields, buttons and lists remain the existing registered editor widgets.
+WebGL initialization/context-loss errors stay local and report the original
+error persistently. An error-reporting callback failure is also displayed,
+without escaping the event/effect handler. Retry replaces only the renderer;
+the source model, authored owner, history and last-good build remain unchanged.
+Model ownership/disposal is separate from renderer retry. Shader source pixels
+are projections of known uploads; missing inherited VRAM is explicitly unavailable,
+not zero-padded. Runtime texture windows/blending/lighting/morph and sprite VM
+poses are not simulated by the source viewport.
+
+Expected authored-field guard validation is persistent in the affected editor,
+with expandable technical details and a retained Validation log entry. It does
+not add a global developer-stack banner. Unexpected application failures use a
+compact global summary, while the Error log retains expandable original stacks.
+This keeps the primary Scene viewport and inline inspector usable at1440x900.
+
+
+NumberField accepts native `aria-invalid` and `aria-describedby` attributes for
+caller-owned validation. They apply to its numeric input, with the shared invalid
+control modifier; no value is clamped or replaced. Scene fields expose per-axis
+invalid state from their existing source-unit validation, linking the affected
+coordinate to a concise persistent reason beside inline Apply/Cancel. The Scene
+inspector separates a scrolling field area (with a native scrollbar gutter) from
+fixed diagnostics and actions. Actions never cover coordinate inputs. All four
+zone corners remain reachable without changing selection or the accepted scene.

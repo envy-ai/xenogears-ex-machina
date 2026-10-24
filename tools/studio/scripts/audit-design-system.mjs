@@ -64,7 +64,7 @@ const canonicalDocker = path.join(sourceRoot, 'editor', 'DockerList.tsx');
 const privateDockerListClass = /(?:^|[\s"'`])(?:docker-list-layout|docker-list-stack|docker-list-header|docker-item-list|docker-item|docker-item-select|docker-list-footer)(?=$|[\s"'`])/;
 const registryPath = path.join(root, 'docs/widgets.md');
 const registry = fs.readFileSync(registryPath, 'utf8');
-for (const source of ['ContextMenu.tsx', 'DockerList.tsx', 'DockableWorkspace.tsx', 'EditorDialogShell.tsx', 'itemReorder.tsx', 'NumberField.tsx', 'RecordSelect.tsx', 'NativeWindowControls.tsx']) {
+for (const source of ['ContextMenu.tsx', 'DockerList.tsx', 'DockableWorkspace.tsx', 'EditorDialogShell.tsx', 'itemReorder.tsx', 'NumberField.tsx', 'RecordSelect.tsx', 'NativeWindowControls.tsx', 'SceneCanvas.tsx']) {
   if (!fs.existsSync(path.join(sourceRoot, 'editor', source))) violations.push(`Missing registered widget: ${source}`);
   if (!registry.includes(`src/editor/${source}`)) violations.push(`Widget registry omits ${source}`);
 }

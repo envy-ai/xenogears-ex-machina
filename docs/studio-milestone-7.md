@@ -7,6 +7,13 @@ passing corrections and independent editor-layout screenshot limitation remain
 historical evidence, not a newly green full-suite claim. No denied M6 capture
 is retried by this milestone.
 
+## Current checkpoint
+
+Human M7 UI approval is received (record and exact images below). Backend
+native/WASM proofs and the first synthetic Scene UI increment are verified;
+original-map edited gameplay, project lifecycle and NW acceptance remain open.
+The dated checkpoints below retain historical gate/failure statements.
+
 ## Result and authority
 
 Deliver the roadmap's three.js field scene: supported original geometry,
@@ -541,3 +548,71 @@ silently transfer names to the next row. Live PC/actor navigation checks the
 attached package and build/source identity before using the matching stable
 binding/order. A stale or incompatible build gets an explicit diagnostic rather
 than selecting a current instruction that happens to share its numeric PC.
+
+## Human UI approval received 2026-10-24
+
+Bart approved both parent-generated M7 mockups in message
+`Sentinel_029fd2fc881c8191ba56d00be9a745fa` at01:11UTC (“Those mockups look really
+good. Go for it.”). Root inspected both actual PNGs before UI implementation.
+Ignored project-bound references are
+`tmp/studio/milestone-7/approved-mockups-20261024/m7-scene-editing.png` and
+`m7-scene-validation.png`. Main Library IDs are
+`libfile_7d9ebde8882c8191b1811dffb7304545` /
+`file_00000000775c81f6ab05572a66068445`; validation IDs are
+`libfile_e54e27501c648191843faca084d4ee05` /
+`file_00000000e13481f6a07c2fbf1466cd29`. These are layout direction, not original
+game assets, format definitions or approval of unsupported operations.
+The independent OGA blocker and denied extra M6 screenshots are unchanged.
+
+Implementation now proceeds in checked increments: one Scene/script owner and
+project lifecycle; Three.js viewport with existing controls and integer source
+transforms; inline hierarchy/properties and read-only live observations; then
+browser/NW/source audits and actual same-package edited-gameplay acceptance.
+Three.js is a rendering dependency only; original formats and mutations stay in
+shared Rust. Reuse the pinned existing M5/M6 package/runtime boundaries.
+
+Approved m7-scene-editing.png SHA-256: `c59cf656b80c73c2c792a805d2439e0761c92f60cf2c94e1773b7e44b659bf23`.
+
+Approved m7-scene-validation.png SHA-256: `d19299ad2250473d32d9f28a1ebcc016491694d9dfe9cc674d33d60aebb48b33`.
+
+
+## Checked synthetic UI increment — checkpoints 62–74
+
+The frontend uses one `FieldAuthoring` owner. It promotes the original M6 root
+and exact history into a Scene document; List/Graph/Lanes/Scene share that Rust
+revision and undo timeline. Scene project schema2 wraps strict Scene document4;
+event-only project schema1 remains unchanged. Scene compilation feeds the existing
+M5 package builder. New/changed source context remains unsaved project state.
+
+Three.js renders decoded source meshes/known uploads, collision and zones, with
+explicit unavailable-format diagnostics and sprite identity markers. Runtime
+lighting/blending/morph/sprite VM poses are not simulated. Entrances require
+explicit selectors; no count is guessed. Runtime pose currently has a locked
+instruction surface, not completed live observation/overlay acceptance.
+
+The shared canvas uses a geometry-centred display proxy and source-origin delta,
+never directly mutating accepted objects. Synthetic browser71 verifies real
+rotation Cancel/Apply with retained high bits/source position/unrelated state,
+translation Cancel, ray selection, concurrent-history drag non-adoption and
+local late-render/context-loss recovery. It does not prove real gameplay or
+non-null last-good-package retention. Placement/browser68 is separate reused
+evidence. Native/WASM60 semantics are unchanged by this UI increment.
+
+Expected guard failures stay local with expandable original stacks and retained
+Validation-log entries; unexpected errors use a compact global summary and
+expandable Error-log details. After actual screenshot review caught footer
+overlap, the inspector separates scrolling fields from fixed diagnostics/actions.
+Per-axis native aria-invalid/aria-describedby link bad inputs to the concise
+visible explanation without changing source bounds. Browser74 at1440x900 proves
+all four corners accept normal clicks/focus after scrolling, with full input
+rectangles above actions and hit-tested input centres. Accepted scene state is
+unchanged while invalid; Apply is blocked and Cancel remains usable. Root and
+Astra inspected the actual clean/invalid PNGs under ignored checkpoint74.
+
+Exact commands, hashes, scope IDs, exits, intermediate failures and screenshots
+remain in ignored `tmp/studio/milestone-7/verification-index.md` and checkpoint
+leaves. Full runtime inputs are unchanged; no new full runtime-suite pass is
+claimed. Real source/edited playback, save/reload and delayed ownership checks,
+read-only live observations, entrance selection and desktop acceptance remain
+required before M7 completion. The dependency audit retains a HIGH Zod advisory
+caveat; this increment does not claim zero audit findings.

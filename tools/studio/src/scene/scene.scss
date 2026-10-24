@@ -1,0 +1,32 @@
+// M7 layout; shared editor widgets and theme tokens own control appearance.
+.field-scene {height:100%;min-height:320px;display:flex;flex-direction:column;gap:6px;}
+.field-scene > .scene-canvas {flex:1;min-height:260px;}
+.scene-tools {display:flex;align-items:center;flex-wrap:wrap;gap:6px;}
+.scene-tools > button {display:inline-flex;align-items:center;gap:4px;}
+.scene-hierarchy {display:flex;flex-direction:column;gap:8px;min-height:340px;}
+.scene-hierarchy > .docker-list-layout {height:260px;min-height:180px;}
+.scene-hierarchy h3,.scene-inspector h3,.scene-inspector p,.scene-runtime h4 {margin:0;}
+.scene-inspector {height:100%;min-height:0;display:flex;flex-direction:column;gap:6px;padding:10px;min-width:0;overflow:hidden;}
+.scene-inspector-fields {flex:1;min-height:0;display:flex;flex-direction:column;gap:10px;overflow-x:hidden;overflow-y:scroll;scrollbar-gutter:stable;scroll-padding-block:8px;}
+.scene-inspector-fields > * {flex-shrink:0;}
+.scene-inspector-fields input {scroll-margin-block:8px;}
+.scene-inspector-heading {display:flex;flex-direction:column;gap:4px;}
+.scene-vector {display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:6px;}
+.scene-vector input {width:100%;min-width:0;}
+.scene-runtime {display:flex;flex-direction:column;gap:6px;padding:8px;}
+.scene-runtime h4 {display:flex;align-items:center;gap:6px;}
+.scene-diagnostics {flex:0 0 auto;max-height:120px;overflow:auto;padding:6px;}
+.scene-inspector pre {white-space:pre-wrap;overflow-wrap:anywhere;}
+.scene-inspector-tabs {display:flex;flex:0 0 auto;gap:4px;padding:6px;}
+.scene-inspector-host {height:100%;min-height:0;display:flex;flex-direction:column;overflow:hidden;}
+.scene-inspector-content {flex:1;min-height:0;overflow:hidden;}
+
+.scene-hierarchy {flex:1 1 250px;min-height:220px;overflow:hidden;gap:4px;}
+.scene-hierarchy > .editor-field-list {display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:4px;}
+.scene-hierarchy > .docker-list-layout {flex:1;min-height:80px;height:auto;}
+.scene-property-actions {flex:0 0 auto;display:flex;flex-direction:column;gap:6px;padding:6px 0;background:var(--editor-panel);}
+.scene-property-actions > details {max-height:100px;overflow:auto;}
+.scene-property-actions summary {cursor:pointer;}
+
+// These rows have a single label, without the shared widget's optional icon/action slots.
+.scene-hierarchy .docker-item-select {grid-template-columns:minmax(0,1fr);}

@@ -24,7 +24,11 @@ html, body, #root { width: 100%; height: 100%; margin: 0; overflow: hidden; }
 .studio-log-entry { display: grid; grid-template-columns: 90px 85px minmax(0, 1fr); gap: 12px; padding: 8px 12px; border-top: 1px solid var(--editor-border); }
 .studio-log-entry pre { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; }
 .studio-status { display: flex; justify-content: space-between; gap: 12px; padding: 8px 12px; border-top: 1px solid var(--editor-border); }
-.studio-errors { max-height: 30vh; overflow: auto; padding: 10px 16px; border-bottom: 1px solid var(--editor-border); }
+.studio-errors { display:flex; align-items:center; flex-wrap:wrap; gap:6px 10px; max-height:80px; overflow:auto; padding:6px 12px; border-bottom:1px solid var(--editor-border); }
+.studio-errors > span:first-of-type {flex:1;min-width:180px;}
+.studio-project:has(.event-disc-browser--scene) {overflow:hidden;}
+.studio-project-files {flex:0 0 auto;padding:4px 8px;}
+.studio-project-files > .docker-list-layout {max-height:120px;overflow:auto;}
 .studio-errors pre { white-space: pre-wrap; overflow-wrap: anywhere; }
 .studio-about { max-width: 560px; padding: 24px; }
 @media (prefers-reduced-motion: reduce) { *, *::before, *::after { transition: none !important; animation: none !important; } }

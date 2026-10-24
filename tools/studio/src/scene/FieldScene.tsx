@@ -1,0 +1,78 @@
+/** Approved M7 scene surfaces, composed from the existing editor widgets. */
+import { useEffect, useId, useLayoutEffect, useMemo, useRef, type ReactNode } from 'react';
+import { Lock, Move, MousePointer2, RotateCw, Focus } from 'lucide-react';
+import { SceneCanvas } from '../editor/SceneCanvas';
+import { NumberField } from '../editor/NumberField';
+import { DockerList, DockerListHeader, DockerListRow, DockerListSelect, DockerListEmpty } from '../editor/DockerList';
+import { useWindowedRows } from '../events/useWindowedRows';
+import type { useFieldDraft } from '../events/useFieldDraft';
+import type { SceneEditor } from './useSceneEditor';
+import { makeSceneModel, type SceneLayer } from './model';
+import './scene.scss';
+type Draft=ReturnType<typeof useFieldDraft>;
+const layers:{id:SceneLayer;label:string}[]=[{id:'geometry',label:'Geometry'},{id:'actors',label:'Actors'},{id:'collision',label:'Collision'},{id:'zones',label:'Trigger zones'},{id:'entrances',label:'Entrances'}];
+export function SceneHierarchy({editor}:{editor:SceneEditor}){
+  const rows=useMemo(()=>editor.rows.filter(row=>editor.visible[row.layer]&&`${row.label} ${row.parent??''}`.toLowerCase().includes(editor.filter.toLowerCase())),[editor.rows,editor.filter,editor.visible]);
+  const windowed=useWindowedRows(rows.length,28);
+  useEffect(()=>{const at=rows.findIndex(row=>row.id===editor.selected);if(at>=0)windowed.scrollTo(at);},[editor.selected,rows]);
+  return <section className="scene-hierarchy" aria-label="Scene layers and entities"><h3 className="editor-heading editor-heading--section">Scene layers</h3>
+    <div className="editor-field-list">{layers.map(layer=><label className="editor-field-label" key={layer.id}><input className="editor-control editor-control--choice" type="checkbox" checked={editor.visible[layer.id]} onChange={event=>editor.setVisible(previous=>({...previous,[layer.id]:event.target.checked}))}/>{layer.label}</label>)}</div>
+    <label className="editor-field editor-field-label"><span>Filter scene entities</span><input className="editor-control editor-control--text" data-scene-filter value={editor.filter} onChange={event=>editor.setFilter(event.target.value)}/></label>
+    <DockerList><DockerListHeader><span className="editor-text editor-text--caption">{rows.length} source-aware entities</span></DockerListHeader>
+      <div ref={windowed.ref} className="event-window" role="tree" aria-label="Scene entities" onScroll={windowed.onScroll} onKeyDown={event=>{
+        const at=rows.findIndex(row=>row.id===(event.target as HTMLElement).closest('[data-scene-id]')?.getAttribute('data-scene-id'));
+        const next=event.key==='ArrowDown'?at+1:event.key==='ArrowUp'?at-1:event.key==='Home'?0:event.key==='End'?rows.length-1:null;if(next===null||!rows[next])return;
+        event.preventDefault();const id=rows[next].id;windowed.scrollTo(next);requestAnimationFrame(()=>Array.from(windowed.ref.current?.querySelectorAll<HTMLButtonElement>('[data-scene-id]')??[]).find(element=>element.dataset.sceneId===id)?.focus());
+      }}><div className="event-window-spacer" style={{height:windowed.height}}><div className="event-window-items" style={{transform:`translateY(${windowed.offset}px)`}}>{rows.slice(windowed.start,windowed.end).map(row=><DockerListRow className="event-tree-row" key={row.id} selected={row.id===editor.selected} columns="minmax(0,1fr)"><DockerListSelect role="treeitem" data-scene-id={row.id} aria-selected={row.id===editor.selected} selected={row.id===editor.selected} title={`${row.id} · ${row.parent??row.layer}`} onClick={()=>editor.select(row.id)}><span className="event-command-text">{row.label}</span></DockerListSelect></DockerListRow>)}</div></div></div>
+      {!rows.length&&<DockerListEmpty>No matching entities. Entrances require an explicitly established selector; no count is inferred.</DockerListEmpty>}
+    </DockerList>
+  </section>;
+}
+export function FieldScene({editor,draft,onError}:{editor:SceneEditor;draft:Draft;onError(error:unknown):void}){
+  const assets=draft.sceneAssets,state=editor.state;
+  const actorPositions=useMemo(()=>{
+    const values=new Map<string,[number,number,number]>();if(editor.row?.kind==='actor'&&editor.placement)values.set(editor.row.id,editor.placement.position.map(axis=>axis.kind==='immediate'?axis.value:0) as [number,number,number]);return values;
+  },[editor.row?.id,editor.placement]);
+  const model=useMemo(()=>assets&&state?makeSceneModel(assets,state,editor.visible,editor.selected,actorPositions):null,[assets,state,editor.visible,editor.selected,actorPositions]);
+  useEffect(()=>{
+    const key=(event:KeyboardEvent)=>{
+      if(event.defaultPrevented||event.altKey||document.querySelector('[aria-modal=true]'))return;
+      const target=event.target as HTMLElement;if(!target.closest('.field-scene,.scene-inspector')||target.closest('input,textarea,select,[contenteditable=true]'))return;
+      const value=event.key.toLowerCase();if(event.ctrlKey||event.metaKey){if(value==='d'){event.preventDefault();editor.crud('duplicate');}return;}if(['q','w','e'].includes(value)){event.preventDefault();editor.setTool(value==='q'?'select':value==='w'?'move':'rotate');}
+      else if(value==='f'){event.preventDefault();editor.frameSelection();}else if(event.key==='Delete'){event.preventDefault();editor.crud('delete');}else if(event.key==='Escape'){event.preventDefault();draft.cancel();}
+    };window.addEventListener('keydown',key);return()=>window.removeEventListener('keydown',key);
+  },[editor,draft.cancel]);
+  if(!model||!assets||!state)return <p className="editor-text">Open the source-qualified scene to inspect its assets.</p>;
+  const axes:[boolean,boolean,boolean]=!editor.row?[false,false,false]:editor.tool==='rotate'?[editor.canRotate,editor.canRotate,editor.canRotate]:editor.axes;
+  const diagnostics=[...assets.diagnostics,...state.reference_diagnostics,...model.diagnostics];
+  return <section className="field-scene" aria-label="Authored field scene">
+    <div className="scene-tools" role="toolbar" aria-label="Scene tools">
+      {([{id:'select',label:'Select',key:'Q',Icon:MousePointer2},{id:'move',label:'Move',key:'W',Icon:Move},{id:'rotate',label:'Rotate',key:'E',Icon:RotateCw}] as const).map(({id,label,key,Icon})=><button className="editor-button editor-button--compact" key={id} aria-pressed={editor.tool===id} title={`${label} (${key})${id==='rotate'&&!editor.canRotate?' · selected source has no qualified rotation field':''}`} disabled={id==='rotate'&&!editor.canRotate} onClick={()=>editor.setTool(id)}><Icon size={16}/>{label}</button>)}
+      <button className="editor-button editor-button--compact" title="Frame selection (F)" onClick={editor.frameSelection}><Focus size={16}/>Frame selection</button>
+      <span className="editor-text editor-text--caption" title="Handles are centered on the selected geometry. Translation applies a delta to the stored source origin; rotation edits the stored source rotation about that origin.">Authored source · {draft.inlineDirty?'Unapplied fields; last valid scene retained':'Read/write through Rust transactions'}</span>
+    </div>
+    <SceneCanvas model={model} selected={editor.selected} tool={editor.tool} frame={editor.frame} disabled={draft.pending||draft.inlineDirty} axes={axes} onSelect={editor.select} onBeginTransform={editor.beginTransform} onTransform={editor.preview} onError={onError}/>
+    <details className="editor-card scene-diagnostics"><summary className="editor-text editor-text--warning">Scene validation and format diagnostics · {diagnostics.length}</summary>{diagnostics.map((message,index)=><p className="editor-text editor-text--caption" key={index}>{message}</p>)}</details>
+  </section>;
+}
+export function SceneProperties({editor,draft,runtime,active=true}:{editor:SceneEditor;draft:Draft;runtime?:ReactNode;active?:boolean}){
+  const row=editor.row,state=editor.state;const blocked=draft.pending||!active;const validationId=useId(),fieldsRef=useRef<HTMLDivElement>(null);
+  useLayoutEffect(()=>{const focused=document.activeElement;if(focused instanceof HTMLElement&&fieldsRef.current?.contains(focused))focused.scrollIntoView({block:'nearest'});},[editor.validation]);
+  return <section className="scene-inspector" aria-label="Authored scene inspector" data-studio-panel="events" onKeyDown={event=>{if(!active)return;if(event.key==='Escape'){event.preventDefault();draft.cancel();}else if((event.ctrlKey||event.metaKey)&&event.key==='Enter'){event.preventDefault();if(!editor.validation&&!draft.pending)editor.apply();}else if((event.ctrlKey||event.metaKey)&&event.key.toLowerCase()==='d'&&!(event.target as HTMLElement).closest('input,textarea,select')){event.preventDefault();editor.crud('duplicate');}}}>
+    <div className="scene-inspector-fields" ref={fieldsRef}><header className="scene-inspector-heading">{!active&&<p className="editor-text editor-text--caption">Read-only while another view is active. Apply or Cancel its fields before switching to Scene.</p>}<h3 className="editor-heading editor-heading--section">{row?.label??'Select a scene entity'}</h3><p className="editor-text editor-text--caption">Authored placement · Runtime pose is separate and read-only</p>{row&&<p className="editor-text editor-text--code">{row.id}</p>}{row?.kind==='zone'&&<p className="editor-text editor-text--caption">Scroll the inspector to reach all four source corners.</p>}</header>
+    {row&&state&&<>
+      {row.kind==='actor'&&<label className="editor-field editor-field-label"><span>Authored placement source</span><select className="editor-control editor-control--select" disabled={blocked} value={editor.binding} onChange={event=>editor.setBinding(event.target.value)}><option value="header">Descriptor source words · initialization may override</option>{editor.bindings.values.map(binding=><option key={binding.node} value={binding.node}>{binding.node} · {binding.handler}</option>)}</select></label>}
+      {editor.placement&&<><p className="editor-text editor-text--caption">{editor.placement.position.some(p=>p.kind==='floor')?'Y is collision-derived and is not authored here. The marker projects onto the editor plane.':'Immediate coordinates of the explicitly selected source instruction.'}</p>{editor.placement.diagnostics.map((message,index)=><p key={index} className="editor-text editor-text--warning">{message}</p>)}<button className="editor-button" disabled={draft.inlineDirty||draft.pending} onClick={editor.openScript}>Open bound command · {editor.placement.node}</button></>}
+      {editor.bindings.errors.map((error,index)=><pre key={index} className="editor-text editor-text--danger" role="alert">{error.stack??error.message}</pre>)}
+      {row.kind==='zone'?<>{editor.corners.map((corner,n)=><fieldset className="editor-field-group" key={n}><legend className="editor-field-legend">Corner {n} · signed source XYZ</legend><div className="scene-vector">{corner.map((value,axis)=><NumberField key={axis} label={['X','Y','Z'][axis]} ariaLabel={`Corner ${n} ${['X','Y','Z'][axis]}`} value={value} aria-invalid={editor.invalidCorners[n][axis]} aria-describedby={editor.invalidCorners[n][axis]?validationId:undefined} onChange={value=>editor.changeCorner(n,axis,value)} emptyAs="nan" step={1} min={-32768} max={32767} disabled={blocked}/>)}</div></fieldset>)}</>:<fieldset className="editor-field-group"><legend className="editor-field-legend">{row.kind==='triangle'?'Translation of shared vertices':'Source position'} · {row.kind==='actor'||row.kind==='descriptor'?editor.placement?'signed16':'unsigned16 words':'signed16'}</legend><div className="scene-vector">{editor.position.map((value,axis)=><NumberField key={axis} label={['X','Y','Z'][axis]} ariaLabel={`Scene position ${['X','Y','Z'][axis]}`} value={value} aria-invalid={editor.invalidPosition[axis]} aria-describedby={editor.invalidPosition[axis]?validationId:undefined} onChange={value=>editor.changePosition(axis,value)} emptyAs="nan" step={1} disabled={blocked||!editor.axes[axis]}/>)}</div></fieldset>}
+      {editor.canRotate&&<fieldset className="editor-field-group"><legend className="editor-field-legend">Source rotation words ·4096 units/turn</legend><div className="scene-vector">{editor.rotation.map((value,axis)=><NumberField key={axis} label={['X','Y','Z'][axis]} ariaLabel={`Scene rotation ${['X','Y','Z'][axis]}`} value={value} aria-invalid={editor.invalidRotation[axis]} aria-describedby={editor.invalidRotation[axis]?validationId:undefined} onChange={value=>editor.changeRotation(axis,value)} emptyAs="nan" step={1} min={0} max={65535} disabled={blocked}/>)}</div></fieldset>}
+      {row.kind==='triangle'&&<p className="editor-text editor-text--warning">Translation moves shared source vertices and every incident face. Add selects three explicit vertex identities; duplicate makes independent vertices.</p>}
+      {editor.newFace&&<fieldset className="editor-field-group"><legend className="editor-field-legend">New face · existing vertex identities</legend>{editor.faceVertices.map((id,axis)=><label className="editor-field editor-field-label" key={axis}><span>Vertex {axis}</span><select className="editor-control editor-control--select" disabled={blocked} value={id} onChange={event=>editor.setFaceVertex(axis,event.target.value)}>{state.collision_entities.layers.find(layer=>layer.id===row.parent)!.vertices.map(vertex=><option key={vertex.id}>{vertex.id}</option>)}</select></label>)}</fieldset>}
+      {row.kind==='entrance'&&<p className="editor-text editor-text--warning">Source selector {state.entrances[row.index].selector}; layer {state.entrances[row.index].layer}. Height is evaluated by the game. Entrance structural CRUD has no proven count/reference closure.</p>}
+
+    </>}
+    <section className="editor-inset-frame scene-runtime" aria-label="Runtime pose read-only"><h4 className="editor-heading editor-heading--section"><Lock size={16}/> Runtime pose · Read-only</h4>{runtime??<p className="editor-text editor-text--caption">Attach a matching runtime and explicitly refresh its observed pose. Live values never write authored placement.</p>}</section></div>
+    {row&&state&&(<div className="scene-property-actions">{editor.validation&&<p id={validationId} role="alert" className="editor-text editor-text--danger">{editor.validation} · draft not applied</p>}{editor.failure&&<details role="alert"><summary className="editor-text editor-text--danger">{editor.failure.message}</summary><pre className="editor-text editor-text--code">{editor.failure.stack??editor.failure.message}</pre></details>}<div className="scene-tools"><button className="editor-button editor-button--primary" disabled={!draft.inlineDirty||blocked||Boolean(editor.validation)} onClick={editor.apply}>Apply scene fields</button><button className="editor-button" disabled={blocked} onClick={draft.cancel}>Cancel scene fields</button></div>
+      <div className="scene-tools">{(['add','duplicate','delete'] as const).map(action=><button className={`editor-button${action==='delete'?' editor-button--danger':''}`} key={action} disabled={draft.inlineDirty||blocked||row.kind==='entrance'||(action==='delete'&&row.id==='descriptor:0'&&row.kind==='actor')} title={action==='add'?'Add using the selected source template; no new format is invented':action} onClick={()=>editor.crud(action)}>{action[0].toUpperCase()+action.slice(1)}</button>)}</div></div>)}
+  </section>;
+}
