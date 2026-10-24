@@ -1324,6 +1324,7 @@ tools/studio/src/App.tsx
 tools/studio/src/backend/discs.ts
 tools/studio/src/backend/drafts.ts
 tools/studio/src/backend/remote-discs.ts
+tools/studio/src/backend/scenes.ts
 tools/studio/src/backend/service.ts
 tools/studio/src/domain/ids.ts
 tools/studio/src/editor/ContextMenu.tsx
@@ -1429,6 +1430,7 @@ tools/studio/tests/unit/game-ui-real.test.ts
 tools/studio/tests/unit/game.test.ts
 tools/studio/tests/unit/name-history.test.ts
 tools/studio/tests/unit/remote-discs.test.ts
+tools/studio/tests/unit/scenes.test.ts
 tools/studio/tests/unit/service.test.ts
 tools/studio/tests/unit/tls-directory.test.ts
 tools/studio/tsconfig.json

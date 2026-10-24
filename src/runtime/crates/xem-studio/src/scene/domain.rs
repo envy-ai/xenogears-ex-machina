@@ -120,6 +120,7 @@ pub struct Document {
     pub next_id: u32,
     pub event_allocation_starts: Vec<u32>,
     pub next_event_id: u32,
+    pub imported_event_actions: u32,
 }
 #[derive(Clone, Debug, Serialize)]
 pub struct Entity<T> {
@@ -139,7 +140,6 @@ struct Base {
     source: bundle::Source,
     collision: collision::Collision,
     event_actor_count: usize,
-    event_modified: bool,
     model_count: usize,
     zones_tail: Vec<u8>,
     initial: State,
@@ -156,6 +156,7 @@ pub struct Draft {
     revision: u32,
     event_allocation_starts: Vec<u32>,
     next_event_id: u32,
+    imported_event_actions: usize,
 }
 #[derive(Clone, Debug, Serialize)]
 pub struct Snapshot {
@@ -172,6 +173,7 @@ pub struct Snapshot {
     pub source_sha256: String,
     pub events: draft::Compiled,
     pub next_event_id: u32,
+    pub reference_diagnostics: Vec<String>,
 }
 #[derive(Clone, Debug, Serialize)]
 pub struct Compiled {
@@ -203,18 +205,45 @@ fn entity_ids<T>(values: &[Entity<T>]) -> Vec<String> {
 }
 impl Draft {
     pub fn open(input: bundle::Input, entrance_selectors: Vec<u16>) -> Result<Self, FieldError> {
-        Self::open_with_events(input, entrance_selectors, None)
+        Self::open_root(input, entrance_selectors)
     }
     pub fn open_with_events(
         input: bundle::Input,
         entrance_selectors: Vec<u16>,
         event_document: Option<Box<draft::Document>>,
     ) -> Result<Self, FieldError> {
+        let result = Self::open_root(input, entrance_selectors)?;
+        let Some(document) = event_document else {
+            return Ok(result);
+        };
+        // Validate all M6 actions against the actual original stream first.
+        // Then place them on the one scene timeline, retaining exact IDs,
+        // cursor/redo and reserved watermarks instead of hiding an editable base.
+        let imported = event_document::open(
+            result.base.initial.events.draft.source_graph(),
+            Some(document),
+        )?
+        .document();
+        let mut document = result.document();
+        document.imported_event_actions = imported.actions.len() as u32;
+        document.actions = imported
+            .actions
+            .into_iter()
+            .map(|action| Action::Event {
+                action: Box::new(action),
+            })
+            .collect();
+        document.allocation_starts = vec![1; document.actions.len()];
+        document.event_allocation_starts = imported.allocation_starts;
+        document.cursor = imported.cursor as u32;
+        document.next_event_id = imported.next_id;
+        Self::import(document)
+    }
+    fn open_root(input: bundle::Input, entrance_selectors: Vec<u16>) -> Result<Self, FieldError> {
         let source = bundle::Source::load(input)?;
         let c = &source.components;
         let original_events = field::decode(&c[5].bytes, Some(c[5].logical_size))?;
-        let event_draft = event_document::open(&original_events, event_document)?;
-        let event_modified = event_draft.document().cursor > 0;
+        let event_draft = draft::Draft::open(original_events)?;
         let events = event_draft.compile()?.graph;
         let next_event_id = event_draft.next_node_id();
         if events.actors.len() > source.header.descriptors.len() {
@@ -282,7 +311,6 @@ impl Draft {
                 source,
                 collision,
                 event_actor_count: events.actors.len(),
-                event_modified,
                 model_count,
                 zones_tail: zones.tail,
                 initial: initial.clone(),
@@ -296,17 +324,24 @@ impl Draft {
             revision: 0,
             event_allocation_starts: Vec::new(),
             next_event_id,
+            imported_event_actions: 0,
         })
     }
     pub fn revision(&self) -> u32 {
         self.revision
     }
     pub fn snapshot(&self) -> Result<Snapshot, FieldError> {
+        let events = self.compile_events(&self.state)?;
+        let reference_diagnostics = self.state.events.reference_diagnostics(
+            &events,
+            &entity_ids(&self.state.descriptors),
+            &entity_ids(&self.state.zones),
+        )?;
         Ok(Snapshot {
             revision: self.revision,
             can_undo: self.cursor > 0,
             can_redo: self.cursor < self.actions.len(),
-            modified: self.cursor > 0 || self.base.event_modified,
+            modified: self.cursor > 0,
             descriptors: self.state.descriptors.clone(),
             actors: self.state.actors.clone(),
             zones: self.state.zones.clone(),
@@ -314,13 +349,14 @@ impl Draft {
             collision_entities: self.state.collision.clone(),
             entrances: self.state.entrances.clone(),
             source_sha256: self.base.source.header.source_sha256.clone(),
-            events: self.compile_events(&self.state)?,
+            events,
             next_event_id: self.next_event_id,
+            reference_diagnostics,
         })
     }
     pub fn document(&self) -> Document {
         Document {
-            schema_version: 3,
+            schema_version: 4,
             input: self.base.source.input().clone(),
             event_document: Box::new(self.base.initial.events.draft.document()),
             entrance_selectors: self.base.entrance_selectors.clone(),
@@ -330,23 +366,41 @@ impl Draft {
             next_id: self.next_id,
             event_allocation_starts: self.event_allocation_starts.clone(),
             next_event_id: self.next_event_id,
+            imported_event_actions: self.imported_event_actions as u32,
         }
     }
     pub fn import(document: Document) -> Result<Self, FieldError> {
         let cursor = document.cursor as usize;
-        if document.schema_version != 3
+        let imported = document.imported_event_actions as usize;
+        if document.schema_version != 4
             || document.actions.len() > HISTORY_LIMIT
             || cursor > document.actions.len()
             || document.actions.len() != document.allocation_starts.len()
             || document.next_id == 0
             || document.actions.len() != document.event_allocation_starts.len()
             || document.next_event_id == 0
+            || imported > document.actions.len()
+            || document
+                .actions
+                .iter()
+                .take(imported)
+                .any(|a| !matches!(a, Action::Event { .. }))
+            || document
+                .allocation_starts
+                .iter()
+                .take(imported)
+                .any(|s| *s != 1)
+            || document.event_document.schema_version != 1
+            || !document.event_document.actions.is_empty()
+            || !document.event_document.allocation_starts.is_empty()
+            || document.event_document.cursor != 0
+            || document.event_document.next_id != 1
         {
             return Err(invalid("invalid scene document schema/history"));
         }
-        let mut result = Self::open_with_events(
-            document.input,
-            document.entrance_selectors,
+        let mut result = Self::open_root(document.input, document.entrance_selectors)?;
+        event_document::open(
+            result.base.initial.events.draft.source_graph(),
             Some(document.event_document),
         )?;
         for ((action, start), event_start) in document
@@ -360,7 +414,8 @@ impl Draft {
             }
             result.next_id = start;
             result.next_event_id = event_start;
-            result.edit(result.revision, action)?;
+            let source_history = result.actions.len() < imported;
+            result.edit_recorded(result.revision, action, source_history)?;
         }
         if document.next_id < result.next_id || document.next_event_id < result.next_event_id {
             return Err(invalid("scene watermark reuses allocated identities"));
@@ -387,6 +442,14 @@ impl Draft {
             .ok_or_else(|| invalid("scene revision exhausted"))
     }
     pub fn edit(&mut self, revision: u32, action: Action) -> Result<(), FieldError> {
+        self.edit_recorded(revision, action, false)
+    }
+    fn edit_recorded(
+        &mut self,
+        revision: u32,
+        action: Action,
+        source_history: bool,
+    ) -> Result<(), FieldError> {
         let next_revision = self.next_revision(revision)?;
         if self.cursor >= HISTORY_LIMIT {
             return Err(invalid("scene history limit is 128 applied transactions"));
@@ -394,9 +457,19 @@ impl Draft {
         let mut candidate = self.state.clone();
         let mut next_id = self.next_id;
         let mut next_event_id = self.next_event_id;
-        self.apply(&mut candidate, &action, &mut next_id, &mut next_event_id)?;
+        self.apply_recorded(
+            &mut candidate,
+            &action,
+            &mut next_id,
+            &mut next_event_id,
+            source_history,
+        )?;
         self.compile_state(&candidate)?;
         // No state, history, revision or allocator mutation precedes validation.
+        self.imported_event_actions = self.imported_event_actions.min(self.cursor);
+        if source_history {
+            self.imported_event_actions = self.cursor + 1;
+        }
         self.actions.truncate(self.cursor);
         self.allocation_starts.truncate(self.cursor);
         self.event_allocation_starts.truncate(self.cursor);
@@ -412,14 +485,21 @@ impl Draft {
     }
     fn replay(&self, cursor: usize) -> Result<State, FieldError> {
         let mut state = self.base.initial.clone();
-        for ((action, start), event_start) in self.actions[..cursor]
+        for (at, ((action, start), event_start)) in self.actions[..cursor]
             .iter()
             .zip(&self.allocation_starts[..cursor])
             .zip(&self.event_allocation_starts[..cursor])
+            .enumerate()
         {
             let mut next = *start;
             let mut next_event = *event_start;
-            self.apply(&mut state, action, &mut next, &mut next_event)?;
+            self.apply_recorded(
+                &mut state,
+                action,
+                &mut next,
+                &mut next_event,
+                at < self.imported_event_actions,
+            )?;
         }
         self.compile_state(&state)?;
         Ok(state)
@@ -444,6 +524,44 @@ impl Draft {
         self.state = state;
         self.cursor += 1;
         self.revision = next;
+        Ok(())
+    }
+    fn apply_recorded(
+        &self,
+        state: &mut State,
+        action: &Action,
+        next: &mut u32,
+        next_event: &mut u32,
+        source_history: bool,
+    ) -> Result<(), FieldError> {
+        if !source_history {
+            return self.apply(state, action, next, next_event);
+        }
+        let Action::Event { action } = action else {
+            return Err(invalid(
+                "imported M6 history prefix must contain only event transactions",
+            ));
+        };
+        let descriptors = entity_ids(&state.descriptors);
+        let zones = entity_ids(&state.zones);
+        if descriptors != entity_ids(&self.base.initial.descriptors)
+            || zones != entity_ids(&self.base.initial.zones)
+            || state
+                .actors
+                .iter()
+                .enumerate()
+                .any(|(i, a)| a.event_source_row as usize != i || a.id != format!("descriptor:{i}"))
+            || state.actors.len() != self.base.event_actor_count
+        {
+            return Err(invalid(
+                "imported M6 history requires the unchanged original entity namespace",
+            ));
+        }
+        self.validate_source_event_action(state, action)?;
+        let events = Arc::make_mut(&mut state.events);
+        events.draft.advance_allocator(*next_event)?;
+        events.edit_source_history((**action).clone(), &descriptors, &zones)?;
+        *next_event = events.draft.next_node_id();
         Ok(())
     }
     fn static_instance(&self, state: &State, id: &str) -> Result<usize, FieldError> {

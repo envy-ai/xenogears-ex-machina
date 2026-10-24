@@ -208,6 +208,14 @@ fn assert_scene_open_event_document(studio: &Studio, bundle: Vec<u8>, document: 
     scene_draft(studio, args)
 }
 
+fn assert_empty_m6_root(document: &Value) {
+    assert_eq!(document["event_document"]["schema_version"], 1);
+    assert_eq!(document["event_document"]["actions"], json!([]));
+    assert_eq!(document["event_document"]["allocation_starts"], json!([]));
+    assert_eq!(document["event_document"]["cursor"], 0);
+    assert_eq!(document["event_document"]["next_id"], 1);
+}
+
 fn record_wire(studio: &Studio, trace: &mut Vec<Value>, request_json: String) -> Value {
     let request: Value = serde_json::from_str(&request_json).expect("recorded request is JSON");
     let response: Value = serde_json::from_str(&studio.command(&request_json))
@@ -457,15 +465,9 @@ fn scene_handles_are_separate_from_legacy_event_draft_handles() {
         vanilla_bundle
     );
     let vanilla_document = scene_draft(&studio, json!({"kind":"export","scene":1}));
-    assert_eq!(vanilla_document["ok"]["schema_version"], 3);
-    assert_eq!(
-        vanilla_document["ok"]["event_document"]["schema_version"],
-        1
-    );
-    assert_eq!(
-        vanilla_document["ok"]["event_document"]["actions"],
-        json!([])
-    );
+    assert_eq!(vanilla_document["ok"]["schema_version"], 4);
+    assert_eq!(vanilla_document["ok"]["imported_event_actions"], 0);
+    assert_empty_m6_root(&vanilla_document["ok"]);
 
     scene_draft(&studio, json!({"kind":"close","scene":1}));
     assert!(command(&studio, "field.draft.snapshot", json!({"draft":1}))["ok"].is_object());
@@ -569,8 +571,20 @@ fn scene_m6_event_history_survives_zone_reference_repair_and_export_import() {
     assert!(bindings.contains_key("new:3"), "inserted node ID survives");
 
     let exported = scene_draft(&studio, json!({"kind":"export","scene":scene}));
-    assert_eq!(exported["ok"]["schema_version"], 3);
-    assert_eq!(exported["ok"]["event_document"], event_document);
+    let exported_document = &exported["ok"];
+    assert_eq!(exported_document["schema_version"], 4);
+    assert_eq!(exported_document["imported_event_actions"], 2);
+    assert_empty_m6_root(exported_document);
+    assert_eq!(exported_document["actions"][0]["kind"], "event");
+    assert_eq!(
+        exported_document["actions"][0]["action"]["kind"],
+        "new_event"
+    );
+    assert_eq!(exported_document["actions"][1]["kind"], "event");
+    assert_eq!(
+        exported_document["actions"][1]["action"]["kind"],
+        "insert_after"
+    );
     let imported = scene_draft(&studio, json!({"kind":"import","document":exported["ok"]}));
     assert!(
         imported["ok"].is_object(),
@@ -584,7 +598,16 @@ fn scene_m6_event_history_survives_zone_reference_repair_and_export_import() {
         compiled["ok"]["events"]["bytes"]
     );
     let reexported = scene_draft(&studio, json!({"kind":"export","scene":imported_scene}));
-    assert_eq!(reexported["ok"]["event_document"], event_document);
+    assert_eq!(reexported["ok"]["imported_event_actions"], 2);
+    assert_empty_m6_root(&reexported["ok"]);
+    assert_eq!(
+        reexported["ok"]["actions"][0]["action"],
+        exported_document["actions"][0]["action"]
+    );
+    assert_eq!(
+        reexported["ok"]["actions"][1]["action"],
+        exported_document["actions"][1]["action"]
+    );
 
     // The scene changed zones and event storage only; all other complete source
     // component streams remain identical to the original input.
@@ -623,6 +646,7 @@ fn scene_preserves_m6_redo_cursor_and_identity_watermark_across_import() {
         json!({"bytes":event_bytes,"declared_size":logical_size}),
     )["ok"]
         .clone();
+    let source_graph = graph.clone();
     let opened_m6 = command(&studio, "field.draft.open", json!({"graph":graph}));
     let m6 = opened_m6["ok"]["draft"].clone();
     assert!(
@@ -631,7 +655,7 @@ fn scene_preserves_m6_redo_cursor_and_identity_watermark_across_import() {
             "field.draft.edit",
             json!({"draft":m6,"revision":0,
             "action":{"kind":"new_event","actor":0,"event":1,
-                "nodes":[{"bytes":[14]},{"bytes":[0]}]}})
+                "nodes":[{"bytes":[1,0,0],"targets":{"0":"new:2"}},{"bytes":[0]}]}})
         )["ok"]
             .is_object()
     );
@@ -655,61 +679,164 @@ fn scene_preserves_m6_redo_cursor_and_identity_watermark_across_import() {
     assert_eq!(authored["cursor"], 1);
     assert_eq!(authored["actions"].as_array().map(Vec::len), Some(2));
     assert_eq!(authored["next_id"], 4);
+    let m6_applied = command(&studio, "field.draft.snapshot", json!({"draft":m6}))["ok"].clone();
 
     let opened_scene =
         assert_scene_open_event_document(&studio, original.clone(), authored.clone());
     assert_eq!(opened_scene["ok"]["state"]["modified"], true);
+    assert_eq!(
+        opened_scene["ok"]["state"]["events"]["graph"],
+        m6_applied["graph"]
+    );
+    assert_eq!(
+        opened_scene["ok"]["state"]["events"]["bindings"],
+        m6_applied["bindings"]
+    );
     let scene = opened_scene["ok"]["scene"].as_u64().unwrap() as u32;
-    let removed = scene_draft(
-        &studio,
-        json!({"kind":"edit","scene":scene,"revision":0,
-            "action":{"kind":"delete_zone","id":"zone:0"}}),
-    );
-    assert_eq!(removed["ok"]["state"]["revision"], 1);
-    let compiled = scene_draft(&studio, json!({"kind":"compile","scene":scene}));
-    assert!(
-        compiled["ok"].is_object(),
-        "undoable event document compiles: {compiled}"
-    );
-    let call_pc = compiled["ok"]["events"]["bindings"]["pc:16"]
+    let initial_snapshot = opened_scene["ok"]["state"].clone();
+    assert!(initial_snapshot["events"]["bindings"]["new:1"].is_number());
+    assert!(initial_snapshot["events"]["bindings"]["new:3"].is_null());
+    assert_eq!(initial_snapshot["next_event_id"], 4);
+    let initial_branch_pc = initial_snapshot["events"]["bindings"]["new:1"]
         .as_u64()
         .unwrap() as usize;
-    let event_bytes = byte_array(&compiled["ok"]["events"]["bytes"]);
-    assert_eq!(call_pc, 16, "the undone insertion is not compiled");
-    assert_eq!(event_bytes[BYTECODE_OFFSET + call_pc + 1], 0);
+    let initial_branch = initial_snapshot["events"]["graph"]["instructions"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|instruction| instruction["pc"] == initial_branch_pc)
+        .unwrap();
+    assert_eq!(initial_branch["opcode"], 1);
+    assert_eq!(
+        initial_branch["operands"][0].as_u64(),
+        initial_snapshot["events"]["bindings"]["new:2"].as_u64()
+    );
+
+    // The imported M6 redo action lives on the same scene timeline. Redo and
+    // undo operate on it directly while retaining the allocated identity.
+    let redone = scene_draft(&studio, json!({"kind":"redo","scene":scene,"revision":0}));
+    assert_eq!(redone["ok"]["state"]["revision"], 1);
+    assert!(redone["ok"]["state"]["events"]["bindings"]["new:3"].is_number());
+    let m6_redone = command(
+        &studio,
+        "field.draft.redo",
+        json!({"draft":m6,"revision":3}),
+    )["ok"]
+        .clone();
+    assert_eq!(redone["ok"]["state"]["events"]["graph"], m6_redone["graph"]);
+    assert_eq!(
+        redone["ok"]["state"]["events"]["bindings"],
+        m6_redone["bindings"]
+    );
+    let redone_events = redone["ok"]["state"]["events"].clone();
+    let undone_scene = scene_draft(&studio, json!({"kind":"undo","scene":scene,"revision":1}));
+    assert_eq!(undone_scene["ok"]["state"]["revision"], 2);
+    assert!(undone_scene["ok"]["state"]["events"]["bindings"]["new:3"].is_null());
+    assert_eq!(undone_scene["ok"]["state"]["next_event_id"], 4);
+    let undone_prefix = scene_draft(&studio, json!({"kind":"undo","scene":scene,"revision":2}));
+    assert_eq!(undone_prefix["ok"]["state"]["revision"], 3);
+    assert_eq!(undone_prefix["ok"]["state"]["modified"], false);
+    assert_eq!(
+        undone_prefix["ok"]["state"]["events"]["graph"],
+        source_graph
+    );
+    assert_eq!(undone_prefix["ok"]["state"]["next_event_id"], 4);
+    let source_compile = scene_draft(&studio, json!({"kind":"compile","scene":scene}));
+    assert_eq!(
+        byte_array(&source_compile["ok"]["events"]["bytes"]),
+        event_bytes
+    );
+    assert_eq!(byte_array(&source_compile["ok"]["bundle"]), original);
+    let redone_prefix = scene_draft(&studio, json!({"kind":"redo","scene":scene,"revision":3}));
+    assert_eq!(redone_prefix["ok"]["state"]["revision"], 4);
+    assert_eq!(
+        redone_prefix["ok"]["state"]["events"],
+        initial_snapshot["events"]
+    );
+    let redone_full_prefix =
+        scene_draft(&studio, json!({"kind":"redo","scene":scene,"revision":4}));
+    assert_eq!(redone_full_prefix["ok"]["state"]["revision"], 5);
+    assert_eq!(redone_full_prefix["ok"]["state"]["events"], redone_events);
+    let undo_for_export = scene_draft(&studio, json!({"kind":"undo","scene":scene,"revision":5}));
+    assert_eq!(undo_for_export["ok"]["state"]["revision"], 6);
+    assert_eq!(
+        undo_for_export["ok"]["state"]["events"],
+        initial_snapshot["events"]
+    );
+    assert_eq!(undo_for_export["ok"]["state"]["next_event_id"], 4);
 
     let document = scene_draft(&studio, json!({"kind":"export","scene":scene}))["ok"].clone();
-    assert_eq!(document["event_document"], authored);
+    assert_eq!(document["schema_version"], 4);
+    assert_eq!(document["imported_event_actions"], 2);
+    assert_eq!(document["cursor"], 1);
+    assert_eq!(document["next_event_id"], 4);
+    assert_empty_m6_root(&document);
+    assert_eq!(document["actions"][0]["kind"], "event");
+    assert_eq!(document["actions"][1]["kind"], "event");
+
     let imported_scene = scene_draft(&studio, json!({"kind":"import","document":document}));
     assert!(imported_scene["ok"].is_object());
     let imported_scene_id = imported_scene["ok"]["scene"].as_u64().unwrap() as u32;
-    let recompiled = scene_draft(&studio, json!({"kind":"compile","scene":imported_scene_id}));
-    assert_eq!(recompiled["ok"]["bundle"], compiled["ok"]["bundle"]);
-    let reexported = scene_draft(&studio, json!({"kind":"export","scene":imported_scene_id}));
-    assert_eq!(reexported["ok"]["event_document"]["cursor"], 1);
-    assert_eq!(reexported["ok"]["event_document"]["next_id"], 4);
-
-    let imported_m6 = command(
+    let imported_snapshot = scene_draft(
         &studio,
-        "field.draft.import",
-        json!({"document":reexported["ok"]["event_document"]}),
+        json!({"kind":"snapshot","scene":imported_scene_id}),
     );
-    assert_eq!(imported_m6["ok"]["can_redo"], true);
-    let imported_m6_id = imported_m6["ok"]["draft"].clone();
-    let redone = command(
+    assert_eq!(imported_snapshot["ok"]["state"]["can_redo"], true);
+    assert_eq!(imported_snapshot["ok"]["state"]["next_event_id"], 4);
+    assert!(imported_snapshot["ok"]["state"]["events"]["bindings"]["new:3"].is_null());
+    // Export/import retained the source M6 redo branch on the scene timeline.
+    // A new scene event edit truncates it but keeps its watermark reserved.
+    let alternate = scene_draft(
         &studio,
-        "field.draft.redo",
-        json!({"draft":imported_m6_id,"revision":imported_m6["ok"]["revision"]}),
+        json!({"kind":"edit","scene":imported_scene_id,"revision":0,
+            "action":{"kind":"event","action":{"kind":"insert_after","after":"pc:15","bytes":[14],"targets":{}}}}),
     );
-    assert!(redone["ok"]["bindings"]["new:3"].as_u64().is_some());
-    let after_redo = command(
+    assert!(
+        alternate["ok"].is_object(),
+        "alternate scene event edit: {alternate}"
+    );
+    assert_eq!(alternate["ok"]["state"]["next_event_id"], 5);
+    assert!(alternate["ok"]["state"]["events"]["bindings"]["new:4"].is_number());
+    let alternate_compile_before_import =
+        scene_draft(&studio, json!({"kind":"compile","scene":imported_scene_id}));
+    assert!(alternate_compile_before_import["ok"].is_object());
+    let alternate_document =
+        scene_draft(&studio, json!({"kind":"export","scene":imported_scene_id}))["ok"].clone();
+    assert_eq!(alternate_document["imported_event_actions"], 1);
+    assert_eq!(alternate_document["cursor"], 2);
+    assert_eq!(alternate_document["next_event_id"], 5);
+    assert_empty_m6_root(&alternate_document);
+    let alternate_import = scene_draft(
         &studio,
-        "field.draft.edit",
-        json!({"draft":imported_m6_id,"revision":redone["ok"]["revision"],
-            "action":{"kind":"insert_after","after":"new:3","bytes":[14]}}),
+        json!({"kind":"import","document":alternate_document}),
     );
-    assert!(after_redo["ok"]["bindings"]["new:3"].as_u64().is_some());
-    assert!(after_redo["ok"]["bindings"]["new:4"].as_u64().is_some());
+    assert!(alternate_import["ok"].is_object());
+    let alternate_id = alternate_import["ok"]["scene"].as_u64().unwrap() as u32;
+    let alternate_compile = scene_draft(&studio, json!({"kind":"compile","scene":alternate_id}));
+    assert_eq!(
+        alternate_compile["ok"]["bundle"],
+        alternate_compile_before_import["ok"]["bundle"]
+    );
+    assert_eq!(
+        alternate_compile["ok"]["events"],
+        alternate_compile_before_import["ok"]["events"]
+    );
+    assert_eq!(
+        alternate_compile["ok"]["events"]["bindings"]["new:4"],
+        alternate["ok"]["state"]["events"]["bindings"]["new:4"]
+    );
+    let alternate_events = &alternate_compile["ok"]["events"];
+    let branch_pc = alternate_events["bindings"]["new:1"].as_u64().unwrap();
+    let branch = alternate_events["graph"]["instructions"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|instruction| instruction["pc"].as_u64() == Some(branch_pc))
+        .unwrap();
+    assert_eq!(
+        branch["operands"][0].as_u64(),
+        alternate_events["bindings"]["new:2"].as_u64()
+    );
 }
 
 #[test]
@@ -745,6 +872,18 @@ fn scene_event_document_schema_base_and_portable_values_are_checked_before_adopt
         )["error"]["kind"],
         "invalid_args"
     );
+    let mut missing_prefix_count = valid_export.clone();
+    missing_prefix_count
+        .as_object_mut()
+        .unwrap()
+        .remove("imported_event_actions");
+    assert_eq!(
+        scene_draft(
+            &studio,
+            json!({"kind":"import","document":missing_prefix_count})
+        )["error"]["kind"],
+        "invalid_args"
+    );
 
     // A syntactically valid M6 history from a different original event graph is
     // rejected before it can become the scene's authored-event base.
@@ -761,20 +900,57 @@ fn scene_event_document_schema_base_and_portable_values_are_checked_before_adopt
 
     // M6's custom deserializer rejects host-width numeric values before usize
     // parsing. Keep raw text so u64::MAX remains exact across the WASM trace.
-    let mut oversized_cursor = valid_export["event_document"].clone();
+    let mut oversized_cursor = valid_export.clone();
     oversized_cursor["cursor"] = json!(u64::MAX);
     let request = json!({
         "op":"field.scene.draft",
-        "args":{"kind":"open","input":scene_bundle::scene_args(original.clone())["input"],
-            "entrances":[0,1],"event_document":oversized_cursor}
+        "args":{"kind":"import","document":oversized_cursor}
     });
-    let wire = request.to_string();
-    let response = record_wire(&studio, &mut Vec::new(), wire);
+    let response = record_wire(&studio, &mut Vec::new(), request.to_string());
     assert_eq!(response["error"]["kind"], "invalid_args");
 
-    let next_studio = Studio::new();
-    let adopted = scene_draft(&next_studio, scene_open_args(original));
-    assert_eq!(adopted["ok"]["scene"], 1);
+    let mut hidden_root = valid_export.clone();
+    hidden_root["event_document"]["next_id"] = json!(2);
+    assert_eq!(
+        scene_draft(&studio, json!({"kind":"import","document":hidden_root}))["error"]["kind"],
+        "invalid_scene_edit"
+    );
+    let mut hidden_history_root = valid_export.clone();
+    hidden_history_root["event_document"] = event_document.clone();
+    assert_eq!(
+        scene_draft(
+            &studio,
+            json!({"kind":"import","document":hidden_history_root})
+        )["error"]["kind"],
+        "invalid_scene_edit",
+        "M6 actions must be promoted into the scene timeline, not hidden in the root"
+    );
+
+    let mut non_event_prefix = valid_export.clone();
+    non_event_prefix["actions"][0] = json!({"kind":"delete_zone","id":"zone:0"});
+    assert_eq!(
+        scene_draft(
+            &studio,
+            json!({"kind":"import","document":non_event_prefix})
+        )["error"]["kind"],
+        "invalid_scene_edit"
+    );
+
+    let mut reused_prefix_start = valid_export.clone();
+    reused_prefix_start["allocation_starts"][0] = json!(2);
+    assert_eq!(
+        scene_draft(
+            &studio,
+            json!({"kind":"import","document":reused_prefix_start})
+        )["error"]["kind"],
+        "invalid_scene_edit"
+    );
+
+    let adopted = scene_draft(&studio, scene_open_args(original));
+    assert_eq!(
+        adopted["ok"]["scene"], 2,
+        "rejected histories consume no handle"
+    );
 }
 
 #[test]
@@ -1102,7 +1278,17 @@ fn writes_native_scene_command_trace_for_wasm_replay_when_requested() {
         "field.scene.draft",
         json!({"kind":"export","scene":integrated_scene}),
     );
-    assert_eq!(integrated_export["ok"]["event_document"], event_document);
+    assert_eq!(integrated_export["ok"]["schema_version"], 4);
+    assert_eq!(integrated_export["ok"]["imported_event_actions"], 2);
+    assert_empty_m6_root(&integrated_export["ok"]);
+    assert_eq!(
+        integrated_export["ok"]["actions"][0]["action"],
+        event_document["actions"][0]
+    );
+    assert_eq!(
+        integrated_export["ok"]["actions"][1]["action"],
+        event_document["actions"][1]
+    );
     let integrated_compile = record(
         &studio,
         &mut trace,
@@ -1118,6 +1304,170 @@ fn writes_native_scene_command_trace_for_wasm_replay_when_requested() {
     assert!(call_pc > 16);
     assert_eq!(event_bytes[BYTECODE_OFFSET + call_pc], 0x0a);
     assert_eq!(event_bytes[BYTECODE_OFFSET + call_pc + 1], 0);
+    let integrated_snapshot = record(
+        &studio,
+        &mut trace,
+        "field.scene.draft",
+        json!({"kind":"snapshot","scene":integrated_scene}),
+    );
+    assert_eq!(
+        integrated_snapshot["ok"]["state"]["events"],
+        integrated_compile["ok"]["events"]
+    );
+    // A compiled scene bundle flows through the existing package boundary.
+    // The second explicitly unchanged slot proves that the scene edit does not
+    // turn unrelated package payloads into a different authored result.
+    let scene_disc = json!({"serial":"SYNTHETIC-M7-SCENE","sha256":"a".repeat(64)});
+    let package_args = json!({
+        "spec":{"id":"m7-scene-history-integration","discs":[scene_disc],"requires":[],"overrides":[]},
+        "files":[
+            {"disc":"SYNTHETIC-M7-SCENE","slot":23,"source":scene_input_bundle,
+                "result":integrated_compile["ok"]["bundle"]},
+            {"disc":"SYNTHETIC-M7-SCENE","slot":24,"source":scene_input_bundle,
+                "result":scene_input_bundle}
+        ]
+    });
+    let package_first = record(&studio, &mut trace, "package.build", package_args.clone());
+    let package_second = record(&studio, &mut trace, "package.build", package_args);
+    assert!(
+        package_first["ok"].is_object(),
+        "scene package build succeeds: {package_first}"
+    );
+    assert_eq!(package_first["ok"]["bytes"], package_second["ok"]["bytes"]);
+    assert_eq!(
+        package_first["ok"]["identity"],
+        package_second["ok"]["identity"]
+    );
+    assert_eq!(
+        package_first["ok"]["manifest"]["files"]
+            .as_array()
+            .map(Vec::len),
+        Some(2)
+    );
+    assert!(
+        package_first["ok"]["manifest"]["files"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .all(|file| file["kind"] == "delta")
+    );
+    let manifest_files = package_first["ok"]["manifest"]["files"].as_array().unwrap();
+    assert_eq!(manifest_files[0]["slot"], 23);
+    assert_eq!(
+        manifest_files[0]["source_sha256"],
+        integrated_compile["ok"]["source_sha256"]
+    );
+    assert_eq!(
+        manifest_files[0]["result_sha256"],
+        integrated_compile["ok"]["bundle_sha256"]
+    );
+    assert_eq!(manifest_files[1]["slot"], 24);
+    assert_eq!(
+        manifest_files[1]["source_sha256"],
+        manifest_files[1]["result_sha256"]
+    );
+    let package_inspected = record(
+        &studio,
+        &mut trace,
+        "package.inspect",
+        json!({"bytes":package_first["ok"]["bytes"]}),
+    );
+    assert_eq!(
+        package_inspected["ok"]["identity"],
+        package_first["ok"]["identity"]
+    );
+    let package_set_a = record(
+        &studio,
+        &mut trace,
+        "package.bundle",
+        json!({"packages":[package_first["ok"]["bytes"]]}),
+    );
+    let package_set_b = record(
+        &studio,
+        &mut trace,
+        "package.bundle",
+        json!({"packages":[package_second["ok"]["bytes"]]}),
+    );
+    assert_eq!(package_set_a["ok"]["bytes"], package_set_b["ok"]["bytes"]);
+    assert_eq!(
+        package_set_a["ok"]["identities"],
+        package_set_b["ok"]["identities"]
+    );
+
+    // The imported M6 prefix itself participates in scene undo/redo. Undoing
+    // every transaction restores the exact original bundle; replaying the M6
+    // prefix and scene edit restores the previously compiled candidate.
+    let undo_zone = record(
+        &studio,
+        &mut trace,
+        "field.scene.draft",
+        json!({"kind":"undo","scene":integrated_scene,"revision":3}),
+    );
+    let undo_insert = record(
+        &studio,
+        &mut trace,
+        "field.scene.draft",
+        json!({"kind":"undo","scene":integrated_scene,"revision":4}),
+    );
+    let undo_new_event = record(
+        &studio,
+        &mut trace,
+        "field.scene.draft",
+        json!({"kind":"undo","scene":integrated_scene,"revision":5}),
+    );
+    assert_eq!(
+        undo_zone["ok"]["state"]["zones"].as_array().map(Vec::len),
+        Some(2)
+    );
+    assert!(undo_insert["ok"]["state"]["events"]["bindings"]["new:3"].is_null());
+    assert_eq!(undo_new_event["ok"]["state"]["modified"], false);
+    assert_eq!(undo_new_event["ok"]["state"]["next_event_id"], 4);
+    assert!(undo_new_event["ok"]["state"]["events"]["bindings"]["new:1"].is_null());
+    let original_scene_compile = record(
+        &studio,
+        &mut trace,
+        "field.scene.draft",
+        json!({"kind":"compile","scene":integrated_scene}),
+    );
+    assert_eq!(
+        byte_array(&original_scene_compile["ok"]["bundle"]),
+        scene_input_bundle
+    );
+    let redo_new_event = record(
+        &studio,
+        &mut trace,
+        "field.scene.draft",
+        json!({"kind":"redo","scene":integrated_scene,"revision":6}),
+    );
+    let redo_insert = record(
+        &studio,
+        &mut trace,
+        "field.scene.draft",
+        json!({"kind":"redo","scene":integrated_scene,"revision":7}),
+    );
+    let redo_zone = record(
+        &studio,
+        &mut trace,
+        "field.scene.draft",
+        json!({"kind":"redo","scene":integrated_scene,"revision":8}),
+    );
+    assert!(redo_new_event["ok"].is_object());
+    assert!(redo_insert["ok"].is_object());
+    assert!(redo_zone["ok"].is_object());
+    let replayed_candidate = record(
+        &studio,
+        &mut trace,
+        "field.scene.draft",
+        json!({"kind":"compile","scene":integrated_scene}),
+    );
+    assert_eq!(
+        replayed_candidate["ok"]["bundle"],
+        integrated_compile["ok"]["bundle"]
+    );
+    assert_eq!(
+        replayed_candidate["ok"]["events"],
+        integrated_compile["ok"]["events"]
+    );
     record(
         &studio,
         &mut trace,
@@ -1180,6 +1530,123 @@ fn writes_native_scene_command_trace_for_wasm_replay_when_requested() {
         json!({"kind":"import","document":missing_event}),
     );
     assert_eq!(missing["error"]["kind"], "invalid_args");
+
+    let mut hidden_root = integrated_export["ok"].clone();
+    hidden_root["event_document"]["next_id"] = json!(2);
+    let hidden = record(
+        &studio,
+        &mut trace,
+        "field.scene.draft",
+        json!({"kind":"import","document":hidden_root}),
+    );
+    assert_eq!(hidden["error"]["kind"], "invalid_scene_edit");
+    let mut hidden_history = integrated_export["ok"].clone();
+    hidden_history["event_document"] = event_document.clone();
+    let hidden_history_reply = record(
+        &studio,
+        &mut trace,
+        "field.scene.draft",
+        json!({"kind":"import","document":hidden_history}),
+    );
+    assert_eq!(hidden_history_reply["error"]["kind"], "invalid_scene_edit");
+    let mut bad_prefix = integrated_export["ok"].clone();
+    bad_prefix["actions"][0] = json!({"kind":"delete_zone","id":"zone:0"});
+    let prefix = record(
+        &studio,
+        &mut trace,
+        "field.scene.draft",
+        json!({"kind":"import","document":bad_prefix}),
+    );
+    assert_eq!(prefix["error"]["kind"], "invalid_scene_edit");
+
+    // Out-of-table source zone selectors are Unknown references. A validated
+    // imported M6 history that preserves the numeric value remains inspectable,
+    // while ordinary edits and namespace changes refuse to guess its target.
+    let mut unknown_components = scene_components_with_zone_event();
+    unknown_components[8].truncate(24);
+    let unknown_bundle = scene_bundle::bundle(&unknown_components);
+    let (unknown_event_bytes, unknown_logical_size) = source_event_component(&unknown_bundle);
+    let unknown_graph = record(
+        &studio,
+        &mut trace,
+        "field.decode",
+        json!({"bytes":unknown_event_bytes,"declared_size":unknown_logical_size}),
+    )["ok"]
+        .clone();
+    let unknown_draft = record(
+        &studio,
+        &mut trace,
+        "field.draft.open",
+        json!({"graph":unknown_graph}),
+    )["ok"]["draft"]
+        .clone();
+    let unknown_source_edit = record(
+        &studio,
+        &mut trace,
+        "field.draft.edit",
+        json!({"draft":unknown_draft,"revision":0,
+            "action":{"kind":"set_operand","node":"pc:16","operand":0,
+                "value":{"kind":"literal","value":1,"immediate":null}}}),
+    );
+    assert!(
+        unknown_source_edit["ok"].is_object(),
+        "M6 retains the raw source selector: {unknown_source_edit}"
+    );
+    let unknown_document = record(
+        &studio,
+        &mut trace,
+        "field.draft.export",
+        json!({"draft":unknown_draft}),
+    )["ok"]
+        .clone();
+    assert_eq!(
+        unknown_document["actions"].as_array().map(Vec::len),
+        Some(1)
+    );
+    let mut unknown_open_args = scene_open_args(unknown_bundle);
+    unknown_open_args["event_document"] = unknown_document;
+    let unknown_open = record(&studio, &mut trace, "field.scene.draft", unknown_open_args);
+    assert!(
+        unknown_open["ok"].is_object(),
+        "unknown source history opens: {unknown_open}"
+    );
+    let unknown_scene = unknown_open["ok"]["scene"].as_u64().unwrap() as u32;
+    assert!(
+        unknown_open["ok"]["state"]["reference_diagnostics"]
+            .as_array()
+            .is_some_and(|diagnostics| diagnostics
+                .iter()
+                .any(|d| d.as_str().is_some_and(|s| s.contains("pc:16"))))
+    );
+    let ordinary_unknown_edit = record(
+        &studio,
+        &mut trace,
+        "field.scene.draft",
+        json!({"kind":"edit","scene":unknown_scene,"revision":0,
+            "action":{"kind":"event","action":{"kind":"set_operand","node":"pc:16","operand":0,
+                "value":{"kind":"literal","value":1,"immediate":null}}}}),
+    );
+    assert_eq!(
+        ordinary_unknown_edit["error"]["kind"],
+        "unsupported_scene_reference"
+    );
+    let unknown_namespace_change = record(
+        &studio,
+        &mut trace,
+        "field.scene.draft",
+        json!({"kind":"edit","scene":unknown_scene,"revision":0,
+            "action":{"kind":"delete_zone","id":"zone:0"}}),
+    );
+    assert_eq!(
+        unknown_namespace_change["error"]["kind"],
+        "unsupported_scene_reference"
+    );
+    record(
+        &studio,
+        &mut trace,
+        "field.scene.draft",
+        json!({"kind":"close","scene":unknown_scene}),
+    );
 
     let mut overflow_doc = event_document.clone();
     overflow_doc["cursor"] = json!(u64::MAX);
@@ -1273,7 +1740,9 @@ fn writes_native_scene_command_trace_for_wasm_replay_when_requested() {
         "field.scene.draft",
         json!({"kind":"export","scene":event_scene}),
     );
-    assert_eq!(event_export["ok"]["schema_version"], 3);
+    assert_eq!(event_export["ok"]["schema_version"], 4);
+    assert_eq!(event_export["ok"]["imported_event_actions"], 0);
+    assert_empty_m6_root(&event_export["ok"]);
     assert_eq!(event_export["ok"]["event_allocation_starts"], json!([1, 4]));
     assert_eq!(event_export["ok"]["next_event_id"], 5);
     let event_compile = record(

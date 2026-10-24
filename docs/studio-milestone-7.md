@@ -351,7 +351,7 @@ M7 UI approval remains pending and no new scene UI has been implemented.
 
 
 The first M6 composition checkpoint kept its schema1 event document as a required
-subdocument of scene export schema2 (superseded by schema3 below). Scene open can receive an existing event
+subdocument of scene export schema2 (superseded by schema4 below). Scene open can receive an existing event
 document and validates its base against the complete original component before
 replaying it. Reference repair maps the initial compiled PC back to the M6 stable
 node ID, then reuses that existing compiler/state. This is distinct from adopting
@@ -478,10 +478,66 @@ metadata. Failed setup/guard/lint attempts and the independent diagnostic are
 retained in ignored verification checkpoints46–55. No original source code or
 game input was replaced to make these checks pass.
 
-Before frontend integration, imported M6 undo/redo must become part of the same
-scene timeline. The current prototype retains that history as an initial baseline
-but cannot undo it through Scene commands. A single timeline will preserve its
-allocated IDs, redo cursor and global watermark while keeping an actually empty
-original root. Existing source-bound unknown references must remain inspectable
-during that validated history import; unsafe namespace changes still refuse
-them. No hidden editable baseline or duplicate history registry is acceptable.
+## Unified imported history backend checkpoint
+
+Scene schema4 promotes validated M6 actions onto the same scene timeline, rather
+than retaining an editable initial baseline. `event_document` is the required
+actually empty original root: schema1, actions/allocation starts empty, cursor0,
+next_id1. Required `imported_event_actions` identifies an Event-only prefix whose
+entity allocation starts are1 and whose original namespaces remain unchanged.
+The per-action event allocation starts, applied cursor, redo and global watermark
+are retained. Restore the watermark after validating all actions, then restore
+the cursor. Undo/redo can now reach all imported M6 actions; branching truncates
+the prefix without reusing either kind of ID. M6's own schema1 is unchanged.
+
+The validated original-namespace prefix retains unresolved targets with original
+snapshot `reference_diagnostics`, including unknown wrapper roles and source
+zone selectors outside the decoded table. This preserves existing M6 import
+semantics without inventing bindings. Later affected namespace changes still
+refuse; ordinary new scene edits cannot introduce/touch unresolved references.
+Schema4 rejects hidden nonempty roots, malformed prefixes and older scene
+exports explicitly. No duplicate history or compiled-source baseline is added.
+Checkpoints58/60/61 verify26 regular native tests plus the separately invoked
+141-request trace, exact default-WASM reply equivalence,3 transport unit cases,
+typecheck/build, strict Studio lint, formatting and source boundary audit. Earlier
+failed compile/fixture/hash/reference-identity test attempts remain retained in
+ignored checkpoints56/57/59/60. Generated and served WASM identities match.
+No new UI or M7 package/game execution acceptance is claimed. The original-source
+format/preservation evidence from54 remains historical compatible byte-contract
+coverage; no new private schema4 project/gameplay run is inferred from it.
+
+## Frontend ownership integration plan (not implemented; UI gate pending)
+
+Keep one active authored owner in `useFieldDraft`: event-only M6 until complete
+scene source is available, then one Scene session. The existing List/Graph/Lanes
+consume the active owner's compiled event view; do not keep an independently
+editable M6 handle beside a Scene handle. Scene promotion validates the original
+source plus the exact exported M6 history before adopting, then closes the old
+handle. Failed acquisition/promotion retains the current draft and last-good
+build. Complete-context failure must not disable the already working M6 editor.
+
+Acquisition/promotion captures the current project/backend generation, disc/map
+session, authored revision, inline generation and context generation before any
+await. Adoption rechecks every owner and preserves edits made while ranges/context
+load. A new measured context remains unsaved provenance even if script content
+and revisions are unchanged. A revision reset during promotion must not turn an
+unsaved M6 draft into Saved; carry saved equivalence only when the original owner
+was saved and no content/context changed. Preserve saved-edit -> undo-to-base
+unsaved behavior and explicit discard. Files use the existing atomic adapter;
+load/save/build completion cannot mark a replacement project saved.
+
+A scene project must explicitly identify its scene document/version, while the
+existing M6 project remains a supported event-only document. Validate the actual
+original source/context before adopting either; never use compiled bytes as a
+new base or silently rewrite an old file. Scene compilation feeds its validated
+bundle into the existing M5 package builder; no parallel delta/overlay pipeline.
+A last-good build records source, package identity, owner generation/revision and
+stable active actor/descriptor order, not just a transient numeric row.
+
+Names attached to original actor indices retain their original source identity
+through active actor-row changes; a render-time index is not a metadata key.
+New actor IDs and event source rows are distinct, and deleted originals must not
+silently transfer names to the next row. Live PC/actor navigation checks the
+attached package and build/source identity before using the matching stable
+binding/order. A stale or incompatible build gets an explicit diagnostic rather
+than selecting a current instruction that happens to share its numeric PC.

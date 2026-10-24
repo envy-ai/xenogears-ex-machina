@@ -132,6 +132,26 @@ impl Events {
         descriptors: &[String],
         zones: &[String],
     ) -> Result<(), FieldError> {
+        self.edit_inner(action, descriptors, zones, false)
+    }
+    /// A validated pre-scene M6 timeline uses the unchanged original namespace.
+    /// Preserve unresolved source references as unknown, never guessed entity IDs;
+    /// later namespace edits still fail the ordinary strict remapping guard.
+    pub fn edit_source_history(
+        &mut self,
+        action: draft::Action,
+        descriptors: &[String],
+        zones: &[String],
+    ) -> Result<(), FieldError> {
+        self.edit_inner(action, descriptors, zones, true)
+    }
+    fn edit_inner(
+        &mut self,
+        action: draft::Action,
+        descriptors: &[String],
+        zones: &[String],
+        source_history: bool,
+    ) -> Result<(), FieldError> {
         // The scene calls this on an unpublished candidate. Any failure here or
         // in final bundle compilation leaves its live state and both allocators.
         let mut written = BTreeSet::new();
@@ -155,7 +175,9 @@ impl Events {
                 false
             };
             if !keep {
-                if let bindings::Target::Unknown { reason } = &reference.target {
+                if let bindings::Target::Unknown { reason } = &reference.target
+                    && !source_history
+                {
                     return Err(FieldError::new(
                         "unsupported_scene_reference",
                         format!("{} operand {}: {reason}", reference.node, reference.operand),
@@ -178,6 +200,29 @@ impl Events {
             self.captures.push(Arc::new(fresh));
         }
         Ok(())
+    }
+    pub fn reference_diagnostics(
+        &self,
+        compiled: &draft::Compiled,
+        descriptors: &[String],
+        zones: &[String],
+    ) -> Result<Vec<String>, FieldError> {
+        let current = capture(compiled, descriptors, zones)?;
+        let mut diagnostics = Vec::new();
+        for reference in current.entries {
+            let binding = self
+                .bindings
+                .get(&(reference.node.clone(), reference.operand))
+                .ok_or_else(|| invalid("source reference lacks a stable capture"))?;
+            let captured = &self.captures[binding.capture].entries[binding.entry];
+            if let bindings::Target::Unknown { reason } = &captured.target {
+                diagnostics.push(format!(
+                    "{} operand {}: {}",
+                    reference.node, reference.operand, reason
+                ));
+            }
+        }
+        Ok(diagnostics)
     }
     pub fn compile(
         &self,

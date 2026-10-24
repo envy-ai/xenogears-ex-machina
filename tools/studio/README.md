@@ -821,30 +821,28 @@ or primitive groups / 1048576 control words; 32 MiB indexed bundle and original
 logical+16 component allocation within 2 MiB. The 32 sprite slots and 32 event
 slots per actor do not establish an actor-count maximum.
 
-Scene UI, domain transactions/history and packaged M7 playback are still pending
-at this checkpoint. M7 mockups require separate actual human approval; the
-existing approved M6 editor/inline inspector are unchanged. See
-`docs/studio-milestone-7.md` for the implementation/acceptance sequence.
+Scene UI and packaged M7 playback remain pending. M7 mockups require separate
+actual human approval; the approved M6 editor/inline inspector are unchanged.
+See `docs/studio-milestone-7.md` for the implementation/acceptance sequence.
 
-The next backend layer is `scene::bindings`: source-owned canonical captures,
-stable literal target repair, symbolic self/party preservation and explicit
-unknown/aliased/dangling-reference refusal. Captures bind to a complete source
-graph hash; the scene domain derives its namespaces from that source rather
-than accepting a separately supplied mutable identity registry. The service
-namespace budget is 65535 stable entities, not a claimed original zone/actor
-maximum. Literal actor selector indices that collide with reserved self/party
-bytes are refused; 0xfc remains an ordinary literal index.
+`scene::bindings` captures source-owned canonical operands and repairs stable
+literal targets while preserving symbolic self/party meaning. Unknown, aliased
+or dangling references receive explicit diagnostics/refusals. Captures bind to a
+complete source graph hash; namespaces come from that source, not a separately
+supplied mutable identity registry. The service namespace budget is65535 stable
+entities, not an original actor/zone maximum. Literal actor indices colliding
+with reserved self/party bytes are refused;0xfc is an ordinary literal index.
 
-`scene::domain` is an in-progress Rust transaction API, not yet a new JSON/UI
-surface. It owns the immutable bundle/context, action history, source-qualified
-entities and monotonic allocation watermark; it validates/compiles a candidate
-before adoption. Current implemented actions cover source descriptor transforms,
-static-instance copy/add/delete using a proven model/template, zone CRUD,
-same-layout collision vertices and explicitly bound same-selector entrances.
-Actor-row CRUD, collision topology integration, script-placement authoring and
-M7 project/UI/playback acceptance remain unfinished. Static-instance actions do
-not replace an actor event-row transaction, and a header source position is not
-a claim that later script/floor initialization leaves it unchanged.
+`scene::domain` owns immutable bundle/context, atomic actions, stable identities,
+monotonic allocators and undo/redo. Candidate validation and compilation precede
+adoption. Actions cover descriptor transforms, source-template static instance
+CRUD, qualified independent actor CRUD and stable actor events, scene-owned M6
+edits, explicit script placements, zone CRUD, collision vertices/topology and
+bound same-selector entrance transforms. Actor0 and party-owner initializers,
+unqualified clone forms, unresolved references and unsafe collision sentinels
+have explicit restrictions detailed below. Entrance structural CRUD/reference
+closure remains unresolved; no record count or unused prefix space is guessed.
+A header position does not imply scripts/floor initialization leave it unchanged.
 
 Event-selector repairs reuse the existing M6 compiler through a private adapter;
 public M6 actor-table bounds are unchanged. Scene packing now shares M6's exact
@@ -854,7 +852,8 @@ original measured source guard are verified before container adoption.
 #### Scene document protocol (M7 backend, UI still gated)
 
 `field.scene.draft` is the typed document boundary. Its `args.kind` is one of
-`open`, `import`, `edit`, `undo`, `redo`, `snapshot`, `compile`, `export`, `close`.
+`open`, `import`, `edit`, `undo`, `redo`, `snapshot`, `placement`, `compile`,
+`export`, `close`.
 It uses the existing `{ok:result}` / `{error:{kind,message}}` envelope and preserves
 `echo` and the M6 event API. There are at most four open scene documents (a service
 memory budget); scene and event-draft handles are separate, monotonic namespaces.
@@ -865,8 +864,10 @@ indexed bundle/context/source/module fields as `field.scene.decode`; `entrances`
 contains explicit established selectors. The result is `{scene,state}`. Edit with
 `{kind:"edit",scene,revision,action}`, then inspect/undo/redo using that current
 revision. Import establishes revision zero under a new handle. Export returns
-schema-two source and action history, including allocation starts and the allocator
-watermark; missing old fields are rejected, not migrated or silently defaulted.
+schema4 source and action history, including both allocation-start lists,
+retained allocator watermarks and the imported-event prefix described below.
+The combined timeline permits128 applied transactions, with batches grouping
+1–32 non-batch scene actions. Missing/older fields are rejected explicitly.
 The cursor and entrance spans use portable u32 wire values; component context
 lengths exceeding u32 are rejected before host-sized integer deserialization.
 
@@ -917,10 +918,14 @@ target never claims runtime playback or generates editor screenshots.
 
 Scene open also accepts an optional `event_document` in the existing M6 schema1.
 Its base must exactly match the complete original event component and declared
-boundary from the selected bundle. The scene retains this authored history and
-M6 stable bindings; source bytes remain the immutable original bundle. Scene
-export schema3 includes the initial `event_document` as a required field; incomplete
-or older scene documents are explicitly rejected. M6's own document/protocol is
+boundary from the selected bundle. The scene promotes this authored history onto its one undo/redo timeline, retaining
+M6 stable bindings, action allocation starts, cursor, redo and global watermark.
+Source bytes remain the immutable original bundle. Scene export schema4 requires
+an actually empty original-root `event_document` (schema1, no actions/allocation
+starts, cursor0, next_id1), plus `imported_event_actions`, the count of validated
+M6 event actions at the beginning of the scene timeline. The prefix contains only
+event transactions in the unchanged original entity namespace. Incomplete or
+older scene documents and hidden baseline history are explicitly rejected. M6's own document/protocol is
 unchanged. A scene transform must not reset prior authored event changes, and a
 zone-selector repair must follow an M6 node through its existing relocation.
 
@@ -938,12 +943,17 @@ Ongoing event edits use the same scene revision/history, for example:
 
 The selected stable node must actually exist and be writable; the sample PC is
 illustrative. Nested event actions are the existing M6 typed actions and are
-compiled against their immutable source. Scene schema3 additionally requires
+compiled against their immutable source. Scene schema4 additionally requires
 `event_allocation_starts` and `next_event_id`; undo and alternate history cannot
 reuse authored event IDs. Snapshot's `events` is the current compiled graph,
 bytes and stable bindings, including scene selector/entrance repairs. Its
-`next_event_id` is the retained global watermark. Initial M6 redo history remains
-inspectable in the required original event subdocument.
+`next_event_id` is the retained global watermark. Initial M6 history is directly undoable/redoable through the scene commands,
+including redo reserved before promotion. A branch edit truncates its abandoned
+prefix without reusing allocated IDs. Snapshot `reference_diagnostics` retains
+original unresolved-reference reasons. Validated imported M6 history can retain
+unknown targets, including out-of-table zone bytes, without guessing an entity;
+subsequent namespace changes still refuse unsafe remapping. Ordinary new scene
+actions that introduce or explicitly touch unresolved selectors are rejected.
 
 Selector bindings are captured against the scene namespace when an instruction
 is authored or its overlapping operand bytes are explicitly edited. Untouched
@@ -953,6 +963,13 @@ current entity. Unreachable bindings are retained, and restoring a dangling one
 is an atomic error. New or explicitly edited unresolved scene selectors are
 refused with their original reason. All changes, both allocators and captures
 are adopted together only after candidate bundle validation.
+
+The nonvisual TypeScript adapter is `src/backend/scenes.ts`:
+`SceneDraftSession.open/import`, `edit`, `history`, `placement`, `compile`,
+`export`, `close` and `nodeAt`. It retains its scene handle separately from M6
+draft handles and adopts a returned revision/state only after a successful Rust
+response. It creates no second event compiler or editable script copy. UI/project
+ownership still needs the guarded integration described in the M7 plan.
 
 To inspect and explicitly transform a qualified source placement instruction:
 

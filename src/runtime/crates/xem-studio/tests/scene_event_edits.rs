@@ -22,6 +22,64 @@ fn input(bytes: Vec<u8>) -> bundle::Input {
     }
 }
 
+fn primary_opcode(handler: &str) -> u8 {
+    let metadata: serde_json::Value =
+        serde_json::from_str(include_str!("../data/field-opcodes.json")).unwrap();
+    metadata["primary"]
+        .as_object()
+        .unwrap()
+        .iter()
+        .find_map(|(opcode, forms)| {
+            forms
+                .as_array()?
+                .iter()
+                .any(|form| form["handler"] == handler)
+                .then(|| opcode.parse::<u8>().unwrap())
+        })
+        .unwrap_or_else(|| panic!("canonical primary opcode metadata contains {handler}"))
+}
+
+fn m6_source_rebind_document(
+    original: &[u8],
+    node: &str,
+    operand: usize,
+    raw_value: u32,
+) -> draft::Document {
+    let source = bundle::Source::load(input(original.to_vec())).expect("load source history base");
+    let component = &source.components[5];
+    let graph = field::decode(&component.bytes, Some(component.logical_size)).unwrap();
+    let mut m6 = draft::Draft::open(graph).unwrap();
+    m6.edit(
+        0,
+        draft::Action::SetOperand {
+            node: node.into(),
+            operand,
+            value: draft::OperandValue::Literal {
+                value: raw_value,
+                immediate: None,
+            },
+        },
+    )
+    .unwrap();
+    m6.document()
+}
+
+fn unknown_actor_bundle() -> Vec<u8> {
+    let mut components = fixture::components();
+    let opcode = primary_opcode("field_event_actor_face_direction");
+    components[5][132..134].copy_from_slice(&15_u16.to_le_bytes());
+    components[5].resize(BYTECODE_OFFSET + 20, 0);
+    components[5][BYTECODE_OFFSET + 15..BYTECODE_OFFSET + 20]
+        .copy_from_slice(&[opcode, 0xfe, 1, 0, 0]);
+    let original = fixture::bundle(&components);
+    let source = bundle::Source::load(input(original)).expect("load unknown-role source");
+    let mut header = source.header.clone();
+    header.descriptors.push(header.descriptors[0].clone());
+    source
+        .repack(&header, &BTreeMap::new())
+        .expect("append a source-backed static descriptor")
+}
+
 fn zone_event_bundle(selector: u8, zone_count: usize) -> Vec<u8> {
     let mut components = fixture::components();
     components[5][132..134].copy_from_slice(&15_u16.to_le_bytes());
@@ -67,6 +125,10 @@ fn reachability_bundle() -> Vec<u8> {
         components[8].extend_from_slice(&value.to_le_bytes());
     }
     fixture::bundle(&components)
+}
+
+fn scene_with_unknown_zone_selector() -> Vec<u8> {
+    zone_event_bundle(1, 1)
 }
 
 fn scene(bytes: Vec<u8>) -> domain::Draft {
@@ -120,6 +182,108 @@ fn assert_snapshot_compile_match(scene: &domain::Draft) -> draft::Compiled {
     );
     assert_eq!(snapshot.next_event_id, scene.document().next_event_id);
     compiled.events
+}
+
+#[test]
+fn imported_source_history_preserves_unknown_references_but_new_edits_stay_strict() {
+    let cases = [
+        (unknown_actor_bundle(), "pc:15", 0, 0xfe),
+        (scene_with_unknown_zone_selector(), "pc:16", 0, 1),
+    ];
+    for (bundle, node, operand, raw) in cases {
+        let document = m6_source_rebind_document(&bundle, node, operand, raw);
+        let original = scene(bundle.clone());
+        let mut imported =
+            domain::Draft::open_with_events(input(bundle), Vec::new(), Some(Box::new(document)))
+                .expect("validated M6 source history retains unresolved source selectors");
+        let snapshot = imported.snapshot().unwrap();
+        assert!(
+            snapshot
+                .reference_diagnostics
+                .iter()
+                .any(|entry| entry.contains(node)),
+            "unknown source selector remains inspectable: {:?}",
+            snapshot.reference_diagnostics
+        );
+        let before_snapshot = serde_json::to_value(imported.snapshot().unwrap()).unwrap();
+        let before_document = serde_json::to_value(imported.document()).unwrap();
+        let before_bundle = imported.compile().unwrap().bundle;
+        let source_document = imported.document();
+        assert_eq!(source_document.imported_event_actions, 1);
+        assert!(matches!(
+            source_document.actions.first(),
+            Some(Action::Event { .. })
+        ));
+        let restored =
+            domain::Draft::import(source_document).expect("unknown source prefix imports");
+        assert_eq!(
+            restored.snapshot().unwrap().reference_diagnostics,
+            snapshot.reference_diagnostics
+        );
+        assert_eq!(restored.compile().unwrap().bundle, before_bundle);
+
+        let ordinary_rewrite = event_action(draft::Action::SetOperand {
+            node: node.into(),
+            operand,
+            value: draft::OperandValue::Literal {
+                value: raw,
+                immediate: None,
+            },
+        });
+        assert_eq!(
+            imported.edit(0, ordinary_rewrite).unwrap_err().kind,
+            "unsupported_scene_reference"
+        );
+        assert_eq!(
+            serde_json::to_value(imported.snapshot().unwrap()).unwrap(),
+            before_snapshot
+        );
+        assert_eq!(
+            serde_json::to_value(imported.document()).unwrap(),
+            before_document
+        );
+        assert_eq!(imported.compile().unwrap().bundle, before_bundle);
+
+        // Namespace changes remain conservative even when the source M6
+        // history merely re-authored the unchanged unknown numeric selector.
+        if node == "pc:15" {
+            assert_eq!(
+                imported
+                    .edit(
+                        0,
+                        Action::DeleteInstance {
+                            id: "descriptor:1".into(),
+                        },
+                    )
+                    .unwrap_err()
+                    .kind,
+                "unsupported_scene_reference"
+            );
+        } else {
+            assert_eq!(
+                imported
+                    .edit(
+                        0,
+                        Action::DeleteZone {
+                            id: "zone:0".into()
+                        }
+                    )
+                    .unwrap_err()
+                    .kind,
+                "unsupported_scene_reference"
+            );
+        }
+        assert_eq!(
+            serde_json::to_value(imported.snapshot().unwrap()).unwrap(),
+            before_snapshot
+        );
+        assert_eq!(
+            serde_json::to_value(imported.document()).unwrap(),
+            before_document
+        );
+        assert_eq!(imported.compile().unwrap().bundle, before_bundle);
+        assert_eq!(original.compile().unwrap().bundle, before_bundle);
+    }
 }
 
 #[test]
@@ -310,7 +474,13 @@ fn undo_alternate_event_insertion_export_import_preserves_targets_and_watermark(
     assert_eq!(branch.operands[0] as usize, compiled.bindings["new:2"]);
 
     let document = scene.document();
-    assert_eq!(document.schema_version, 3);
+    assert_eq!(document.schema_version, 4);
+    assert_eq!(document.imported_event_actions, 0);
+    assert_eq!(document.event_document.schema_version, 1);
+    assert!(document.event_document.actions.is_empty());
+    assert!(document.event_document.allocation_starts.is_empty());
+    assert_eq!(document.event_document.cursor, 0);
+    assert_eq!(document.event_document.next_id, 1);
     assert_eq!(document.event_allocation_starts, [1, 4]);
     assert_eq!(document.next_event_id, 5);
     let restored = domain::Draft::import(document.clone()).expect("scene event history imports");
