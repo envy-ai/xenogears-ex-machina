@@ -4,9 +4,11 @@ import type { SceneSpriteBinding } from '../backend/scenes';
 import type { SceneSpriteResource, SceneSpritePart } from '../backend/scene-assets';
 import { SceneVram } from './textures';
 
-// field_actor_create_sprite: shift3; field sprite draw: default actor scale4096
-// multiplied by3/4 before the shift. This is initial source scale, not live state.
-export const FIELD_SPRITE_PIXEL_SCALE=6;
+// field.c: constructor shift3; actor draw matrix scale0xC00. Actor positions
+// and geometry use scaled_world (default field_view.scale0x3000), whereas
+// billboard parts use the separate orbit matrix. Convert to unscaled source
+// units: (1<<3)*0xC00/0x3000 = 2. This is initial source scale, not live state.
+export const FIELD_SPRITE_PIXEL_SCALE=2;
 export class SpritePreviewUnavailable extends Error {}
 export interface SpritePartProjection {
   left:number; top:number; width:number; height:number; flipX:boolean; flipY:boolean;

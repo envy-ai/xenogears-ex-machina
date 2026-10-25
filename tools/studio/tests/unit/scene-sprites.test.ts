@@ -140,7 +140,7 @@ describe('source-qualified sprite projection', () => {
     const sprite = child as THREE.Sprite;
     expect(sprite.material).toBeInstanceOf(THREE.SpriteMaterial);
     expect(sprite.center.toArray()).toEqual([0.5, 2.5]);
-    expect(sprite.scale.toArray()).toEqual([24, 12, 1]);
+    expect(sprite.scale.toArray()).toEqual([8, 4, 1]);
     expect(model.group.userData.sprite).toEqual({ actor: binding.actor, resource: 0, bank: 1, frame: 1, animation: 0, facing: 0, parts: 1, pc: 15, node: 'node:source' });
     expect(typeof sprite.raycast).toBe('function');
     model.textures.forEach(texture => texture.dispose());
@@ -154,6 +154,44 @@ describe('source-qualified sprite projection', () => {
     expect(composed.group.children.map(child => child.renderOrder)).toEqual([2, 1]);
     composed.textures.forEach(texture => texture.dispose());
     composed.materials.forEach(material => material.dispose());
+  });
+
+  it('keeps billboard parts anchored at the actor pivot and frames their scaled extents', () => {
+    const actor = 'scene:7:actor';
+    const binding: SceneSpriteBinding = { actor, node: 'node:source', pc: 15, resource: 0, bank: 0, diagnostic: null };
+    const source = resource();
+    source.first_frame!.parts = [
+      part(),
+      part({ position: [10, -6], size: [3, 2] }),
+    ];
+    const state = {
+      descriptors: [{ id: actor, value: { flags: 0x40, rotation: [0, 0, 0], position: [10, 20, 30], model: 0 } }],
+      actors: [{ id: actor }], sprite_bindings: [binding],
+      collision_entities: { layers: [] }, zones: [], entrances: [], source_sha256: 'source',
+    } as unknown as SceneSnapshot;
+    const assets = {
+      source_sha256: 'source', geometry: { groups: [] },
+      palettes: { uploads: [], shared_slots: [] }, images: { uploads: [], shared_slots: [] },
+      sprites: { resources: [source] },
+    } as unknown as SceneAssets;
+    const model = makeSceneModel(assets, state,
+      { geometry: true, actors: true, collision: true, zones: true, entrances: true }, null);
+    const object = model.objects.get(actor)!;
+    const parts = object.children as THREE.Sprite[];
+
+    expect(object.position.toArray()).toEqual([10, -20, 30]);
+    expect(parts.map(sprite => sprite.position.toArray())).toEqual([[0, 0, 0], [0, 0, 0]]);
+    expect(parts[0]!.center.toArray()).toEqual([0.5, 2.5]);
+    expect(parts[0]!.scale.toArray()).toEqual([8, 4, 1]);
+    // The far part reaches 13 source pixels from the actor pivot; 13 * 2 is
+    // the sprite's source-world radius before the separate camera-fit margin.
+    expect(object.userData.spriteRadius).toBe(26);
+
+    const bounds = model.frameBounds(object);
+    expect(bounds.getCenter(new THREE.Vector3()).toArray()).toEqual([10, -20, 30]);
+    // frameBounds adds its documented 96-unit camera context around a sprite.
+    expect(bounds.getSize(new THREE.Vector3()).toArray()).toEqual([244, 244, 244]);
+    model.dispose();
   });
 
   it('maps source top-row UVs to the top of Three sprites independently of authored flips', () => {

@@ -115,3 +115,25 @@ from 55. Failed setup/fixture/assertion attempts remain alongside those results;
 they are not presented as passing runs. Unsupported VM/effect/party/inherited
 states retain diagnostics rather than claiming full animation or runtime-pose
 fidelity.
+
+## Sprite size correction
+
+The first preview used six source units per pixel, omitting the original view
+scale. `field.c` initializes `field_view.scale` to `0x3000`; the composed
+`scaled_world` matrix therefore multiplies geometry and actor positions by three.
+`field_draw_sprites` instead uses the separate orbit matrix for billboard part
+geometry, scaled by the default actor scale times 3/4 (`0xC00`).
+`sprite_draw_parts` shifts part positions/sizes by 3. The conversion back to the
+editor's unscaled source coordinates is therefore `8 * 0xC00 / 0x3000 = 2`
+world units per pixel, one-third of the previous preview size. Parts, their
+shared authored pivot and conservative Frame bounds use this one conversion.
+Actor placement/source words, original pixels and authored documents are not
+changed. Later script-driven scale changes remain outside the initial-state
+preview. The derivation received independent source review.
+
+The correction passed nine focused sprite unit tests (including pivot and Frame
+bounds), typecheck, a fresh frontend build and the existing Disc1 maps1/2 plus
+Disc2 map23 browser selection/Frame/orbit journey. New screenshots and exact
+commands are retained under `tmp/studio/scene-sprite-scale-20261025/output-65/`.
+The unchanged backend SDK and original disc hashes were verified; the native
+reader/parity/runtime and desktop evidence above is reused rather than rerun.
