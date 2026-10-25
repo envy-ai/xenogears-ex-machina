@@ -38,6 +38,9 @@ export interface SceneCollision {
     triangles: { vertices: SceneVector; neighbors: SceneVector; attribute: number; height_bump_raw: number }[];
   }[];
 }
+export interface SceneSpriteBinding {
+  actor:string; node:string|null; pc:number|null; resource:number|null; bank:number|null; diagnostic:string|null;
+}
 export interface SceneSnapshot {
   revision: number; can_undo: boolean; can_redo: boolean; modified: boolean;
   descriptors: SceneEntity<SceneDescriptor>[]; actors: SceneActor[];
@@ -48,7 +51,7 @@ export interface SceneSnapshot {
     triangles: SceneEntity<SceneFace>[];
   }[] };
   entrances: SceneEntrance[]; source_sha256: string;
-  events: CompiledDraft; next_event_id: number; reference_diagnostics: string[];
+  events: CompiledDraft; next_event_id: number; reference_diagnostics: string[]; sprite_bindings:SceneSpriteBinding[];
 }
 export type PlacementCoordinate =
   | { kind: 'immediate'; value: number }

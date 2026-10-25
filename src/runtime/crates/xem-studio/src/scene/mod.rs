@@ -17,6 +17,7 @@ mod event_state;
 pub mod formats;
 pub mod geometry;
 pub mod placements;
+pub mod sprites;
 pub mod textures;
 pub mod topology;
 pub mod virtual_actors;
@@ -76,6 +77,7 @@ pub struct Decoded {
     pub zones: formats::Zones,
     pub palettes: textures::TextureUploads,
     pub images: textures::TextureUploads,
+    pub sprites: sprites::Assets,
     pub events: FieldGraph,
     pub actors: Vec<Actor>,
     pub entrances: Vec<entrances::Entrance>,
@@ -94,6 +96,7 @@ pub fn decode(args: DecodeArgs) -> Result<Decoded, FieldError> {
     let palettes = textures::decode_palettes(&c[0].bytes, c[0].logical_size)?;
     let images = textures::decode_images(&c[4].bytes, c[4].logical_size, &source.header.slots)?;
     let events = field::decode(&c[5].bytes, Some(c[5].logical_size))?;
+    let sprites = sprites::decode(&c[3].bytes, c[3].logical_size, &source.header.slots)?;
     if events.actors.len() > source.header.descriptors.len() {
         return Err(FieldError::new(
             "invalid_scene",
@@ -175,6 +178,7 @@ pub fn decode(args: DecodeArgs) -> Result<Decoded, FieldError> {
         zones,
         palettes,
         images,
+        sprites,
         events,
         actors,
         entrances,

@@ -165,6 +165,73 @@ fn event_component() -> Vec<u8> {
     bytes
 }
 
+fn sprite_event_component() -> Vec<u8> {
+    const HEADER: usize = 132;
+    const BYTECODE: usize = 132 + 64;
+    let metadata: Value =
+        serde_json::from_str(include_str!("../../data/field-opcodes.json")).unwrap();
+    let opcode = |handler: &str| {
+        metadata["primary"]
+            .as_object()
+            .unwrap()
+            .iter()
+            .find_map(|(key, forms)| {
+                forms
+                    .as_array()?
+                    .iter()
+                    .any(|form| form["handler"] == handler)
+                    .then(|| key.parse::<u8>().unwrap())
+            })
+            .unwrap_or_else(|| panic!("canonical field metadata contains {handler}"))
+    };
+    let mut bytes = vec![0; BYTECODE + 4];
+    put_u32(&mut bytes, 128, 1);
+    put_u16(&mut bytes, HEADER, 0);
+    bytes[BYTECODE] = opcode("field_event_set_sprite");
+    put_u16(&mut bytes, BYTECODE + 1, 0x8000); // Canonical immediate resource zero.
+    bytes[BYTECODE + 3] = opcode("field_event_end_slot");
+    bytes
+}
+
+fn sprite_component() -> Vec<u8> {
+    // Minimal source-qualified animation 0/facing 0/frame 1 with one 8x8 part.
+    let mut animation = vec![0; 17];
+    put_u16(&mut animation, 0, 1);
+    put_u16(&mut animation, 2, 4);
+    put_u16(&mut animation, 4, 0);
+    put_u16(&mut animation, 6, 8);
+    put_u16(&mut animation, 8, 2);
+    animation[14..17].copy_from_slice(&[0xBE, 1, 0]);
+    let mut directory = vec![0; 69];
+    put_u16(&mut directory, 0, 0x8001);
+    put_u16(&mut directory, 2, 4);
+    directory[4] = 1;
+    put_u16(&mut directory, 8, 64);
+    directory[64..69].copy_from_slice(&[0, 0, 0, 8, 8]);
+    let mut palette = vec![0; 36];
+    put_u16(&mut palette, 0, 1);
+    let first = 20;
+    let directory_at = first + animation.len();
+    let palette_at = directory_at + directory.len();
+    let end = palette_at + palette.len();
+    let mut resource = vec![0; end];
+    put_u32(&mut resource, 0, 3);
+    for (index, offset) in [first, directory_at, palette_at, end]
+        .into_iter()
+        .enumerate()
+    {
+        put_u32(&mut resource, 4 + index * 4, offset as u32);
+    }
+    resource[first..directory_at].copy_from_slice(&animation);
+    resource[directory_at..palette_at].copy_from_slice(&directory);
+    resource[palette_at..end].copy_from_slice(&palette);
+    let mut component = vec![0; 8 + resource.len()];
+    put_u32(&mut component, 0, 1);
+    put_u32(&mut component, 4, 8);
+    component[8..].copy_from_slice(&resource);
+    component
+}
+
 fn zone_component() -> Vec<u8> {
     let mut bytes = Vec::with_capacity(24);
     for value in [1_i16, -2, 3, 4, 5, -6, 7, 8, 9, -10, 11, 12] {
@@ -178,7 +245,10 @@ pub fn components() -> Vec<Vec<u8>> {
         palette_component(),
         collision_component(),
         geometry_component(),
-        vec![0x33; 8],
+        // Component 3 is a bounded table of sprite resources. The valid empty
+        // form is a zero resource count; keep the previous opaque suffix so
+        // unrelated scene transactions still prove complete C3 preservation.
+        vec![0, 0, 0, 0, 0x33, 0x33, 0x33, 0x33],
         image_component(),
         event_component(),
         vec![0x66; 8],
@@ -211,6 +281,21 @@ pub fn bundle(components: &[Vec<u8>]) -> Vec<u8> {
 
 pub fn valid_bundle() -> Vec<u8> {
     bundle(&components())
+}
+
+pub fn sprite_bundle() -> Vec<u8> {
+    let mut components = components();
+    components[3] = sprite_component();
+    components[5] = sprite_event_component();
+    bundle(&components)
+}
+
+pub fn malformed_sprite_bundle() -> Vec<u8> {
+    let mut components = components();
+    components[3] = sprite_component();
+    components[5] = sprite_event_component();
+    put_u32(&mut components[3], 4, u32::MAX);
+    bundle(&components)
 }
 
 pub fn scene_args(bundle: Vec<u8>) -> Value {

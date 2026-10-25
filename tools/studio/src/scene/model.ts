@@ -4,11 +4,17 @@ import type { SceneAssets } from '../backend/scene-assets';
 import type { SceneSnapshot, SceneVector } from '../backend/scenes';
 import type { SceneCanvasModel } from '../editor/SceneCanvas';
 import { SceneVram, facePixelsKnown } from './textures';
+import { makeSourceSprite, SpritePreviewUnavailable, type SourceSpriteModel } from './sprites';
 import type { ScenePose } from '../game/scene-pose';
 export type SceneLayer='geometry'|'actors'|'collision'|'zones'|'entrances';
 export interface SceneRow {id:string;label:string;layer:SceneLayer;kind:'descriptor'|'actor'|'vertex'|'triangle'|'zone'|'entrance';position:SceneVector;rotation:SceneVector;index:number;parent?:string}
 export const toView=(point:readonly number[]):SceneVector=>[point[0],-point[1],point[2]];
 export const fromView=(point:readonly number[]):SceneVector=>[point[0],-point[1],point[2]];
+/** field_actor_reset assigns each u16 descriptor word to signed 16.16 via <<16.
+ * Keep authored words intact; static instances do not use this actor reset. */
+export const actorHeaderPosition=(words:readonly number[]):SceneVector=>words.map(word=>word>=0x8000?word-0x10000:word) as SceneVector;
+/** A viewport actor move edits those same words, never wraps an invalid target. */
+export const actorHeaderWords=(point:readonly number[]):SceneVector=>point.map(value=>Number.isSafeInteger(value)&&value>=-32768&&value<=32767?(value<0?value+0x10000:value):NaN) as SceneVector;
 export function sceneRows(state:SceneSnapshot):SceneRow[]{
   const rows:SceneRow[]=state.descriptors.map((item,index)=>({id:item.id,label:`${index<state.actors.length?'Actor':'Instance'} ${item.id}`,layer:index<state.actors.length?'actors':'geometry',kind:index<state.actors.length?'actor':'descriptor',position:item.value.position,rotation:item.value.rotation,index}));
   for(const layer of state.collision_entities.layers){
@@ -58,12 +64,27 @@ export function makeSceneModel(assets:SceneAssets,state:SceneSnapshot,visible:Re
   const actorMaterial=rememberMaterial(new THREE.MeshBasicMaterial({color:0x45dddd,wireframe:true}));
   const pointMaterial=rememberMaterial(new THREE.MeshBasicMaterial({color:0x9fefef,depthTest:false}));
   const rows=sceneRows(state);
+  const spriteTemplates=new Map<string,SourceSpriteModel|SpritePreviewUnavailable>();
   for(const row of rows.filter(row=>row.kind==='actor'||row.kind==='descriptor')){
     const descriptor=state.descriptors[row.index].value;
-    const object=descriptor.flags&0x40?new THREE.Group():meshGroups[descriptor.model]?.clone(true);
+    let object=descriptor.flags&0x40?new THREE.Group():meshGroups[descriptor.model]?.clone(true);
+    let renderedSprite=false;
+    if(descriptor.flags&0x40){
+      const binding=state.sprite_bindings.find(binding=>binding.actor===row.id);
+      const resource=binding?.resource===null||binding?.resource===undefined?undefined:assets.sprites.resources[binding.resource];
+      if(binding&&resource){
+        try{
+          const key=`${resource.slot}:${binding.bank}`,cached=spriteTemplates.get(key);
+          if(cached instanceof SpritePreviewUnavailable)throw cached;
+          const sprite=cached??makeSourceSprite(binding,resource,vram);
+          if(!cached){spriteTemplates.set(key,sprite);sprite.textures.forEach(t=>textures.add(t));sprite.materials.forEach(m=>materials.add(m));}
+          object=sprite.group.clone(true);object.userData.sprite={...sprite.group.userData.sprite,actor:row.id,pc:binding.pc,node:binding.node};renderedSprite=true;
+        }catch(error){if(!(error instanceof SpritePreviewUnavailable))throw error;spriteTemplates.set(`${resource.slot}:${binding.bank}`,error);diagnostics.add(`${row.id}: ${error.message}`);}
+      }else diagnostics.add(`${row.id}: ${binding?.diagnostic??'No qualified local sprite resource is established by source initialization'}`);
+    }
     if(!object)throw new Error(`Decoded descriptor ${row.id} has no source model`);
-    if(descriptor.flags&0x40){const body=new THREE.Mesh(marker,actorMaterial);body.position.y=14;object.add(body);}
-    object.position.fromArray(toView(actorPositions.get(row.id)??row.position));object.rotation.set(-row.rotation[0]*Math.PI/2048,row.rotation[1]*Math.PI/2048,-row.rotation[2]*Math.PI/2048,'ZYX');
+    if(descriptor.flags&0x40&&!renderedSprite){const body=new THREE.Mesh(marker,actorMaterial);body.position.y=14;object.add(body);}
+    object.position.fromArray(toView(actorPositions.get(row.id)??(row.kind==='actor'?actorHeaderPosition(row.position):row.position)));if(!(descriptor.flags&0x40))object.rotation.set(-row.rotation[0]*Math.PI/2048,row.rotation[1]*Math.PI/2048,-row.rotation[2]*Math.PI/2048,'ZYX');
     object.userData.entity=row.id;object.visible=visible[row.layer];objects.set(row.id,object);group.add(object);
     if(descriptor.flags&0x40)identityMarkers.add(object);
     else if(row.kind==='descriptor'&&object.visible)sourceGeometryBounds.union(new THREE.Box3().setFromObject(object));
@@ -99,12 +120,14 @@ export function makeSceneModel(assets:SceneAssets,state:SceneSnapshot,visible:Re
     diagnostics.add(`Read-only actor pose observed at VBlank ${runtimePose.vblank}; an identity marker, not evaluated sprite geometry.`);
   }
   if(selected&&objects.has(selected)){const helper=new THREE.BoxHelper(objects.get(selected)!,0x05edeb);helper.material.depthTest=false;geometries.add(helper.geometry);materials.add(helper.material);group.add(helper);}
-  diagnostics.add('Base source preview: original Y-down units; runtime lighting, texture windows/semitransparent blending, morphs and sprite VM poses are not evaluated. Wire actor markers are source identities.');
+  diagnostics.add('Base source preview: original Y-down units; runtime lighting, texture windows/semitransparent blending, morphs and live sprite VM poses are not evaluated. Sprite images show qualified initial animation/facing0 at default field scale; unresolved actors remain wire identities.');
   if(state.entrances.length)diagnostics.add('Entry markers show source X/Z on the editor plane; collision-derived height is evaluated by the game.');
   if(sourceGeometryBounds.isEmpty())diagnostics.add('No visible static source geometry is available for overview framing; use Frame selection for an explicit entity. Unresolved actor markers do not determine overview bounds.');
   const frameBounds=(object?:THREE.Object3D)=>{
     if(!object)return sourceGeometryBounds.clone();
-    const bounds=new THREE.Box3().setFromObject(object);
+    const bounds=typeof object.userData.spriteRadius==='number'
+      ?new THREE.Box3().setFromCenterAndSize(object.getWorldPosition(new THREE.Vector3()),new THREE.Vector3().setScalar(2*object.userData.spriteRadius))
+      :new THREE.Box3().setFromObject(object);
     // Editor camera context, not a game-format dimension or inferred sprite size.
     // Retain the selected marker centre while showing nearby source environment.
     if(identityMarkers.has(object)&&!bounds.isEmpty())bounds.expandByScalar(96);

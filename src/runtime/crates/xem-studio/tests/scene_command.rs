@@ -26,6 +26,17 @@ fn scene_open_args(bytes: Vec<u8>) -> Value {
     json!({"kind":"open","input":args["input"],"entrances":args["entrances"]})
 }
 
+fn scene_args_without_entrances(bytes: Vec<u8>) -> Value {
+    let mut args = scene_bundle::scene_args(bytes);
+    args["entrances"] = json!([]);
+    args
+}
+
+fn scene_open_args_without_entrances(bytes: Vec<u8>) -> Value {
+    let args = scene_args_without_entrances(bytes);
+    json!({"kind":"open","input":args["input"],"entrances":args["entrances"]})
+}
+
 fn placement_open_args(bytes: Vec<u8>) -> Value {
     let args = scene_bundle::scene_args(bytes);
     json!({"kind":"open","input":args["input"],"entrances":[]})
@@ -1041,7 +1052,7 @@ fn writes_native_scene_command_trace_for_wasm_replay_when_requested() {
     let version = record(&studio, &mut trace, "version", Value::Null);
     assert_eq!(
         version["ok"]["operations"].as_array().map(Vec::len),
-        Some(32)
+        Some(33)
     );
 
     let valid = record(
@@ -1051,6 +1062,69 @@ fn writes_native_scene_command_trace_for_wasm_replay_when_requested() {
         scene_bundle::scene_args(scene_bundle::valid_bundle()),
     );
     assert!(valid.get("ok").is_some(), "synthetic scene decode succeeds");
+
+    let sprite_bundle = scene_bundle::sprite_bundle();
+    let sprites = record(
+        &studio,
+        &mut trace,
+        "field.scene.decode",
+        scene_args_without_entrances(sprite_bundle.clone()),
+    );
+    let decoded_sprites = sprites.get("ok").unwrap_or_else(|| {
+        panic!(
+            "synthetic source sprite decode failed: kind={} message={}",
+            sprites["error"]["kind"], sprites["error"]["message"]
+        )
+    });
+    assert_eq!(
+        decoded_sprites["sprites"]["resources"][0]["first_frame"]["parts"]
+            .as_array()
+            .map(Vec::len),
+        Some(1)
+    );
+    let sprite_pc = decoded_sprites["events"]["instructions"][0]["pc"].clone();
+
+    let malformed_sprite = record(
+        &studio,
+        &mut trace,
+        "field.scene.decode",
+        scene_args_without_entrances(scene_bundle::malformed_sprite_bundle()),
+    );
+    assert_eq!(malformed_sprite["error"]["kind"], "invalid_scene_sprite");
+
+    let sprite_open = record(
+        &studio,
+        &mut trace,
+        "field.scene.draft",
+        scene_open_args_without_entrances(sprite_bundle),
+    );
+    let sprite_scene = sprite_open["ok"]["scene"]
+        .as_u64()
+        .expect("synthetic sprite scene handle") as u32;
+    assert_eq!(
+        sprite_open["ok"]["state"]["sprite_bindings"][0]["resource"],
+        0
+    );
+    assert_eq!(
+        sprite_open["ok"]["state"]["sprite_bindings"][0]["pc"],
+        sprite_pc
+    );
+    let sprite_snapshot = record(
+        &studio,
+        &mut trace,
+        "field.scene.draft",
+        json!({"kind":"snapshot","scene":sprite_scene}),
+    );
+    assert_eq!(
+        sprite_snapshot["ok"]["state"]["sprite_bindings"][0]["bank"],
+        0
+    );
+    record(
+        &studio,
+        &mut trace,
+        "field.scene.draft",
+        json!({"kind":"close","scene":sprite_scene}),
+    );
 
     for (label, bytes) in scene_bundle::malformed_cases() {
         let rejected = record(
@@ -1169,19 +1243,22 @@ fn writes_native_scene_command_trace_for_wasm_replay_when_requested() {
         "field.scene.draft",
         json!({"kind":"import","document":exported["ok"]}),
     );
-    assert_eq!(imported["ok"]["scene"], 2);
+    let imported_scene = imported["ok"]["scene"]
+        .as_u64()
+        .expect("imported scene handle");
+    assert_eq!(imported_scene, 3);
     let recompiled = record(
         &studio,
         &mut trace,
         "field.scene.draft",
-        json!({"kind":"compile","scene":2}),
+        json!({"kind":"compile","scene":imported_scene}),
     );
     assert_eq!(recompiled["ok"]["bundle"], compiled["ok"]["bundle"]);
     record(
         &studio,
         &mut trace,
         "field.scene.draft",
-        json!({"kind":"close","scene":2}),
+        json!({"kind":"close","scene":imported_scene}),
     );
 
     // Keep raw request text in the trace: JS JSON.parse/serialize would round
@@ -1213,10 +1290,13 @@ fn writes_native_scene_command_trace_for_wasm_replay_when_requested() {
         "field.scene.draft",
         scene_open_args(scene_bundle::valid_bundle()),
     );
-    assert_eq!(after_malformed["ok"]["scene"], 3);
+    let after_malformed_scene = after_malformed["ok"]["scene"]
+        .as_u64()
+        .expect("scene opened after malformed inputs");
+    assert_eq!(after_malformed_scene, 4);
     let entrance_span_wire = json!({
         "op":"field.scene.draft",
-        "args":{"kind":"edit","scene":3,"revision":0,
+        "args":{"kind":"edit","scene":after_malformed_scene,"revision":0,
             "action":{"kind":"set_entrance","value":{
                 "selector":0,"source_span":[4294967296_u64,4294967297_u64],
                 "x":0,"z":0,"layer":0,"camera_raw":255,"facing_raw":255
@@ -1230,7 +1310,7 @@ fn writes_native_scene_command_trace_for_wasm_replay_when_requested() {
         &studio,
         &mut trace,
         "field.scene.draft",
-        json!({"kind":"close","scene":3}),
+        json!({"kind":"close","scene":after_malformed_scene}),
     );
 
     // Cross-field integration: an M6 authored document is the scene's event

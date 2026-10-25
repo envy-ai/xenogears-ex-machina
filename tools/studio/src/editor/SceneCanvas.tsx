@@ -50,7 +50,10 @@ export function SceneCanvas(props:SceneCanvasProps){
         const project=(object:THREE.Object3D)=>{
           camera.updateMatrixWorld(true);scene.updateMatrixWorld(true);
           const box=new THREE.Box3().setFromObject(object);let point=box.isEmpty()?object.getWorldPosition(new THREE.Vector3()):box.getCenter(new THREE.Vector3());
-          if(typeof object.userData.entity==='string'){
+          if(typeof object.userData.entity==='string'&&object.userData.sprite){
+            let part:THREE.Sprite|null=null;object.traverse(child=>{if(!part&&child instanceof THREE.Sprite)part=child;});
+            if(part){const sprite=part as THREE.Sprite,scale=sprite.getWorldScale(new THREE.Vector3());point.set((0.5-sprite.center.x)*scale.x,(0.5-sprite.center.y)*scale.y,0).applyQuaternion(camera.quaternion).add(sprite.getWorldPosition(new THREE.Vector3()));}
+          }else if(typeof object.userData.entity==='string'){
             let surface:THREE.Mesh|null=null;object.traverse(child=>{if(!surface&&child instanceof THREE.Mesh&&child.geometry.getAttribute('position')?.count>=3)surface=child;});
             if(surface){const mesh=surface as THREE.Mesh,positions=mesh.geometry.getAttribute('position'),index=mesh.geometry.index;point=new THREE.Vector3();for(let i=0;i<3;i++)point.add(new THREE.Vector3().fromBufferAttribute(positions,index?index.getX(i):i));point.multiplyScalar(1/3).applyMatrix4(mesh.matrixWorld);}
           }
@@ -60,10 +63,14 @@ export function SceneCanvas(props:SceneCanvasProps){
         (canvas as HTMLCanvasElement&{__xemScene?:unknown}).__xemScene={
           project:(id:string)=>{const object=latest.current.model.objects.get(id);if(!object)throw new Error('Scene object is not mounted');return project(object);},
           textureStats:()=>{
-            let meshes=0,texturedMeshes=0,texturedTriangles=0;
+            let meshes=0,texturedMeshes=0,texturedTriangles=0,spriteParts=0;
+            const spriteActors:unknown[]=[];
             const maps=new Set<THREE.Texture>();
             latest.current.model.group.traverse(object=>{
-              if(!(object instanceof THREE.Mesh)||!visible(object))return;
+              if(!visible(object))return;
+              if(object.userData.sprite)spriteActors.push({...object.userData.sprite});
+              if(object instanceof THREE.Sprite&&object.material.map)spriteParts++;
+              if(!(object instanceof THREE.Mesh))return;
               meshes++;
               const materials=Array.isArray(object.material)?object.material:[object.material];
               for(const material of materials){
@@ -72,7 +79,7 @@ export function SceneCanvas(props:SceneCanvasProps){
                 texturedTriangles+=(object.geometry.index?.count??object.geometry.getAttribute('position')?.count??0)/3;
               }
             });
-            return {source:latest.current.model.group.userData.source,meshes,texturedMeshes,texturedTriangles,texturePages:maps.size,map_stream:latest.current.model.group.userData.map_stream??null};
+            return {source:latest.current.model.group.userData.source,meshes,texturedMeshes,texturedTriangles,texturePages:maps.size,spriteParts,spriteActors,map_stream:latest.current.model.group.userData.map_stream??null};
           },
           gizmo:(axis:string)=>{let handle:THREE.Object3D|null=null;transform!.getHelper().traverse(object=>{if(!handle&&object.name===axis&&object instanceof THREE.Mesh&&visible(object))handle=object;});if(!handle)throw new Error('Requested gizmo handle is not visible');return project(handle);},
         };

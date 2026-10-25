@@ -30,7 +30,7 @@ function sceneState(revision: number, actors: SceneSnapshot['actors'] = []): Sce
     descriptors: [], actors, zones: [], collision: {} as SceneSnapshot['collision'],
     collision_entities: { layers: [] }, entrances: [], source_sha256: 'source-hash',
     events: { bytes: [14], declared_size: 1, graph: { entries: [], instructions: [], edges: [], diagnostics: [] } as never, bindings: { 'pc:4': 4 } },
-    next_event_id: 1, reference_diagnostics: [],
+    next_event_id: 1, reference_diagnostics: [], sprite_bindings: [],
   };
 }
 function sceneReply(scene: number, state: SceneSnapshot) { return { scene, state }; }

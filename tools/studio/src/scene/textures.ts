@@ -1,6 +1,7 @@
 /** Source upload projection. Pixel addressing matches xem-render/ps1/draw.wgsl.
  * Only known uploaded words may supply a texel; missing VRAM is explicit. */
 import type { SceneAssets } from '../backend/scene-assets';
+export type VramUpload=Pick<SceneAssets['images']['uploads'][number],'rect'|'words'>;
 export interface TexturePage { rgba:Uint8Array; known:Uint8Array }
 export class SceneVram {
   private words=new Uint16Array(1024*512);
@@ -11,7 +12,10 @@ export class SceneVram {
     // Normal field entry starts the separate map stream afterward. This source
     // preview uses that order; transition kinds3/5 can interleave the two loads
     // and are not simulated here (field_screen.c:779-816).
-    for(const upload of [...assets.palettes.uploads,...assets.images.uploads,...(assets.map_stream?.uploads??[])]) {
+    this.upload([...assets.palettes.uploads,...assets.images.uploads,...(assets.map_stream?.uploads??[])]);
+  }
+  private upload(uploads:VramUpload[]):void {
+    for(const upload of uploads){
       const [x,y,w,h]=upload.rect;
       if(upload.words.length!==w*h)throw new Error('Decoded VRAM upload rectangle and words disagree');
       for(let row=0;row<h;row++)for(let column=0;column<w;column++){
@@ -20,6 +24,13 @@ export class SceneVram {
       }
     }
   }
+  /** Private projection of a frame's real palette/cell uploads. Sibling actors
+   * must not overwrite each other's bank or inherited source pixels. */
+  withUploads(uploads:VramUpload[]):SceneVram {
+    const next=new SceneVram({palettes:{uploads:[],shared_slots:[]},images:{uploads:[],shared_slots:[]}});
+    next.words.set(this.words);next.known.set(this.known);next.upload(uploads);return next;
+  }
+
   private read(x:number,y:number):number|null {
     const at=(y&511)*1024+(x&1023);return this.known[at]?this.words[at]:null;
   }

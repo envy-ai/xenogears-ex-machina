@@ -4,7 +4,7 @@ import type { useFieldDraft } from '../events/useFieldDraft';
 import type { DraftSnapshot } from '../backend/drafts';
 import type { SceneAction, SceneCorners, ScenePlacement, SceneVector } from '../backend/scenes';
 import type { SceneTool, SceneTransform } from '../editor/SceneCanvas';
-import { sceneRows, fromView } from './model';
+import { sceneRows, fromView, actorHeaderWords } from './model';
 import type { ScenePose } from '../game/scene-pose';
 const handlers=new Set(['field_event_place','field_event_place_on_layer','field_event_place_at_height','field_event_set_position']);
 type Draft=ReturnType<typeof useFieldDraft>;
@@ -96,7 +96,11 @@ export function useSceneEditor(draft:Draft,onSnapshot:(snapshot:DraftSnapshot|nu
     if(row.kind==='zone'){
       const delta=point.map((v,i)=>Math.round(v-row.position[i]));setCorners(state!.zones[row.index].value.corners.map(corner=>corner.map((v,i)=>v+delta[i])) as SceneCorners);
     }else if(row.kind==='triangle')setPosition(point.map((v,i)=>Math.round(v-row.position[i])) as SceneVector);
-    else setPosition(point.map((v,i)=>axes[i]?Math.round(v):position[i]) as SceneVector);
+    else {
+      const rounded=point.map(Math.round);
+      const source=row.kind==='actor'&&!placement?actorHeaderWords(rounded):rounded;
+      setPosition(source.map((v,i)=>axes[i]?v:position[i]) as SceneVector);
+    }
     if(canRotate)setRotation(value.rotation.map((v,i)=>{const units=Math.round(v*(i===1?1:-1)*2048/Math.PI);return (rotation[i]&0xf000)+((units%4096+4096)%4096);}) as SceneVector);
     draft.dirty(true);
   };

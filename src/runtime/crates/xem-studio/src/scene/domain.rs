@@ -174,6 +174,7 @@ pub struct Snapshot {
     pub events: draft::Compiled,
     pub next_event_id: u32,
     pub reference_diagnostics: Vec<String>,
+    pub sprite_bindings: Vec<super::sprites::Binding>,
 }
 #[derive(Clone, Debug, Serialize)]
 pub struct Compiled {
@@ -349,6 +350,16 @@ impl Draft {
             collision_entities: self.state.collision.clone(),
             entrances: self.state.entrances.clone(),
             source_sha256: self.base.source.header.source_sha256.clone(),
+            sprite_bindings: super::sprites::bindings(
+                &events.graph,
+                &self
+                    .state
+                    .actors
+                    .iter()
+                    .map(|a| a.id.clone())
+                    .collect::<Vec<_>>(),
+                &events.bindings,
+            ),
             events,
             next_event_id: self.next_event_id,
             reference_diagnostics,

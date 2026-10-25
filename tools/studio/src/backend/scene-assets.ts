@@ -21,12 +21,27 @@ export interface SceneMapStream {
   uploads:SceneUploads['uploads']; source_bytes_read:number; image_count:number; stop_reason:string;
   source?:{file:number;slot:number;lba:number;indexed_size:number;source_sha256:string};
 }
+export interface SceneSpritePart {
+  source_span:[number,number]; cell_span:[number,number];
+  position:[number,number]; size:[number,number]; uv:[number,number]; uv_size:[number,number];
+  tpage:number; clut:number; palette:number; group:number; flip_x:boolean; flip_y:boolean; blend:number;
+}
+export interface SceneSpriteFrame {
+  frame:number; animation:number; facing:number; flip_x:boolean; flip_y:boolean;
+  source_span:[number,number]; parts:SceneSpritePart[]; uploads:SceneUploads['uploads'];
+  clear:{source_span:[number,number];rect:[number,number,number,number]}|null;
+}
+export interface SceneSpriteResource {
+  slot:number; source_span:[number,number]; palette_count:number;
+  palette_banks:{bank:number;source_span:[number,number];words:number[]}[];
+  first_frame:SceneSpriteFrame|null; diagnostic:string|null;
+}
 export interface SceneAssets {
   schema_version:1; source_sha256:string;
   header:{descriptors:SceneDescriptor[];view:{words:number[]};slots:{x:number;y:number;reserved:number;shared:number}[];offsets:number[];logical_sizes:number[];source_sha256:string};
   geometry:{groups:{source_offset:number;flags:number;meshes:SceneMeshAsset[]}[]};
   collision:SceneCollision; zones:{zones:{corners:SceneCorners}[];tail:number[]};
-  palettes:SceneUploads; images:SceneUploads; map_stream?:SceneMapStream; events:FieldGraph;
+  palettes:SceneUploads; images:SceneUploads; sprites:{resources:SceneSpriteResource[]}; map_stream?:SceneMapStream; events:FieldGraph;
   entrances:SceneEntrance[]; diagnostics:string[];
 }
 export function decodeSceneAssets(backend:Backend,input:SceneInput,entrances:number[]):SceneAssets {

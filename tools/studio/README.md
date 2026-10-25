@@ -1245,3 +1245,22 @@ reload fetch them from the selected disc; same-source history/discard/context
 operations retain the qualified resource. A source-less project can still be
 inspected without a disc, but cannot supply missing original image resources.
 No map-number/hash special case or game-data download is involved.
+
+### Original actor sprite preview
+
+Scene now reads component3 sprite resources and resolves qualified immediate local
+resource/bank constructors in actor initialization. It displays the first proved
+image of animation0/facing0 with original palette banks, part offsets/flips,
+source VRAM cells and original draw order. Images face the editor camera at the
+original default field scale; selection, Frame, transforms and authored history
+retain the same stable actor identity. Actor header words remain unsigned16 in
+the inspector/save; their viewport position follows the original signed16.16
+actor initialization. Explicit selected script placement remains distinct.
+
+This is an initial source preview, not a running sprite/event VM. Party-dependent
+constructors, conditional initialization, unsupported effects/sequencers, missing
+resident pixels and unsupported blending remain wire markers with persistent
+reasons. No party character, pixel, collision height or later pose is guessed.
+The locked observed-runtime overlay remains separate. Malformed source spans and
+resource-limit violations are structured errors. See
+[the implementation/verification boundary](../../docs/studio-scene-sprites.md).

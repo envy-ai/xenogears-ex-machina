@@ -24,7 +24,7 @@ function state(revision = 0): SceneSnapshot {
     descriptors: [], actors: [], zones: [], collision: {} as SceneSnapshot['collision'],
     collision_entities: { layers: [] }, entrances: [], source_sha256: 'source',
     events: { bytes: [], declared_size: 0, graph: {} as never, bindings: { 'pc:10': 10, 'new:1': 11 } },
-    next_event_id: 2, reference_diagnostics: [],
+    next_event_id: 2, reference_diagnostics: [], sprite_bindings: [],
   };
 }
 

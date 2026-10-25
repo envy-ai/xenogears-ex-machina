@@ -159,6 +159,7 @@ docs/studio-milestone-5.md
 docs/studio-milestone-6-implementation.md
 docs/studio-milestone-6.md
 docs/studio-milestone-7.md
+docs/studio-scene-sprites.md
 docs/verification/phase0-agent.json
 docs/verification/phase0-authoring.json
 docs/verification/phase0-gaps.json
@@ -970,6 +971,7 @@ src/runtime/crates/xem-studio/src/scene/formats.rs
 src/runtime/crates/xem-studio/src/scene/geometry.rs
 src/runtime/crates/xem-studio/src/scene/mod.rs
 src/runtime/crates/xem-studio/src/scene/placements.rs
+src/runtime/crates/xem-studio/src/scene/sprites.rs
 src/runtime/crates/xem-studio/src/scene/textures.rs
 src/runtime/crates/xem-studio/src/scene/topology.rs
 src/runtime/crates/xem-studio/src/scene/virtual_actors.rs
@@ -1003,6 +1005,8 @@ src/runtime/crates/xem-studio/tests/scene_geometry.rs
 src/runtime/crates/xem-studio/tests/scene_placements.rs
 src/runtime/crates/xem-studio/tests/scene_real_formats.rs
 src/runtime/crates/xem-studio/tests/scene_real_preflight.rs
+src/runtime/crates/xem-studio/tests/scene_real_sprites.rs
+src/runtime/crates/xem-studio/tests/scene_sprites.rs
 src/runtime/crates/xem-studio/tests/scene_textures.rs
 src/runtime/crates/xem-studio/tests/scene_topology.rs
 src/runtime/crates/xem-studio/tests/structure.rs
@@ -1388,6 +1392,7 @@ tools/studio/src/runtime/nativeWindowState.ts
 tools/studio/src/scene/FieldScene.tsx
 tools/studio/src/scene/model.ts
 tools/studio/src/scene/scene.scss
+tools/studio/src/scene/sprites.ts
 tools/studio/src/scene/textures.ts
 tools/studio/src/scene/useSceneEditor.ts
 tools/studio/src/smoke.ts
@@ -1458,6 +1463,7 @@ tools/studio/tests/unit/game.test.ts
 tools/studio/tests/unit/name-history.test.ts
 tools/studio/tests/unit/remote-discs.test.ts
 tools/studio/tests/unit/scene-pose.test.ts
+tools/studio/tests/unit/scene-sprites.test.ts
 tools/studio/tests/unit/scene-textures.test.ts
 tools/studio/tests/unit/scenes.test.ts
 tools/studio/tests/unit/service.test.ts
