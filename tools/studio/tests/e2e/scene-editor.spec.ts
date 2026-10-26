@@ -28,6 +28,7 @@ interface SceneTestHook {
 }
 interface ProjectedPoint { x: number; y: number; z: number; visible: boolean }
 interface SceneCanvasTestApi {
+  camera(): { position: [number, number, number]; target: [number, number, number]; forward: [number, number, number]; right: [number, number, number] };
   project(id: string): ProjectedPoint;
   gizmo(axis: string): ProjectedPoint;
 }
@@ -89,6 +90,26 @@ async function projected(page: Page, method: 'project' | 'gizmo', value: string)
     if (!api) throw new Error('The test-only Three.js projection bridge is unavailable');
     return api[input.method](input.value);
   }, { method, value });
+}
+
+async function sceneCamera(page: Page): Promise<ReturnType<SceneCanvasTestApi['camera']>> {
+  return page.locator('canvas[aria-label="3D field scene viewport"]').evaluate(element => {
+    const api = (element as HTMLCanvasElement & { __xemScene?: SceneCanvasTestApi }).__xemScene;
+    if (!api) throw new Error('The test-only Scene camera bridge is unavailable');
+    return api.camera();
+  });
+}
+
+function distance3(a: readonly number[], b: readonly number[]): number {
+  return Math.hypot(a[0]! - b[0]!, a[1]! - b[1]!, a[2]! - b[2]!);
+}
+
+function delta3(a: readonly number[], b: readonly number[]): [number, number, number] {
+  return [a[0]! - b[0]!, a[1]! - b[1]!, a[2]! - b[2]!];
+}
+
+function dot3(a: readonly number[], b: readonly number[]): number {
+  return a[0]! * b[0]! + a[1]! * b[1]! + a[2]! * b[2]!;
 }
 
 function rayPickFixtureInput(value: unknown): unknown {
@@ -1007,4 +1028,162 @@ test('synthetic Scene inspects only selected entrance records without changing b
   expect(afterInvalidDocument.compiled.bundle_sha256).toBe(invalidDocument.compiled.bundle_sha256);
   expect(afterInvalidDocument.compiled.bundle.length).toBe(invalidDocument.compiled.bundle.length);
   expect(afterInvalidDocument.compiled.bundle.every((byte, index) => byte === invalidDocument.compiled.bundle[index])).toBe(true);
+});
+
+test('focused Scene viewport camera navigation preserves authored data and existing editor controls', async ({ page }) => {
+  test.setTimeout(90_000);
+  const fixturePath = process.env.XEM_STUDIO_SCENE_UI_FIXTURE;
+  test.skip(!fixturePath, 'the native scene command trace provides a synthetic-only source');
+  const fixture = JSON.parse(readFileSync(fixturePath!, 'utf8')) as SceneTrace;
+  expect(fixture.schema_version).toBe(1);
+  expect(fixture.synthetic_only).toBe(true);
+  const decoded = fixture.trace.find(step => {
+    const request = JSON.parse(step.request_json) as { op?: string };
+    return request.op === 'field.scene.decode' && typeof (step.response as { ok?: unknown }).ok !== 'undefined';
+  });
+  expect(decoded).toBeDefined();
+  const request = JSON.parse(decoded!.request_json) as { args: { input: unknown; entrances: number[] } };
+
+  await page.goto('/');
+  await expect.poll(() => page.evaluate(() => typeof (window as unknown as { __xemStudioTest?: SceneTestHook }).__xemStudioTest?.loadScene)).toBe('function');
+  await loadScene(page, request.args.input, request.args.entrances, 23);
+  const authored = await sceneSnapshot(page);
+  const compiled = await inspectScene(page);
+  const canvas = page.locator('canvas[aria-label="3D field scene viewport"]');
+  await expect(canvas).toBeVisible();
+
+  // The focused viewport owns W as camera-forward; G remains the Move tool shortcut.
+  await page.getByRole('button', { name: 'Select', exact: true }).click();
+  await canvas.focus();
+  const beforeForward = await sceneCamera(page);
+  await page.keyboard.down('w');
+  await page.waitForTimeout(320);
+  const afterForward = await sceneCamera(page);
+  await page.keyboard.up('w');
+  const afterForwardRelease = await sceneCamera(page);
+  await page.waitForTimeout(180);
+  expect(await sceneCamera(page)).toEqual(afterForwardRelease);
+  const forwardDelta = delta3(afterForward.target, beforeForward.target);
+  expect(distance3(afterForward.target, beforeForward.target)).toBeGreaterThan(5);
+  expect(dot3(forwardDelta, beforeForward.forward)).toBeGreaterThan(0);
+  expect(distance3(afterForward.position, beforeForward.position)).toBeCloseTo(distance3(afterForward.target, beforeForward.target), 5);
+  await expect(page.getByRole('button', { name: 'Select', exact: true })).toHaveAttribute('aria-pressed', 'true');
+  await expect(page.getByRole('button', { name: 'Move', exact: true })).toHaveAttribute('aria-pressed', 'false');
+
+  // Arrow-key strafe is also camera-relative and does not trigger a Scene tool.
+  await canvas.focus();
+  const beforeStrafe = await sceneCamera(page);
+  await page.keyboard.down('ArrowRight');
+  await page.waitForTimeout(180);
+  const afterStrafe = await sceneCamera(page);
+  await page.keyboard.up('ArrowRight');
+  expect(dot3(delta3(afterStrafe.target, beforeStrafe.target), beforeStrafe.right)).toBeGreaterThan(0);
+  await expect(page.getByRole('button', { name: 'Select', exact: true })).toHaveAttribute('aria-pressed', 'true');
+
+  // Shift accelerates movement by the documented factor without changing its basis.
+  await canvas.focus();
+  const beforeFast = await sceneCamera(page);
+  await page.keyboard.down('Shift');
+  await page.keyboard.down('w');
+  await page.waitForTimeout(320);
+  const afterFast = await sceneCamera(page);
+  await page.keyboard.up('w');
+  await page.keyboard.up('Shift');
+  const fastDelta = distance3(afterFast.target, beforeFast.target);
+  const ordinaryDelta = distance3(afterForward.target, beforeForward.target);
+  expect(fastDelta / ordinaryDelta).toBeGreaterThan(2.4);
+  expect(fastDelta / ordinaryDelta).toBeLessThan(3.7);
+
+  // Wheel zoom changes camera-to-target distance, not the frame-derived travel speed.
+  await canvas.focus();
+  const canvasBounds = await canvas.boundingBox();
+  expect(canvasBounds).not.toBeNull();
+  await page.mouse.move(canvasBounds!.x + canvasBounds!.width / 2, canvasBounds!.y + canvasBounds!.height / 2);
+  for (let index = 0; index < 24; index++) await page.mouse.wheel(0, -120);
+  const nearTarget = await sceneCamera(page);
+  const oldTargetDistance = distance3(nearTarget.position, nearTarget.target);
+  expect(oldTargetDistance).toBeLessThan(distance3(beforeForward.position, beforeForward.target));
+  const beforeNearMove = await sceneCamera(page);
+  await page.keyboard.down('Shift');
+  await page.keyboard.down('w');
+  await page.waitForTimeout(320);
+  const afterNearMove = await sceneCamera(page);
+  await page.keyboard.up('w');
+  await page.keyboard.up('Shift');
+  const nearDelta = delta3(afterNearMove.target, beforeNearMove.target);
+  expect(dot3(nearDelta, beforeNearMove.forward)).toBeGreaterThan(oldTargetDistance);
+  expect(distance3(afterNearMove.target, beforeNearMove.target) / fastDelta).toBeGreaterThan(0.5);
+  expect(distance3(afterNearMove.target, beforeNearMove.target) / fastDelta).toBeLessThan(1.7);
+  expect(distance3(afterNearMove.position, afterNearMove.target)).toBeCloseTo(oldTargetDistance, 4);
+
+  // A focused input and a hierarchy row do not keep moving a previously held key.
+  await page.locator('[data-scene-id="zone:0"]').click();
+  const input = page.getByRole('spinbutton', { name: 'Corner 0 X' });
+  await input.focus();
+  const inputFocusCamera = await sceneCamera(page);
+  await page.keyboard.press('w');
+  await page.waitForTimeout(180);
+  expect(await sceneCamera(page)).toEqual(inputFocusCamera);
+  const treeRow = page.getByRole('treeitem').first();
+  await canvas.focus();
+  await page.keyboard.down('w');
+  await page.waitForTimeout(120);
+  await treeRow.focus();
+  const afterBlur = await sceneCamera(page);
+  await page.waitForTimeout(180);
+  expect(await sceneCamera(page)).toEqual(afterBlur);
+  await page.keyboard.up('w');
+
+  // Modal focus also suspends movement, and its ordinary close action restores the editor.
+  await page.locator('[data-studio-menu="Help"]').click();
+  await page.getByRole('menuitem', { name: 'About XEM Studio' }).click();
+  const modal = page.getByRole('dialog', { name: 'About XEM Studio' });
+  await expect(modal).toBeVisible();
+  const modalCamera = await sceneCamera(page);
+  await page.keyboard.down('w');
+  await page.waitForTimeout(180);
+  await page.keyboard.up('w');
+  expect(await sceneCamera(page)).toEqual(modalCamera);
+  await modal.getByRole('button', { name: 'Close' }).click();
+
+  // G switches tools; Frame, orbit, and pan remain available after camera navigation.
+  await canvas.focus();
+  await page.keyboard.press('g');
+  await expect(page.getByRole('button', { name: 'Move', exact: true })).toHaveAttribute('aria-pressed', 'true');
+  const zone = page.locator('[data-scene-id="zone:0"]');
+  await zone.click();
+  await page.getByRole('button', { name: 'Frame selection' }).click();
+  let framed = await sceneCamera(page);
+  const offset = delta3(framed.position, framed.target);
+  const offsetLength = distance3(framed.position, framed.target);
+  const expectedFrameDirection = [1, 0.8, 1];
+  expect(dot3(offset, expectedFrameDirection) / (offsetLength * Math.hypot(...expectedFrameDirection))).toBeGreaterThan(0.999);
+
+  const bounds = await canvas.boundingBox();
+  expect(bounds).not.toBeNull();
+  await page.mouse.move(bounds!.x + 18, bounds!.y + 18);
+  await page.mouse.down({ button: 'left' });
+  await page.mouse.move(bounds!.x + 78, bounds!.y + 42, { steps: 4 });
+  await page.mouse.up({ button: 'left' });
+  const orbited = await sceneCamera(page);
+  expect(orbited.target).toEqual(framed.target);
+  expect(distance3(orbited.position, orbited.target)).toBeCloseTo(distance3(framed.position, framed.target), 3);
+  expect(distance3(orbited.position, framed.position)).toBeGreaterThan(1);
+
+  await page.mouse.move(bounds!.x + 22, bounds!.y + 22);
+  await page.mouse.down({ button: 'right' });
+  await page.mouse.move(bounds!.x + 54, bounds!.y + 47, { steps: 4 });
+  await page.mouse.up({ button: 'right' });
+  const panned = await sceneCamera(page);
+  expect(distance3(panned.target, orbited.target)).toBeGreaterThan(1);
+  expect(distance3(panned.position, panned.target)).toBeCloseTo(distance3(orbited.position, orbited.target), 3);
+  await page.getByRole('button', { name: 'Frame selection' }).click();
+  framed = await sceneCamera(page);
+  expect(dot3(delta3(framed.position, framed.target), expectedFrameDirection)).toBeGreaterThan(0);
+
+  expect(await sceneSnapshot(page)).toEqual(authored);
+  const compiledAfter = await inspectScene(page);
+  expect(compiledAfter.document).toEqual(compiled.document);
+  expect(compiledAfter.compiled.bundle_sha256).toBe(compiled.compiled.bundle_sha256);
+  expect(compiledAfter.compiled.bundle).toEqual(compiled.compiled.bundle);
 });

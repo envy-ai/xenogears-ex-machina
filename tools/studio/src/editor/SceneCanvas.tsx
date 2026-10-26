@@ -1,8 +1,9 @@
 /** Shared Three.js viewport; caller owns authored data, validation and history. */
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useId, useRef, useState } from 'react';
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { TransformControls } from 'three/addons/controls/TransformControls.js';
+import { isSceneCameraKey, moveSceneCamera, sceneCameraAxes } from './sceneCameraNavigation';
 import '../styles/scene-canvas.scss';
 export type SceneTool='select'|'move'|'rotate';
 export interface SceneCanvasModel { group:THREE.Group; objects:Map<string,THREE.Object3D>; frameBounds(object?:THREE.Object3D):THREE.Box3; dispose():void }
@@ -13,21 +14,25 @@ export interface SceneCanvasProps {
   onBeginTransform():()=>void;onTransform(value:SceneTransform):void;onError(error:unknown):void;
 }
 export function SceneCanvas(props:SceneCanvasProps){
+  const helpId=useId();
   const host=useRef<HTMLDivElement>(null),latest=useRef(props),framedRequest=useRef(props.frame);latest.current=props;
   const engine=useRef<{scene:THREE.Scene;camera:THREE.PerspectiveCamera;orbit:OrbitControls;transform:TransformControls;selection:{object:THREE.Object3D|null;proxy:THREE.Object3D};frame(object?:THREE.Object3D):void}|null>(null);
   const [error,setError]=useState<Error|null>(null),[attempt,setAttempt]=useState(0);
   useEffect(()=>{
     const container=host.current!;let renderer:THREE.WebGLRenderer|undefined;let animation=0;let resize:ResizeObserver|undefined;
     let orbit:OrbitControls|undefined,transform:TransformControls|undefined;
+    let removeNavigation=()=>{};
     const fail=(cause:unknown)=>{const error=cause instanceof Error?cause:new Error(String(cause));setError(error);try{latest.current.onError(error);}catch(reportError){setError(new AggregateError([error,reportError],'Viewport failure and its error reporter both failed; authored state is preserved'));}};
     try{
       setError(null);
       renderer=new THREE.WebGLRenderer({antialias:true,alpha:false});renderer.setPixelRatio(window.devicePixelRatio);renderer.setClearColor(0x111d24);renderer.outputColorSpace=THREE.SRGBColorSpace;
-      const canvas=renderer.domElement;canvas.setAttribute('aria-label','3D field scene viewport');canvas.tabIndex=0;container.append(canvas);
+      const canvas=renderer.domElement;canvas.setAttribute('aria-label','3D field scene viewport');canvas.tabIndex=0;canvas.setAttribute('aria-describedby',helpId);container.append(canvas);
       const scene=new THREE.Scene(),camera=new THREE.PerspectiveCamera(45,1,1,1e7);camera.position.set(600,600,600);
       orbit=new OrbitControls(camera,canvas);orbit.enableDamping=false;
+      const keys=new Set<string>();let fast=false,lastDraw:number|null=null,moveSpeed=600;
+      const clearNavigation=()=>{keys.clear();fast=false;lastDraw=null;};
       transform=new TransformControls(camera,canvas);transform.setSpace('world');transform.setTranslationSnap(null);transform.setRotationSnap(Math.PI/2048);scene.add(transform.getHelper());const selection={object:null as THREE.Object3D|null,proxy:new THREE.Object3D()};scene.add(selection.proxy);
-      transform.addEventListener('dragging-changed',event=>{orbit!.enabled=!event.value;});
+      transform.addEventListener('dragging-changed',event=>{clearNavigation();orbit!.enabled=!event.value;});
       let initialTransform:{position:THREE.Vector3;rotation:THREE.Euler;anchor:THREE.Vector3;validate:()=>void}|null=null;
       transform.addEventListener('mouseDown',()=>{const object=selection.object;initialTransform=null;if(!object)return;try{initialTransform={position:object.position.clone(),rotation:object.rotation.clone(),anchor:selection.proxy.position.clone(),validate:latest.current.onBeginTransform()};}catch(error){fail(error);}});
       transform.addEventListener('mouseUp',()=>{
@@ -42,6 +47,7 @@ export function SceneCanvas(props:SceneCanvasProps){
         const box=latest.current.model.frameBounds(object===latest.current.model.group?undefined:object);if(box.isEmpty())return;
         const center=box.getCenter(new THREE.Vector3()),radius=box.getSize(new THREE.Vector3()).length()/2;
         const distance=Math.max(20,radius/Math.sin(camera.fov*Math.PI/360));
+        clearNavigation();moveSpeed=distance*0.6;
         orbit!.target.copy(center);camera.position.copy(center).add(new THREE.Vector3(1,0.8,1).normalize().multiplyScalar(distance));camera.near=Math.max(0.1,distance/10000);camera.far=Math.max(10000,distance*20);camera.updateProjectionMatrix();orbit!.update();
       };
       engine.current={scene,camera,orbit,transform,selection,frame};
@@ -61,6 +67,7 @@ export function SceneCanvas(props:SceneCanvasProps){
           const bounds=canvas.getBoundingClientRect();return{x:bounds.left+(point.x+1)*bounds.width/2,y:bounds.top+(1-point.y)*bounds.height/2,z:point.z,visible:visible(object)&&point.x>=-1&&point.x<=1&&point.y>=-1&&point.y<=1&&point.z>=-1&&point.z<=1};
         };
         (canvas as HTMLCanvasElement&{__xemScene?:unknown}).__xemScene={
+          camera:()=>({position:camera.position.toArray(),target:orbit!.target.toArray(),forward:camera.getWorldDirection(new THREE.Vector3()).toArray(),right:new THREE.Vector3().setFromMatrixColumn(camera.matrixWorld,0).normalize().toArray()}),
           project:(id:string)=>{const object=latest.current.model.objects.get(id);if(!object)throw new Error('Scene object is not mounted');return project(object);},
           textureStats:()=>{
             let meshes=0,texturedMeshes=0,texturedTriangles=0,spriteParts=0;
@@ -86,7 +93,7 @@ export function SceneCanvas(props:SceneCanvasProps){
       }
       resize=new ResizeObserver(()=>{const w=container.clientWidth,h=container.clientHeight;if(w&&h){renderer!.setSize(w,h);camera.aspect=w/h;camera.updateProjectionMatrix();}});resize.observe(container);
       const ray=new THREE.Raycaster();let down:{x:number;y:number}|null=null;
-      const pointerDown=(event:PointerEvent)=>{down={x:event.clientX,y:event.clientY};};
+      const pointerDown=(event:PointerEvent)=>{canvas.focus({preventScroll:true});down={x:event.clientX,y:event.clientY};};
       const pointerUp=(event:PointerEvent)=>{
         if(!down||event.button!==0||Math.hypot(down.x-event.clientX,down.y-event.clientY)>4||transform!.axis!==null||transform!.dragging)return;
         const bounds=canvas.getBoundingClientRect();ray.setFromCamera(new THREE.Vector2((event.clientX-bounds.left)/bounds.width*2-1,-(event.clientY-bounds.top)/bounds.height*2+1),camera);
@@ -96,12 +103,32 @@ export function SceneCanvas(props:SceneCanvasProps){
           if(visible&&id){latest.current.onSelect(id);break;}
         }
       };
-      const contextLost=(event:Event)=>{event.preventDefault();cancelAnimationFrame(animation);fail(new Error('The scene WebGL context was lost; authored state and last-good build are preserved'));};
+      const contextLost=(event:Event)=>{event.preventDefault();clearNavigation();cancelAnimationFrame(animation);fail(new Error('The scene WebGL context was lost; authored state and last-good build are preserved'));};
       canvas.addEventListener('pointerdown',pointerDown);canvas.addEventListener('pointerup',pointerUp);canvas.addEventListener('webglcontextlost',contextLost);
-      const draw=()=>{try{renderer!.render(scene,camera);animation=requestAnimationFrame(draw);}catch(error){cancelAnimationFrame(animation);fail(error);}};draw();
-      return()=>{cancelAnimationFrame(animation);resize?.disconnect();canvas.removeEventListener('pointerdown',pointerDown);canvas.removeEventListener('pointerup',pointerUp);canvas.removeEventListener('webglcontextlost',contextLost);transform!.dispose();orbit!.dispose();renderer!.dispose();canvas.remove();engine.current=null;};
-    }catch(error){cancelAnimationFrame(animation);resize?.disconnect();transform?.dispose();orbit?.dispose();renderer?.dispose();renderer?.domElement.remove();engine.current=null;fail(error);}
-  },[attempt]);
+      const keyDown=(event:KeyboardEvent)=>{
+        if(event.defaultPrevented||event.isComposing||event.altKey||event.ctrlKey||event.metaKey||document.querySelector('[aria-modal=true]')){clearNavigation();return;}
+        fast=event.shiftKey;
+        if(!isSceneCameraKey(event.code))return;
+        event.preventDefault();
+        if(!transform!.dragging&&orbit!.enabled)keys.add(event.code);
+      };
+      const keyUp=(event:KeyboardEvent)=>{keys.delete(event.code);fast=event.shiftKey;};
+      const suspendForModifier=(event:KeyboardEvent)=>{if(event.altKey||event.ctrlKey||event.metaKey||event.key==='Escape')clearNavigation();};
+      const visibility=()=>{if(document.hidden)clearNavigation();};
+      canvas.addEventListener('keydown',keyDown);canvas.addEventListener('blur',clearNavigation);
+      window.addEventListener('keyup',keyUp);window.addEventListener('keydown',suspendForModifier,true);window.addEventListener('blur',clearNavigation);document.addEventListener('visibilitychange',visibility);
+      removeNavigation=()=>{clearNavigation();canvas.removeEventListener('keydown',keyDown);canvas.removeEventListener('blur',clearNavigation);window.removeEventListener('keyup',keyUp);window.removeEventListener('keydown',suspendForModifier,true);window.removeEventListener('blur',clearNavigation);document.removeEventListener('visibilitychange',visibility);};
+      const draw=(now:number)=>{try{
+        const elapsed=lastDraw===null?0:(now-lastDraw)/1000;lastDraw=now;
+        if(document.activeElement===canvas&&!document.hidden&&!document.querySelector('[aria-modal=true]')&&!transform!.dragging&&orbit!.enabled){
+          const axes=sceneCameraAxes(keys);
+          if(axes.forward||axes.right){moveSceneCamera(camera,orbit!.target,axes.forward,axes.right,moveSpeed*(fast?3:1)*elapsed);orbit!.update();}
+        }else clearNavigation();
+        renderer!.render(scene,camera);animation=requestAnimationFrame(draw);
+      }catch(error){clearNavigation();cancelAnimationFrame(animation);fail(error);}};draw(performance.now());
+      return()=>{removeNavigation();cancelAnimationFrame(animation);resize?.disconnect();canvas.removeEventListener('pointerdown',pointerDown);canvas.removeEventListener('pointerup',pointerUp);canvas.removeEventListener('webglcontextlost',contextLost);transform!.dispose();orbit!.dispose();renderer!.dispose();canvas.remove();engine.current=null;};
+    }catch(error){removeNavigation();cancelAnimationFrame(animation);resize?.disconnect();transform?.dispose();orbit?.dispose();renderer?.dispose();renderer?.domElement.remove();engine.current=null;fail(error);}
+  },[attempt,helpId]);
   useEffect(()=>{
     const current=engine.current;if(!current)return;current.scene.add(props.model.group);if(current.scene.userData.source!==props.model.group.userData.source){current.frame();current.scene.userData.source=props.model.group.userData.source;}
     return()=>{current.transform.detach();current.scene.remove(props.model.group);};
@@ -117,5 +144,5 @@ export function SceneCanvas(props:SceneCanvasProps){
   },[props.model,props.selected,props.tool,props.disabled,props.axes,attempt]);
   // Mount/retry uses qualified overview bounds; only a new F/button request frames selection.
   useEffect(()=>{if(framedRequest.current===props.frame)return;framedRequest.current=props.frame;const object=props.selected?props.model.objects.get(props.selected):undefined;engine.current?.frame(object);},[props.frame]);
-  return <div className="scene-canvas" ref={host}>{error&&<div className="scene-canvas__error"><pre className="editor-text editor-text--danger" role="alert">{error.stack??error.message}</pre><button className="editor-button" onClick={()=>setAttempt(value=>value+1)}>Retry 3D viewport</button></div>}<span className="scene-canvas__help editor-text editor-text--caption">Orbit: drag · Pan: right drag · Zoom: wheel · F: frame · Source axes: Y down</span></div>;
+  return <div className="scene-canvas" ref={host}>{error&&<div className="scene-canvas__error"><pre className="editor-text editor-text--danger" role="alert">{error.stack??error.message}</pre><button className="editor-button" onClick={()=>setAttempt(value=>value+1)}>Retry 3D viewport</button></div>}<span id={helpId} className="scene-canvas__help editor-text editor-text--caption">Click viewport · WASD/arrows: dolly/strafe · Shift: faster · Orbit: drag · Pan: right drag · Wheel: zoom · F: frame · Source axes: Y down</span></div>;
 }

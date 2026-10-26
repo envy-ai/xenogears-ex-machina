@@ -557,6 +557,25 @@ stored source origin or source rotation, after validating the caller's captured
 project/source/selection owner. Rotation uses the original stored model origin.
 Off-canvas projections are not treated as visible picking targets. Only the caller's explicit validated Apply writes an authored transaction.
 
+Camera navigation is scoped to the focused canvas (click it or Tab to it).
+W/S or Up/Down dolly along its current view direction; A/D or Left/Right strafe
+along camera-right. Both camera and orbit target move by the same displacement,
+so movement can pass the previous target without changing orientation or orbit
+distance. Diagonals are normalized and held keys move by elapsed frame time;
+Shift moves three times faster. The base speed follows the last explicit Frame
+extent and stays constant through wheel zoom. Wheel remains orbit zoom, and
+mouse orbit/right-drag pan retain their existing behavior.
+
+The canvas consumes these movement keys before application tool shortcuts.
+G selects the Move tool; W also selects it when focus is outside the canvas.
+Text inputs, hierarchy arrow navigation, modifier shortcuts and modal focus do
+not control the camera. Held keys clear on blur, hidden document, modifier
+shortcuts, context loss and renderer disposal, and are suspended during a gizmo
+drag. Frame resets movement. Navigation never writes authored scene data or
+history. The caption is associated with the canvas through aria-describedby.
+`sceneCameraNavigation.ts` supplies the shared key axes and root-camera motion;
+SceneCanvas owns focus, timing and listener cleanup.
+
 The widget is newly authored; no RPG Creator viewport source is copied. Three.js
 and its OrbitControls/TransformControls are exact package dependencies. Labels,
 fields, buttons and lists remain the existing registered editor widgets.

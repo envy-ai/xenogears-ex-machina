@@ -1018,8 +1018,14 @@ how to use Live game → Open game & attach (/runtime/ by default), Choose disc
 image…, Boot, attach again if needed, and load the same vanilla disc/map before
 retrying Scene. Save project after capture to retain the matching context for
 offline reuse; Load project can reuse an already saved qualified context. Sources
-that decode completely offline do not require a runtime connection. The hierarchy filters original entity identities and layers. Q/W/E select,
-move or rotate; F frames the selected source. Dragging previews inline values;
+that decode completely offline do not require a runtime connection. The hierarchy filters original entity identities and layers. Q/G/E select,
+move or rotate; F frames the selected source. Click or Tab into the viewport to
+hold W/S (or Up/Down) for camera-relative forward/backward movement and A/D
+(or Left/Right) to strafe. Shift moves faster. Camera and orbit target translate
+together, so dollying does not slow toward the wheel-zoom target. Movement speed
+follows the last Frame extent and remains independent of wheel zoom. W still
+selects Move outside the viewport; inputs and tree navigation retain their own
+keys. Mouse drag orbits, right drag pans and the wheel zooms. Dragging previews inline values;
 Apply commits one Rust transaction and Cancel preserves the accepted scene.
 Raw integer units and unsupported operations are explicit. A display handle is
 centred on selected geometry; translation retains the stored source origin, and

@@ -1355,6 +1355,7 @@ tools/studio/src/editor/dockLayout.ts
 tools/studio/src/editor/editorCommands.ts
 tools/studio/src/editor/editorTheme.ts
 tools/studio/src/editor/itemReorder.tsx
+tools/studio/src/editor/sceneCameraNavigation.ts
 tools/studio/src/editor/storedJson.ts
 tools/studio/src/editor/usePersistedPreferences.ts
 tools/studio/src/editor/workspaceLayout.ts
@@ -1462,6 +1463,7 @@ tools/studio/tests/unit/game-ui-real.test.ts
 tools/studio/tests/unit/game.test.ts
 tools/studio/tests/unit/name-history.test.ts
 tools/studio/tests/unit/remote-discs.test.ts
+tools/studio/tests/unit/scene-camera-navigation.test.ts
 tools/studio/tests/unit/scene-pose.test.ts
 tools/studio/tests/unit/scene-sprites.test.ts
 tools/studio/tests/unit/scene-textures.test.ts

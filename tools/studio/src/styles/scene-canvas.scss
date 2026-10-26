@@ -4,4 +4,4 @@
 .scene-canvas > canvas:focus-visible {outline:2px solid var(--editor-accent);}
 .scene-canvas__error {position:absolute;inset:8px;overflow:auto;background:var(--editor-panel);padding:8px;}
 .scene-canvas__error pre {white-space:pre-wrap;}
-.scene-canvas__help {position:absolute;bottom:6px;left:6px;padding:4px 6px;background:var(--editor-panel);pointer-events:none;}
+.scene-canvas__help {position:absolute;bottom:6px;left:6px;right:6px;width:fit-content;max-width:calc(100% - 12px);padding:4px 6px;background:var(--editor-panel);pointer-events:none;}
