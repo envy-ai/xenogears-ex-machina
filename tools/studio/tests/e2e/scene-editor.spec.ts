@@ -1143,6 +1143,41 @@ test('focused Scene viewport camera navigation preserves authored data and exist
   await page.keyboard.press('q');
   await expect(page.getByRole('button', { name: 'Select', exact: true })).toHaveAttribute('aria-pressed', 'true');
 
+  // Vertical aliases translate camera and target along world +Y without yaw, pitch, or X/Z drift.
+  const holdVertical = async (key: string, direction: 1 | -1) => {
+    await canvas.focus();
+    const before = await sceneCamera(page);
+    await page.keyboard.down(key);
+    await page.waitForTimeout(180);
+    const moving = await sceneCamera(page);
+    await page.keyboard.up(key);
+    const released = await sceneCamera(page);
+    const positionDelta = delta3(moving.position, before.position);
+    const targetDelta = delta3(moving.target, before.target);
+    expect(Math.abs(positionDelta[0])).toBeLessThan(1e-4);
+    expect(positionDelta[1] * direction).toBeGreaterThan(1);
+    expect(Math.abs(positionDelta[2])).toBeLessThan(1e-4);
+    expect(distance3(targetDelta, positionDelta)).toBeLessThan(1e-6);
+    expect(moving.quaternion).toEqual(before.quaternion);
+    await page.waitForTimeout(160);
+    expect(await sceneCamera(page)).toEqual(released);
+  };
+  await holdVertical('Space', 1);
+  await holdVertical('PageUp', 1);
+  await holdVertical('c', -1);
+  await holdVertical('PageDown', -1);
+
+  // Opposite held vertical keys cancel instead of double-counting aliases.
+  await canvas.focus();
+  await page.keyboard.down('Space');
+  await page.keyboard.down('c');
+  const beforeVerticalCancel = await sceneCamera(page);
+  await page.waitForTimeout(180);
+  const duringVerticalCancel = await sceneCamera(page);
+  await page.keyboard.up('Space');
+  await page.keyboard.up('c');
+  expect(duringVerticalCancel).toEqual(beforeVerticalCancel);
+
   // Wheel zoom changes camera-to-target distance, not the frame-derived travel speed.
   await canvas.focus();
   const canvasBounds = await canvas.boundingBox();
@@ -1171,6 +1206,8 @@ test('focused Scene viewport camera navigation preserves authored data and exist
   await input.focus();
   const inputFocusCamera = await sceneCamera(page);
   await page.keyboard.press('w');
+  await page.keyboard.press('Space');
+  await page.keyboard.press('c');
   await page.waitForTimeout(180);
   expect(await sceneCamera(page)).toEqual(inputFocusCamera);
   const treeRow = page.getByRole('treeitem').first();

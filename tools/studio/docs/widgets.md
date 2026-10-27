@@ -559,7 +559,12 @@ Off-canvas projections are not treated as visible picking targets. Only the call
 
 Camera navigation is scoped to the focused canvas (click it or Tab to it).
 W/S or Up/Down dolly along its current view direction; A/D or Left/Right strafe
-along camera-right. Hold Q/E to turn left/right in place about the camera's own
+along camera-right. Space/PageUp rise and C/PageDown descend along view-world
++Y/-Y, independent of camera pitch or roll (original source Y points down).
+Aliases do not double speed, opposite inputs cancel, and mixed-direction
+movement is normalized. The camera and target translate equally without changing
+orientation. Space/Page keys are consumed only in the focused canvas, so buttons,
+text editing and normal scrolling outside it retain native keys. Hold Q/E to turn left/right in place about the camera's own
 up axis (60 degrees/second at normal speed); opposing turns cancel. The camera
 position and target distance stay fixed while the target follows the new view.
 Keyboard turning and movement preserve exact local orientation, including a

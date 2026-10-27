@@ -126,7 +126,7 @@ export function SceneCanvas(props:SceneCanvasProps){
         if(document.activeElement===canvas&&!document.hidden&&!document.querySelector('[aria-modal=true]')&&!mouseNavigating&&!transform!.dragging&&orbit!.enabled){
           const axes=sceneCameraAxes(keys),turn=sceneCameraTurn(keys),rate=(fast?3:1)*elapsed;
           if(turn)turnSceneCamera(camera,orbit!.target,turn*Math.PI/3*rate);
-          if(axes.forward||axes.right)moveSceneCamera(camera,orbit!.target,axes.forward,axes.right,moveSpeed*rate);
+          if(axes.forward||axes.right||axes.up)moveSceneCamera(camera,orbit!.target,axes.forward,axes.right,moveSpeed*rate,axes.up);
           // OrbitControls.update() levels the view; keyboard navigation retains
           // exact local-axis orientation until a mouse gesture or explicit Frame.
         }else clearNavigation();
@@ -150,5 +150,5 @@ export function SceneCanvas(props:SceneCanvasProps){
   },[props.model,props.selected,props.tool,props.disabled,props.axes,attempt]);
   // Mount/retry uses qualified overview bounds; only a new F/button request frames selection.
   useEffect(()=>{if(framedRequest.current===props.frame)return;framedRequest.current=props.frame;const object=props.selected?props.model.objects.get(props.selected):undefined;engine.current?.frame(object);},[props.frame]);
-  return <div className="scene-canvas" ref={host}>{error&&<div className="scene-canvas__error"><pre className="editor-text editor-text--danger" role="alert">{error.stack??error.message}</pre><button className="editor-button" onClick={()=>setAttempt(value=>value+1)}>Retry 3D viewport</button></div>}<span id={helpId} className="scene-canvas__help editor-text editor-text--caption">Click viewport · WASD/arrows: dolly/strafe · Q/E: turn · Shift: faster · Orbit: drag · Pan: right drag · Wheel: zoom · F: frame · Source axes: Y down</span></div>;
+  return <div className="scene-canvas" ref={host}>{error&&<div className="scene-canvas__error"><pre className="editor-text editor-text--danger" role="alert">{error.stack??error.message}</pre><button className="editor-button" onClick={()=>setAttempt(value=>value+1)}>Retry 3D viewport</button></div>}<span id={helpId} className="scene-canvas__help editor-text editor-text--caption">Click viewport · WASD/arrows: dolly/strafe · Q/E: turn · Space/C or PgUp/PgDn: rise/descend · Shift: faster · Orbit: drag · Pan: right drag · Wheel: zoom · F: frame · Source axes: Y down</span></div>;
 }

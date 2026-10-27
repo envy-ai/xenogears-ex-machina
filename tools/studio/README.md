@@ -1021,7 +1021,8 @@ offline reuse; Load project can reuse an already saved qualified context. Source
 that decode completely offline do not require a runtime connection. The hierarchy filters original entity identities and layers. V/G/R select,
 move or rotate; F frames the selected source. Click or Tab into the viewport to
 hold W/S (or Up/Down) for camera-relative forward/backward movement and A/D
-(or Left/Right) to strafe. Q/E turn left/right about the camera's own up axis,
+(or Left/Right) to strafe. Space/PageUp rise and C/PageDown descend vertically
+in the map, even when the view is tilted. Q/E turn left/right about the camera's own up axis,
 in place. Shift moves and turns faster. Camera and orbit target translate
 together, so dollying does not slow toward the wheel-zoom target. Movement speed
 follows the last Frame extent and remains independent of wheel zoom. Q/W/E still
