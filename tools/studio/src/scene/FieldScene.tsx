@@ -46,7 +46,7 @@ export function FieldScene({editor,draft,onError}:{editor:SceneEditor;draft:Draf
     const key=(event:KeyboardEvent)=>{
       if(event.defaultPrevented||event.altKey||document.querySelector('[aria-modal=true]'))return;
       const target=event.target as HTMLElement;if(!target.closest('.field-scene,.scene-inspector')||target.closest('input,textarea,select,[contenteditable=true]'))return;
-      const value=event.key.toLowerCase();if(event.ctrlKey||event.metaKey){if(value==='d'){event.preventDefault();editor.crud('duplicate');}return;}if(['q','w','g','e'].includes(value)){event.preventDefault();editor.setTool(value==='q'?'select':value==='e'?'rotate':'move');}
+      const value=event.key.toLowerCase();if(event.ctrlKey||event.metaKey){if(value==='d'){event.preventDefault();editor.crud('duplicate');}return;}if(['q','v','w','g','e','r'].includes(value)){event.preventDefault();editor.setTool(value==='q'||value==='v'?'select':value==='e'||value==='r'?'rotate':'move');}
       else if(value==='f'){event.preventDefault();editor.frameSelection();}else if(event.key==='Delete'){event.preventDefault();editor.crud('delete');}else if(event.key==='Escape'){event.preventDefault();draft.cancel();}
     };window.addEventListener('keydown',key);return()=>window.removeEventListener('keydown',key);
   },[editor,draft.cancel]);
@@ -55,7 +55,7 @@ export function FieldScene({editor,draft,onError}:{editor:SceneEditor;draft:Draf
   const diagnostics=[...assets.diagnostics,...state.reference_diagnostics,...model.diagnostics];
   return <section className="field-scene" aria-label="Authored field scene">
     <div className="scene-tools" role="toolbar" aria-label="Scene tools">
-      {([{id:'select',label:'Select',key:'Q',Icon:MousePointer2},{id:'move',label:'Move',key:'G',Icon:Move},{id:'rotate',label:'Rotate',key:'E',Icon:RotateCw}] as const).map(({id,label,key,Icon})=><button className="editor-button editor-button--compact" key={id} aria-pressed={editor.tool===id} title={`${label} (${key})${id==='rotate'&&!editor.canRotate?' · selected source has no qualified rotation field':''}`} disabled={id==='rotate'&&!editor.canRotate} onClick={()=>editor.setTool(id)}><Icon size={16}/>{label}</button>)}
+      {([{id:'select',label:'Select',key:'V',Icon:MousePointer2},{id:'move',label:'Move',key:'G',Icon:Move},{id:'rotate',label:'Rotate',key:'R',Icon:RotateCw}] as const).map(({id,label,key,Icon})=><button className="editor-button editor-button--compact" key={id} aria-pressed={editor.tool===id} title={`${label} (${key})${id==='rotate'&&!editor.canRotate?' · selected source has no qualified rotation field':''}`} disabled={id==='rotate'&&!editor.canRotate} onClick={()=>editor.setTool(id)}><Icon size={16}/>{label}</button>)}
       <button className="editor-button editor-button--compact" title="Frame selection (F)" onClick={editor.frameSelection}><Focus size={16}/>Frame selection</button>
       <span className="editor-text editor-text--caption" title="Handles are centered on the selected geometry. Translation applies a delta to the stored source origin; rotation edits the stored source rotation about that origin.">Authored source · {draft.inlineDirty?'Unapplied fields; last valid scene retained':'Accepted scene'}</span>
     </div>

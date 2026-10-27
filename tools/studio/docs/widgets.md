@@ -559,7 +559,13 @@ Off-canvas projections are not treated as visible picking targets. Only the call
 
 Camera navigation is scoped to the focused canvas (click it or Tab to it).
 W/S or Up/Down dolly along its current view direction; A/D or Left/Right strafe
-along camera-right. Both camera and orbit target move by the same displacement,
+along camera-right. Hold Q/E to turn left/right in place about the camera's own
+up axis (60 degrees/second at normal speed); opposing turns cancel. The camera
+position and target distance stay fixed while the target follows the new view.
+Keyboard turning and movement preserve exact local orientation, including a
+tilted view. A subsequent mouse orbit/pan/zoom uses the existing world-up leveling;
+Frame explicitly restores upright framing. Mouse gestures clear held navigation
+and own the camera until the gesture ends. Both camera and orbit target move by the same displacement,
 so movement can pass the previous target without changing orientation or orbit
 distance. Diagonals are normalized and held keys move by elapsed frame time;
 Shift moves three times faster. The base speed follows the last explicit Frame
@@ -567,7 +573,8 @@ extent and stays constant through wheel zoom. Wheel remains orbit zoom, and
 mouse orbit/right-drag pan retain their existing behavior.
 
 The canvas consumes these movement keys before application tool shortcuts.
-G selects the Move tool; W also selects it when focus is outside the canvas.
+V/G/R select the Select/Move/Rotate tools anywhere. Q/W/E also select them
+when focus is outside the canvas; inside, those keys control the camera.
 Text inputs, hierarchy arrow navigation, modifier shortcuts and modal focus do
 not control the camera. Held keys clear on blur, hidden document, modifier
 shortcuts, context loss and renderer disposal, and are suspended during a gizmo

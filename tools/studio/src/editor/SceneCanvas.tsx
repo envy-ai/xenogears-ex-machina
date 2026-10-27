@@ -3,7 +3,7 @@ import { useEffect, useId, useRef, useState } from 'react';
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { TransformControls } from 'three/addons/controls/TransformControls.js';
-import { isSceneCameraKey, moveSceneCamera, sceneCameraAxes } from './sceneCameraNavigation';
+import { isSceneCameraKey, moveSceneCamera, sceneCameraAxes, sceneCameraTurn, turnSceneCamera } from './sceneCameraNavigation';
 import '../styles/scene-canvas.scss';
 export type SceneTool='select'|'move'|'rotate';
 export interface SceneCanvasModel { group:THREE.Group; objects:Map<string,THREE.Object3D>; frameBounds(object?:THREE.Object3D):THREE.Box3; dispose():void }
@@ -29,8 +29,11 @@ export function SceneCanvas(props:SceneCanvasProps){
       const canvas=renderer.domElement;canvas.setAttribute('aria-label','3D field scene viewport');canvas.tabIndex=0;canvas.setAttribute('aria-describedby',helpId);container.append(canvas);
       const scene=new THREE.Scene(),camera=new THREE.PerspectiveCamera(45,1,1,1e7);camera.position.set(600,600,600);
       orbit=new OrbitControls(camera,canvas);orbit.enableDamping=false;
-      const keys=new Set<string>();let fast=false,lastDraw:number|null=null,moveSpeed=600;
+      const keys=new Set<string>();let fast=false,lastDraw:number|null=null,moveSpeed=600,mouseNavigating=false;
       const clearNavigation=()=>{keys.clear();fast=false;lastDraw=null;};
+      const mouseStart=()=>{mouseNavigating=true;clearNavigation();};
+      const mouseEnd=()=>{mouseNavigating=false;clearNavigation();};
+      orbit.addEventListener('start',mouseStart);orbit.addEventListener('end',mouseEnd);
       transform=new TransformControls(camera,canvas);transform.setSpace('world');transform.setTranslationSnap(null);transform.setRotationSnap(Math.PI/2048);scene.add(transform.getHelper());const selection={object:null as THREE.Object3D|null,proxy:new THREE.Object3D()};scene.add(selection.proxy);
       transform.addEventListener('dragging-changed',event=>{clearNavigation();orbit!.enabled=!event.value;});
       let initialTransform:{position:THREE.Vector3;rotation:THREE.Euler;anchor:THREE.Vector3;validate:()=>void}|null=null;
@@ -67,7 +70,7 @@ export function SceneCanvas(props:SceneCanvasProps){
           const bounds=canvas.getBoundingClientRect();return{x:bounds.left+(point.x+1)*bounds.width/2,y:bounds.top+(1-point.y)*bounds.height/2,z:point.z,visible:visible(object)&&point.x>=-1&&point.x<=1&&point.y>=-1&&point.y<=1&&point.z>=-1&&point.z<=1};
         };
         (canvas as HTMLCanvasElement&{__xemScene?:unknown}).__xemScene={
-          camera:()=>({position:camera.position.toArray(),target:orbit!.target.toArray(),forward:camera.getWorldDirection(new THREE.Vector3()).toArray(),right:new THREE.Vector3().setFromMatrixColumn(camera.matrixWorld,0).normalize().toArray()}),
+          camera:()=>({position:camera.position.toArray(),target:orbit!.target.toArray(),forward:camera.getWorldDirection(new THREE.Vector3()).toArray(),quaternion:camera.quaternion.toArray(),up:new THREE.Vector3(0,1,0).applyQuaternion(camera.quaternion).toArray(),right:new THREE.Vector3().setFromMatrixColumn(camera.matrixWorld,0).normalize().toArray()}),
           project:(id:string)=>{const object=latest.current.model.objects.get(id);if(!object)throw new Error('Scene object is not mounted');return project(object);},
           textureStats:()=>{
             let meshes=0,texturedMeshes=0,texturedTriangles=0,spriteParts=0;
@@ -103,26 +106,29 @@ export function SceneCanvas(props:SceneCanvasProps){
           if(visible&&id){latest.current.onSelect(id);break;}
         }
       };
-      const contextLost=(event:Event)=>{event.preventDefault();clearNavigation();cancelAnimationFrame(animation);fail(new Error('The scene WebGL context was lost; authored state and last-good build are preserved'));};
+      const contextLost=(event:Event)=>{event.preventDefault();mouseEnd();cancelAnimationFrame(animation);fail(new Error('The scene WebGL context was lost; authored state and last-good build are preserved'));};
       canvas.addEventListener('pointerdown',pointerDown);canvas.addEventListener('pointerup',pointerUp);canvas.addEventListener('webglcontextlost',contextLost);
       const keyDown=(event:KeyboardEvent)=>{
         if(event.defaultPrevented||event.isComposing||event.altKey||event.ctrlKey||event.metaKey||document.querySelector('[aria-modal=true]')){clearNavigation();return;}
         fast=event.shiftKey;
         if(!isSceneCameraKey(event.code))return;
         event.preventDefault();
-        if(!transform!.dragging&&orbit!.enabled)keys.add(event.code);
+        if(!mouseNavigating&&!transform!.dragging&&orbit!.enabled)keys.add(event.code);
       };
       const keyUp=(event:KeyboardEvent)=>{keys.delete(event.code);fast=event.shiftKey;};
       const suspendForModifier=(event:KeyboardEvent)=>{if(event.altKey||event.ctrlKey||event.metaKey||event.key==='Escape')clearNavigation();};
-      const visibility=()=>{if(document.hidden)clearNavigation();};
-      canvas.addEventListener('keydown',keyDown);canvas.addEventListener('blur',clearNavigation);
-      window.addEventListener('keyup',keyUp);window.addEventListener('keydown',suspendForModifier,true);window.addEventListener('blur',clearNavigation);document.addEventListener('visibilitychange',visibility);
-      removeNavigation=()=>{clearNavigation();canvas.removeEventListener('keydown',keyDown);canvas.removeEventListener('blur',clearNavigation);window.removeEventListener('keyup',keyUp);window.removeEventListener('keydown',suspendForModifier,true);window.removeEventListener('blur',clearNavigation);document.removeEventListener('visibilitychange',visibility);};
+      const visibility=()=>{if(document.hidden)mouseEnd();};
+      canvas.addEventListener('keydown',keyDown);canvas.addEventListener('blur',mouseEnd);
+      window.addEventListener('keyup',keyUp);window.addEventListener('keydown',suspendForModifier,true);window.addEventListener('blur',mouseEnd);document.addEventListener('visibilitychange',visibility);
+      removeNavigation=()=>{clearNavigation();canvas.removeEventListener('keydown',keyDown);canvas.removeEventListener('blur',mouseEnd);window.removeEventListener('keyup',keyUp);window.removeEventListener('keydown',suspendForModifier,true);window.removeEventListener('blur',mouseEnd);document.removeEventListener('visibilitychange',visibility);orbit!.removeEventListener('start',mouseStart);orbit!.removeEventListener('end',mouseEnd);};
       const draw=(now:number)=>{try{
         const elapsed=lastDraw===null?0:(now-lastDraw)/1000;lastDraw=now;
-        if(document.activeElement===canvas&&!document.hidden&&!document.querySelector('[aria-modal=true]')&&!transform!.dragging&&orbit!.enabled){
-          const axes=sceneCameraAxes(keys);
-          if(axes.forward||axes.right){moveSceneCamera(camera,orbit!.target,axes.forward,axes.right,moveSpeed*(fast?3:1)*elapsed);orbit!.update();}
+        if(document.activeElement===canvas&&!document.hidden&&!document.querySelector('[aria-modal=true]')&&!mouseNavigating&&!transform!.dragging&&orbit!.enabled){
+          const axes=sceneCameraAxes(keys),turn=sceneCameraTurn(keys),rate=(fast?3:1)*elapsed;
+          if(turn)turnSceneCamera(camera,orbit!.target,turn*Math.PI/3*rate);
+          if(axes.forward||axes.right)moveSceneCamera(camera,orbit!.target,axes.forward,axes.right,moveSpeed*rate);
+          // OrbitControls.update() levels the view; keyboard navigation retains
+          // exact local-axis orientation until a mouse gesture or explicit Frame.
         }else clearNavigation();
         renderer!.render(scene,camera);animation=requestAnimationFrame(draw);
       }catch(error){clearNavigation();cancelAnimationFrame(animation);fail(error);}};draw(performance.now());
@@ -144,5 +150,5 @@ export function SceneCanvas(props:SceneCanvasProps){
   },[props.model,props.selected,props.tool,props.disabled,props.axes,attempt]);
   // Mount/retry uses qualified overview bounds; only a new F/button request frames selection.
   useEffect(()=>{if(framedRequest.current===props.frame)return;framedRequest.current=props.frame;const object=props.selected?props.model.objects.get(props.selected):undefined;engine.current?.frame(object);},[props.frame]);
-  return <div className="scene-canvas" ref={host}>{error&&<div className="scene-canvas__error"><pre className="editor-text editor-text--danger" role="alert">{error.stack??error.message}</pre><button className="editor-button" onClick={()=>setAttempt(value=>value+1)}>Retry 3D viewport</button></div>}<span id={helpId} className="scene-canvas__help editor-text editor-text--caption">Click viewport · WASD/arrows: dolly/strafe · Shift: faster · Orbit: drag · Pan: right drag · Wheel: zoom · F: frame · Source axes: Y down</span></div>;
+  return <div className="scene-canvas" ref={host}>{error&&<div className="scene-canvas__error"><pre className="editor-text editor-text--danger" role="alert">{error.stack??error.message}</pre><button className="editor-button" onClick={()=>setAttempt(value=>value+1)}>Retry 3D viewport</button></div>}<span id={helpId} className="scene-canvas__help editor-text editor-text--caption">Click viewport · WASD/arrows: dolly/strafe · Q/E: turn · Shift: faster · Orbit: drag · Pan: right drag · Wheel: zoom · F: frame · Source axes: Y down</span></div>;
 }

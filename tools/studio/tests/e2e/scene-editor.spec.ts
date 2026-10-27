@@ -28,7 +28,7 @@ interface SceneTestHook {
 }
 interface ProjectedPoint { x: number; y: number; z: number; visible: boolean }
 interface SceneCanvasTestApi {
-  camera(): { position: [number, number, number]; target: [number, number, number]; forward: [number, number, number]; right: [number, number, number] };
+  camera(): { position: [number, number, number]; target: [number, number, number]; forward: [number, number, number]; right: [number, number, number]; quaternion: [number, number, number, number]; up: [number, number, number] };
   project(id: string): ProjectedPoint;
   gizmo(axis: string): ProjectedPoint;
 }
@@ -1094,6 +1094,55 @@ test('focused Scene viewport camera navigation preserves authored data and exist
   expect(fastDelta / ordinaryDelta).toBeGreaterThan(2.4);
   expect(fastDelta / ordinaryDelta).toBeLessThan(3.7);
 
+  // Q turns left about camera-local up without orbiting around the pivot; keyup stops it.
+  await canvas.focus();
+  const beforeLeftTurn = await sceneCamera(page);
+  await page.keyboard.down('q');
+  await page.waitForTimeout(250);
+  const afterLeftTurn = await sceneCamera(page);
+  await page.keyboard.up('q');
+  const afterLeftRelease = await sceneCamera(page);
+  const leftAngle = Math.acos(Math.max(-1, Math.min(1, dot3(beforeLeftTurn.forward, afterLeftTurn.forward))));
+  expect(leftAngle).toBeGreaterThan(0.08);
+  expect(leftAngle).toBeLessThan(0.45);
+  expect(dot3(afterLeftTurn.forward, beforeLeftTurn.right)).toBeLessThan(0);
+  expect(distance3(afterLeftTurn.position, beforeLeftTurn.position)).toBeCloseTo(0, 8);
+  expect(distance3(afterLeftTurn.position, afterLeftTurn.target)).toBeCloseTo(distance3(beforeLeftTurn.position, beforeLeftTurn.target), 6);
+  expect(distance3(afterLeftTurn.up, beforeLeftTurn.up)).toBeLessThan(0.002);
+  expect(dot3(delta3(afterLeftTurn.target, afterLeftTurn.position), afterLeftTurn.forward)
+    / distance3(afterLeftTurn.target, afterLeftTurn.position)).toBeGreaterThan(0.999);
+  await page.waitForTimeout(160);
+  expect(await sceneCamera(page)).toEqual(afterLeftRelease);
+  await expect(page.getByRole('button', { name: 'Select', exact: true })).toHaveAttribute('aria-pressed', 'true');
+
+  // Forward now follows the turned camera axis; E turns back to the right in-place.
+  await page.keyboard.down('w');
+  await page.waitForTimeout(180);
+  const afterTurnedForward = await sceneCamera(page);
+  await page.keyboard.up('w');
+  expect(dot3(delta3(afterTurnedForward.target, afterLeftTurn.target), afterLeftTurn.forward)).toBeGreaterThan(0);
+  expect(afterTurnedForward.forward).toEqual(afterLeftTurn.forward);
+  await canvas.focus();
+  const beforeRightTurn = await sceneCamera(page);
+  await page.keyboard.down('e');
+  await page.waitForTimeout(250);
+  const afterRightTurn = await sceneCamera(page);
+  await page.keyboard.up('e');
+  const afterRightRelease = await sceneCamera(page);
+  expect(dot3(afterRightTurn.forward, beforeRightTurn.right)).toBeGreaterThan(0);
+  expect(distance3(afterRightTurn.position, beforeRightTurn.position)).toBeCloseTo(0, 8);
+  expect(distance3(afterRightTurn.position, afterRightTurn.target)).toBeCloseTo(distance3(beforeRightTurn.position, beforeRightTurn.target), 6);
+  expect(dot3(delta3(afterRightTurn.target, afterRightTurn.position), afterRightTurn.forward)
+    / distance3(afterRightTurn.target, afterRightTurn.position)).toBeGreaterThan(0.999);
+  await expect(page.getByRole('button', { name: 'Select', exact: true })).toHaveAttribute('aria-pressed', 'true');
+  await page.waitForTimeout(160);
+  expect(await sceneCamera(page)).toEqual(afterRightRelease);
+  await page.getByRole('button', { name: 'Select', exact: true }).focus();
+  await page.keyboard.press('e');
+  await expect(page.getByRole('button', { name: 'Rotate', exact: true })).toHaveAttribute('aria-pressed', 'true');
+  await page.keyboard.press('q');
+  await expect(page.getByRole('button', { name: 'Select', exact: true })).toHaveAttribute('aria-pressed', 'true');
+
   // Wheel zoom changes camera-to-target distance, not the frame-derived travel speed.
   await canvas.focus();
   const canvasBounds = await canvas.boundingBox();
@@ -1158,6 +1207,10 @@ test('focused Scene viewport camera navigation preserves authored data and exist
   const offsetLength = distance3(framed.position, framed.target);
   const expectedFrameDirection = [1, 0.8, 1];
   expect(dot3(offset, expectedFrameDirection) / (offsetLength * Math.hypot(...expectedFrameDirection))).toBeGreaterThan(0.999);
+  await canvas.focus();
+  await page.keyboard.press('f');
+  const keyboardFramed = await sceneCamera(page);
+  expect(dot3(delta3(keyboardFramed.position, keyboardFramed.target), expectedFrameDirection)).toBeGreaterThan(0);
 
   const bounds = await canvas.boundingBox();
   expect(bounds).not.toBeNull();
